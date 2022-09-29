@@ -32,7 +32,7 @@ def test():
     logger.info('app test route hit')
     try:
 
-        text_to_be_analyzed = "Hello"
+        text_to_be_analyzed = str(request.args.get('request_text').strip())
 
         text_input = dialogflow_v2.TextInput(text=text_to_be_analyzed, language_code='en')
 
