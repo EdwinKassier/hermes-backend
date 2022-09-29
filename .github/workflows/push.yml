@@ -1,0 +1,57 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - develop
+      - master
+      - prod
+
+env:
+  PROJECT_ID: ${{ secrets.PROJECT_ID }}
+  RUN_REGION: us-central1
+  REPO_NAME: ${{ github.event.repository.name }} # you can hardcode this if you want in the env variables
+  ACTIONS_ALLOW_UNSECURE_COMMANDS: true #https://github.blog/changelog/2020-10-01-github-actions-deprecating-set-env-and-add-path-commands/
+
+jobs:
+  setup-build-deploy:
+    name: Setup, Build, and Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Extract branch name and save to service name
+        shell: bash
+        id: extract_branch
+        run: echo "::set-env name=SERVICE_NAME::$(echo ${GITHUB_REF#refs/heads/})-$REPO_NAME"
+
+      - name: Print service name
+        run: echo $SERVICE_NAME
+
+      - run: "echo '${{ secrets.SA_KEY_JSON }}' > credentials.json"
+        shell: bash
+
+      # Setup gcloud CLI
+      - uses: google-github-actions/setup-gcloud@v0
+        with:
+          version: "290.0.1"
+          service_account_key: ${{ secrets.SA_KEY_JSON }}
+          project_id: ${{ secrets.PROJECT_ID }}
+
+      # Build and push image to Google Container Registry
+      - name: Build
+        run: |-
+          gcloud builds submit \
+            --quiet \
+            --tag "gcr.io/$PROJECT_ID/$SERVICE_NAME:$GITHUB_SHA"
+      # Deploy image to Cloud Run
+      - name: Deploy
+        run: |-
+          gcloud run deploy "$SERVICE_NAME" \
+            --quiet \
+            --region "$RUN_REGION" \
+            --image "gcr.io/$PROJECT_ID/$SERVICE_NAME:$GITHUB_SHA" \
+            --platform "managed" \
+            --allow-unauthenticated
