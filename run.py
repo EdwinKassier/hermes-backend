@@ -8,6 +8,7 @@ from app import create_app
 
 app = create_app()
 
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "credentials.json"
 
 @app.route('/status', methods=['GET'])
 def status():

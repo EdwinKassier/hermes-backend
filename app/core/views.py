@@ -8,8 +8,6 @@ from authentication import check_auth
 import os
 from google.cloud import dialogflow_v2
 
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "credentials.json"
-
 #os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "D:\hermes-backend\credentials.json"
 
 session_client = dialogflow_v2.SessionsClient()
