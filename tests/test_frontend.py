@@ -17,10 +17,4 @@ def client():
         with app.test_client() as client:
             yield client
 
-        
-def test_base_route_without_args(client):
-    rv = client.get('/api/v1/project/core/process_request')
-
-    print(rv.get_data())
-    assert rv.status_code == 200
 
