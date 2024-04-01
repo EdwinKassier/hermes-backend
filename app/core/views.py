@@ -27,7 +27,7 @@ def before_request_func():
     current_app.logger.name = 'core'
 
 #Preparing for prod release cloud run, test
-@core.route('/process_request', methods=['GET'])
+@core.route('/process_request', methods=['GET','POST'])
 def test():
     logger.info('app test route hit')
     try:
