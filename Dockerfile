@@ -10,5 +10,7 @@ COPY . /app
 # Install any needed packages specified in requirements.txt
 RUN pip install -r requirements.txt
 
+EXPOSE 8080
+
 # Define the command to run your Flask application
 CMD ["python", "run.py"]
