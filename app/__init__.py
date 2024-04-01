@@ -12,7 +12,6 @@ from .config import config as app_config
 celery = Celery(__name__)
 
 #Called in the run function, this creates and links the main app logic to the exposed endpoint
-
 def create_app():
     # loading env vars from .env file
     load_dotenv()

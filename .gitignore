@@ -133,3 +133,6 @@ dmypy.json
 
 # project
 log/*
+
+
+credentials.json
