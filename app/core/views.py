@@ -8,7 +8,9 @@ from authentication import check_auth
 import os
 from google.cloud import dialogflow_v2
 
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "../../credentials.json"
+cred_path = os.path.abspath("credentials.json")
+
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = cred_path
 
 #os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "D:\hermes-backend\credentials.json"
 
