@@ -56,6 +56,13 @@ jobs:
       - name: Generate credentials file
         run: echo '${{ secrets.SA_KEY_JSON }}' > credentials.json
 
+      # Upload credentials file as an artifact
+      - name: Upload credentials file
+        uses: actions/upload-artifact@v2
+        with:
+          name: credentials
+          path: credentials.json
+
       # Setup gcloud CLI
       - id: 'auth'
         uses: 'google-github-actions/auth@v1'
