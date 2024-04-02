@@ -53,8 +53,8 @@ jobs:
       - name: Print service name
         run: echo $SERVICE_NAME
 
-      - run: "echo '${{ secrets.SA_KEY_JSON }}' > credentials.json"
-        shell: bash
+      - name: Generate credentials file
+        run: echo '${{ secrets.SA_KEY_JSON }}' > credentials.json
 
       # Setup gcloud CLI
       - id: 'auth'
