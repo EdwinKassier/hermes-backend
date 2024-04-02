@@ -2,15 +2,17 @@
 from flask import Blueprint, current_app,request
 from werkzeug.local import LocalProxy
 import json
+import glob
 
 from authentication import check_auth
 
 import os
 from google.cloud import dialogflow_v2
 
-cred_path = os.path.abspath("credentials.json")
+file_pattern = 'gha-creds-*.json'
+file_matches = glob.glob(file_pattern)
 
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = cred_path
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = file_matches[0]
 
 #os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "D:\hermes-backend\credentials.json"
 
