@@ -8,6 +8,8 @@ from authentication import check_auth
 import os
 from google.cloud import dialogflow_v2
 
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "credentials.json"
+
 #os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "D:\hermes-backend\credentials.json"
 
 session_client = dialogflow_v2.SessionsClient()
@@ -61,3 +63,8 @@ def test():
 @check_auth
 def restricted():
     return json.dumps({"message": 'Successful Auth'}), 200, {"ContentType": "application/json"}
+
+
+@core.route('/files', methods=['GET'])
+def files():
+    return json.dumps({"message": str(os.listdir())}), 200, {"ContentType": "application/json"}
