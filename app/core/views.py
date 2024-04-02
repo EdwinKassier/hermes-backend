@@ -14,8 +14,7 @@ os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = cred_path
 
 #os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "D:\hermes-backend\credentials.json"
 
-session_client = dialogflow_v2.SessionsClient()
-session = session_client.session_path("edwin-portfolio-358212", "Test")
+
 
 
 from .tasks import test_task
@@ -33,6 +32,9 @@ def before_request_func():
 def test():
     logger.info('app test route hit')
     try:
+        
+        session_client = dialogflow_v2.SessionsClient()
+        session = session_client.session_path("edwin-portfolio-358212", "Test")
 
         text_to_be_analyzed = str(request.args.get('request_text').strip())
 
