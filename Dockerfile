@@ -4,11 +4,14 @@ FROM python:3.10-slim
 # Set the working directory to /app
 WORKDIR /app
 
-# Copy the current directory contents into the container at /app
-COPY . /app
+# Copy the dependencies file to the working directory
+COPY requirements.txt .
 
-# Install any needed packages specified in requirements.txt
+# Install any dependencies
 RUN pip install -r requirements.txt
+
+# Copy the rest of the application code to the working directory
+COPY . .
 
 EXPOSE 8080
 
