@@ -12,8 +12,8 @@ os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "credentials.json"
 
 #os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "D:\hermes-backend\credentials.json"
 
-session_client = dialogflow_v2.SessionsClient()
-session = session_client.session_path("edwin-portfolio-358212", "Test")
+#session_client = dialogflow_v2.SessionsClient()
+#session = session_client.session_path("edwin-portfolio-358212", "Test")
 
 
 from .tasks import test_task
@@ -27,7 +27,7 @@ def before_request_func():
     current_app.logger.name = 'core'
 
 #Preparing for prod release cloud run, test
-@core.route('/process_request', methods=['GET','POST'])
+@core.route('/process_request', methods=['GET', 'POST'])
 def test():
     logger.info('app test route hit')
     try:
