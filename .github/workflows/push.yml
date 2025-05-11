@@ -10,8 +10,9 @@ on:
 env:
   PROJECT_ID: ${{ secrets.PROJECT_ID }}
   RUN_REGION: us-central1
-  REPO_NAME: ${{ github.event.repository.name }} # you can hardcode this if you want in the env variables
-  ACTIONS_ALLOW_UNSECURE_COMMANDS: true #https://github.blog/changelog/2020-10-01-github-actions-deprecating-set-env-and-add-path-commands/
+  REPO_NAME: ${{ github.event.repository.name }}
+  ARTIFACT_REGISTRY_REPO_NAME: ashes # Your Artifact Registry repository name
+  ACTIONS_ALLOW_UNSECURE_COMMANDS: true
 
 jobs:
   lint:
@@ -31,7 +32,7 @@ jobs:
             pip install pylint
             pip install umsgpack
             pip install pylint-fail-under
-        - name: Code review 
+        - name: Code review
           run: find . -name '*.py' -print -exec pylint {} \;
         - name: Analyze code
           run: |
@@ -56,24 +57,23 @@ jobs:
       - name: Generate credentials file
         run: echo "${{ secrets.SA_KEY_JSON }}" > credentials.json
 
-      # Upload credentials file as an artifact
       - name: Upload credentials file
         uses: actions/upload-artifact@v4
         with:
           name: credentials
           path: credentials.json
+          retention-days: 1
 
       - name: Generate .env file
         run: echo ${{ secrets.ENV_FILE }} | base64 --decode > .env
 
-      # Upload .env file as an artifact
-      - name: Upload env file
+      - name: Upload .env file
         uses: actions/upload-artifact@v4
         with:
           name: env
           path: .env
+          retention-days: 1
 
-      # Setup gcloud CLI
       - id: 'auth'
         uses: 'google-github-actions/auth@v1'
         with:
@@ -81,23 +81,32 @@ jobs:
 
       - name: 'Set up Cloud SDK'
         uses: 'google-github-actions/setup-gcloud@v1'
+        with:
+          project_id: ${{ env.PROJECT_ID }}
 
       - name: 'Use gcloud CLI'
         run: 'gcloud info'
 
-      # Build and push image to Google Container Registry
+      # Configure Docker for Artifact Registry
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.RUN_REGION }}-docker.pkg.dev --quiet
+
+      # Build and push image to Google Artifact Registry
       - name: Build
         run: |-
           gcloud builds submit \
             --quiet \
-            --tag "gcr.io/$PROJECT_ID/$SERVICE_NAME:$GITHUB_SHA"
+            --tag "${{ env.RUN_REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPO_NAME }}/${{ env.SERVICE_NAME }}:$GITHUB_SHA" \
+            --project=${{ env.PROJECT_ID }} # Ensure project is specified for Cloud Build
 
-      # Deploy image to Cloud Run
+      # Deploy image from Artifact Registry to Cloud Run
       - name: Deploy
         run: |-
           gcloud run deploy "$SERVICE_NAME" \
             --quiet \
             --region "$RUN_REGION" \
-            --image "gcr.io/$PROJECT_ID/$SERVICE_NAME:$GITHUB_SHA" \
+            --image "${{ env.RUN_REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPO_NAME }}/${{ env.SERVICE_NAME }}:$GITHUB_SHA" \
             --platform "managed" \
-            --allow-unauthenticated
+            --allow-unauthenticated \
+            --project=${{ env.PROJECT_ID }} # Ensure project is specified for Cloud Run
+            # Consider adding --service-account flag for specific Cloud Run identity
