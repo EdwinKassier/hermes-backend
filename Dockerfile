@@ -10,6 +10,9 @@ COPY requirements.txt .
 # Install any dependencies
 RUN pip install -r requirements.txt
 
+# Explicit env copy
+COPY .env .env
+
 # Copy the rest of the application code to the working directory
 COPY . .
 

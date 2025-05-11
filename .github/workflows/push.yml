@@ -63,9 +63,50 @@ jobs:
           name: credentials
           path: credentials.json
           retention-days: 1
-
+          
       - name: Generate .env file
-        run: echo ${{ secrets.ENV_FILE }} | base64 --decode > .env
+        shell: bash -e {0}
+        run: |
+          echo "Current directory: $(pwd)"
+          echo "Attempting to decode and create .env file..."
+          # Storing decoded content in a variable first can help debug
+          DECODED_CONTENT=$(echo "${{ secrets.ENV_FILE }}" | base64 --decode)
+          DECODE_STATUS=$? # Capture exit status of base64
+
+          if [ $DECODE_STATUS -ne 0 ]; then
+            echo "base64 decoding failed with status: $DECODE_STATUS"
+            # It's good to see what base64 tried to output on error, if anything
+            echo "${{ secrets.ENV_FILE }}" | base64 --decode
+            echo "ENV_FILE secret might be empty or not valid base64."
+            echo "No .env file will be created due to decode failure."
+            # To be absolutely sure upload-artifact finds nothing if this path is taken:
+            rm -f .env
+          else
+            echo "base64 decoding successful. Writing to .env."
+            echo "$DECODED_CONTENT" > .env
+            echo ".env file created."
+          fi
+
+          echo "--- Listing files in current directory (ls -la) ---"
+          ls -la
+          echo "--- Content of .env (if it exists) ---"
+          if [ -f .env ]; then
+            cat .env
+          else
+            echo ".env does not exist."
+          fi
+          echo "-------------------------------------------"
+      
+      - name: Debug before upload
+        run: |
+          echo "Current directory before upload: $(pwd)"
+          echo "Listing files before upload:"
+          ls -la
+          if [ -f .env ]; then
+            echo ".env exists before upload."
+          else
+            echo ".env DOES NOT exist before upload."
+          fi
 
       - name: Upload .env file
         uses: actions/upload-artifact@v4
