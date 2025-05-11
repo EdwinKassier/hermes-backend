@@ -63,6 +63,10 @@ jobs:
           name: credentials
           path: credentials.json
 
+      - name: Generate .env file
+        run: echo ${{ secrets.ENV_FILE }} | base64 --decode > .env
+
+
       # Setup gcloud CLI
       - id: 'auth'
         uses: 'google-github-actions/auth@v1'

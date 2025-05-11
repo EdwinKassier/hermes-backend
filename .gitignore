@@ -133,6 +133,6 @@ dmypy.json
 
 # project
 log/*
-
+.env
 
 credentials.json
