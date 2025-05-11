@@ -58,7 +58,7 @@ jobs:
 
       # Upload credentials file as an artifact
       - name: Upload credentials file
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: credentials
           path: credentials.json
@@ -66,6 +66,12 @@ jobs:
       - name: Generate .env file
         run: echo ${{ secrets.ENV_FILE }} | base64 --decode > .env
 
+      # Upload .env file as an artifact
+      - name: Upload env file
+        uses: actions/upload-artifact@v4
+        with:
+          name: env
+          path: .env
 
       # Setup gcloud CLI
       - id: 'auth'
