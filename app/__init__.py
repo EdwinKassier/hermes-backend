@@ -1,22 +1,17 @@
 import logging.config
-from os import environ
-
 from celery import Celery
-from dotenv import load_dotenv
 from flask import Flask
 from flask_cors import CORS
 
 from .config import config as app_config
-
+from .config.environment import get_env
 
 celery = Celery(__name__)
 
 #Called in the run function, this creates and links the main app logic to the exposed endpoint
 def create_app():
-    # loading env vars from .env file
-    load_dotenv()
-    APPLICATION_ENV = get_environment()
-    app = Flask(app_config[APPLICATION_ENV].APP_NAME)
+    APPLICATION_ENV = get_env('APPLICATION_ENV')
+    app = Flask(get_env('APP_NAME'))
     app.config.from_object(app_config[APPLICATION_ENV])
 
     #This step is critical for allowing testing while in a local environment
@@ -33,7 +28,3 @@ def create_app():
     )
 
     return app
-
-
-def get_environment():
-    return environ.get('APPLICATION_ENV') or 'development'

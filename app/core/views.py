@@ -6,15 +6,14 @@ import os
 import uuid
 from google.cloud import dialogflowcx_v3beta1 as dialogflowcx
 from authentication import check_auth
-
-from ..services.GeminiService import GeminiService 
+from app.utils.service_loader import get_gemini_service
 
 # Flask Blueprint and logger
 core = Blueprint("core", __name__)
 logger = LocalProxy(lambda: current_app.logger)
 
-gemini = GeminiService()
-
+# Remove global gemini instance
+# gemini = GeminiService()
 
 @core.before_request
 def before_request_func():
@@ -28,6 +27,7 @@ def process_request():
         # Get user input from request
         text_to_be_analyzed = str(request.args.get("request_text", "").strip())
 
+        gemini = get_gemini_service()
         result = gemini.generate_gemini_response_with_rag(text_to_be_analyzed)
         return (
             json.dumps({"message": result}),
@@ -58,3 +58,11 @@ def files():
         200,
         {"Content-Type": "application/json"},
     )
+# Update any routes that use gemini to use get_gemini_service() instead
+# For example:
+@core.route("/chat", methods=["POST"])
+def chat():
+    gemini = get_gemini_service()
+    # Rest of the chat implementation
+    return json.dumps({"message": "Chat endpoint"}), 200, {"Content-Type": "application/json"}
+

@@ -55,7 +55,9 @@ jobs:
         run: echo $SERVICE_NAME
 
       - name: Generate credentials file
-        run: echo "${{ secrets.SA_KEY_JSON }}" > credentials.json
+        run: |
+            DECODED_CONTENT=$(echo "${{ secrets.SA_KEY_JSON }}" | base64 --decode)
+            echo "$DECODED_CONTENT" > credentials.json
 
       - name: Upload credentials file
         uses: actions/upload-artifact@v4

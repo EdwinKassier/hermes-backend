@@ -1,0 +1,31 @@
+FROM python:3.11-slim
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    FLASK_APP=run.py \
+    FLASK_ENV=development \
+    FLASK_DEBUG=1 \
+    PYTHONPATH=/app
+
+# Set the working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements file
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Don't copy the application code - it will be mounted as a volume
+# This allows for hot reloading to work
+
+EXPOSE 8080
+
+CMD ["flask", "run", "--host=0.0.0.0", "--port=8080", "--reload"] 

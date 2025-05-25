@@ -1,8 +1,9 @@
-from os import environ, path
+"""Configuration package for the application."""
 
+from os import environ, path
 from dotenv import load_dotenv
 
-basedir = path.abspath(path.join(path.dirname(__file__), '..'))
+basedir = path.abspath(path.join(path.dirname(__file__), '../..'))
 # loading env vars from .env file
 load_dotenv()
 
@@ -87,4 +88,4 @@ config = {
     'development': Development,
     'staging': Staging,
     'production': Production,
-}
+} 

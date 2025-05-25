@@ -7,8 +7,75 @@ This is the backend for the system
 ## Requirements
 * Python3
 * Pipenv
+* Docker (for containerized deployment)
+* Make (for running convenience commands)
 
 ## Getting started
+
+### Using Docker (Recommended)
+
+#### Quick Start Commands
+We provide convenient Make commands to manage the application:
+
+```bash
+# Show all available commands
+make help
+
+# Development server with hot reloading
+make dev
+
+# Development server in detached mode
+make dev-detach
+
+# Production server
+make prod
+
+# Production server in detached mode
+make prod-detach
+
+# View logs (when running in detached mode)
+make logs
+
+# Stop all containers
+make stop
+
+# Clean up containers and images
+make clean
+```
+
+#### Manual Docker Commands
+If you prefer to use Docker commands directly:
+
+##### Development Environment
+For development with hot reloading:
+```bash
+# Build and start the development server
+docker compose -f docker-compose.dev.yml up --build
+
+# To run in detached mode
+docker compose -f docker-compose.dev.yml up -d
+
+# To stop the development server
+docker compose -f docker-compose.dev.yml down
+```
+
+The development server will automatically reload whenever you make changes to the code. The application will be available at http://localhost:8080.
+
+##### Production Environment
+For production deployment:
+```bash
+# Build and start the production server
+docker compose up --build
+
+# To run in detached mode
+docker compose up -d
+
+# To stop the production server
+docker compose down
+```
+
+### Local Development (Alternative)
+If you prefer to run the application without Docker:
 
 1. Source the virtual environment ```[pipenv shell]```
 2. Install the dependencies ```[pipenv install]```
