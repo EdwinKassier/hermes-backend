@@ -136,3 +136,4 @@ log/*
 .env
 
 credentials.json
+Training.wav

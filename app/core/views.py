@@ -6,7 +6,7 @@ import os
 import uuid
 from google.cloud import dialogflowcx_v3beta1 as dialogflowcx
 from authentication import check_auth
-from app.utils.service_loader import get_gemini_service
+from app.utils.service_loader import get_gemini_service, get_tts_service
 
 # Flask Blueprint and logger
 core = Blueprint("core", __name__)
@@ -26,14 +26,25 @@ def process_request():
     try:
         # Get user input from request
         text_to_be_analyzed = str(request.args.get("request_text", "").strip())
+        response_mode = str(request.args.get("response_mode", "text").strip())
 
         gemini = get_gemini_service()
         result = gemini.generate_gemini_response_with_rag(text_to_be_analyzed)
-        return (
-            json.dumps({"message": result}),
-            200,
-            {"Content-Type": "application/json"},
-        )
+        
+        if response_mode == "tts":
+            tts = get_tts_service()
+            tts_result = tts.generate_audio(result)
+            return (
+                json.dumps({"message": result, "wave_url": tts_result['cloud_url']}),
+                200,
+                {"Content-Type": "application/json"},
+            )
+        else:
+            return (
+                json.dumps({"message": result}),
+                200,
+                {"Content-Type": "application/json"},
+            )
     except Exception as e:
         logger.error(e)
         return json.dumps({"message": str(e)}), 500, {"Content-Type": "application/json"}
