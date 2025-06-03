@@ -25,7 +25,7 @@ COPY requirements.txt .
 
 # Install Python dependencies with increased timeout and retries
 # Install torch and torchaudio with specific versions first
-RUN pip install --no-cache-dir --retries 10 --timeout 180 torch==2.0.1 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir --retries 10 --timeout 180 torch==2.6.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cpu
 # Install blinker explicitly to satisfy Flask's dependency
 RUN pip install --no-cache-dir blinker
 # Then install the rest of the requirements
@@ -38,7 +38,7 @@ FROM python:3.11
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app \
-    PYTHONOPTIMIZE=2 \
+    PYTHONOPTIMIZE=0 \
     WEB_CONCURRENCY=4
 
 WORKDIR /app
