@@ -2,84 +2,74 @@
 FROM python:3.11-slim as builder
 
 # Set environment variables
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=0 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PYTHONPATH=/app \
-    PYTHONOPTIMIZE=2
-
-# Set the working directory
-WORKDIR /app
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libsndfile1 \
     ffmpeg \
-    libavcodec-extra \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy only requirements file first to leverage Docker cache
+# Set working directory
+WORKDIR /app
+
+# Copy requirements file
 COPY requirements.txt .
 
-# Install Python dependencies with increased timeout and retries
-# Install torch and torchaudio with specific versions first
-RUN pip install --no-cache-dir --retries 10 --timeout 180 torch==2.6.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cpu
-# Install blinker explicitly to satisfy Flask's dependency
-RUN pip install --no-cache-dir blinker
-# Then install the rest of the requirements
-RUN pip install --no-cache-dir --retries 10 --timeout 180 -r requirements.txt
+# Upgrade pip and install dependencies
+RUN python -m pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir \
+    pypdf \
+    google-cloud-storage \
+    langchain-google-vertexai \
+    langchain \
+    python-dotenv
+
+# Copy the entire application code
+COPY . .
+
+# Copy credentials file
+COPY credentials.json ./credentials.json
 
 # Runtime stage
-FROM python:3.11
+FROM nvidia/cuda:12.9.0-cudnn-runtime-ubuntu22.04
 
 # Set environment variables
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app \
-    PYTHONOPTIMIZE=0 \
-    WEB_CONCURRENCY=4
-
-WORKDIR /app
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
+    python3.11 \
+    python3.11-dev \
+    python3-pip \
     libsndfile1 \
     ffmpeg \
-    libavcodec-extra \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy only necessary files from builder
-COPY --from=builder /usr/local/lib/python3.11/site-packages/ /usr/local/lib/python3.11/site-packages/
-COPY --from=builder /usr/local/bin/ /usr/local/bin/
+# Set working directory
+WORKDIR /app
 
-# Copy application code
-COPY . .
+# Copy requirements file
+COPY requirements.txt .
 
-# Pre-compile Python files
-RUN python -m compileall -q .
+# Upgrade pip and install dependencies
+RUN python3 -m pip install --upgrade pip && \
+    pip3 install --no-cache-dir -r requirements.txt
 
-# Create app data directory and set permissions
-RUN mkdir -p /app/data/tts_cache && \
-    chown -R appuser:appuser /app/data && \
-    chmod -R 755 /app/data
 
-# Create a non-root user and switch to it
-RUN useradd -m appuser && \
-    chown -R appuser:appuser /app
-USER appuser
+# Copy application code and pre-generated embeddings from builder
+COPY --from=builder /app /app
 
-# Set environment variable for TTS cache directory
-ENV TTS_CACHE_DIR=/app/data/tts_cache
+# Set Python path
+ENV PYTHONPATH=/app
 
-# Expose the port
-EXPOSE 8080
-
-# Add healthcheck
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8080/status || exit 1
-
-# Use gunicorn with config file for production
+# Run the application
 CMD ["gunicorn", "--config", "gunicorn.conf.py", "run:app"]

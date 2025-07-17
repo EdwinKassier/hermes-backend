@@ -1,7 +1,9 @@
 import os
+import json
 import traceback
 from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
+from pathlib import Path
 
 # Google / Gemini / Langchain specific
 from langchain_google_genai import (
@@ -29,17 +31,19 @@ logging.basicConfig(
 
 
 class GeminiService:
-    MODEL_NAME = "gemini-2.0-flash"  # LLM for generation
-    TEMPERATURE = 0.8
+    MODEL_NAME = "gemini-2.5-flash"  # LLM for generation
+    TEMPERATURE = 1.0
     TIMEOUT = 60
     MAX_RETRIES = 3
     ERROR_MESSAGE = "Sorry, the Hermes LLM service encountered an error."
 
     # Changed to a Vertex AI embedding model
     EMBEDDING_MODEL_NAME = "text-embedding-004"
-    TEXT_SPLITTER_CHUNK_SIZE = 1500
-    TEXT_SPLITTER_CHUNK_OVERLAP = 250
-    RAG_TOP_K = 3
+    # Ultra-fine embedding parameters for maximum accuracy
+    TEXT_SPLITTER_CHUNK_SIZE = 300  # Ultra-fine chunks for maximum granularity
+    TEXT_SPLITTER_CHUNK_OVERLAP = 200  # High overlap to preserve context
+    RAG_TOP_K = 20  # Retrieve many chunks for comprehensive coverage
+    EMBEDDINGS_FILE = "data/embeddings_cache/embeddings.json"
 
     def __init__(
         self,
@@ -119,6 +123,14 @@ class GeminiService:
             logging.error(traceback.format_exc())
             raise
 
+        # Load pre-generated embeddings
+        self.embeddings_dict = self._load_embeddings()
+        if not self.embeddings_dict:
+            logging.warning("No pre-generated embeddings found. Will generate embeddings on demand.")
+            logging.warning("Run 'python scripts/generate_embeddings.py' to create embeddings cache.")
+        else:
+            logging.info(f"Successfully loaded {len(self.embeddings_dict)} pre-generated embeddings for RAG")
+
         # Initialize VectorStoreService
         self.vector_store_service = VectorStoreService(
             storage_client=self.storage_client,
@@ -126,6 +138,7 @@ class GeminiService:
             chunk_size=self.TEXT_SPLITTER_CHUNK_SIZE,
             chunk_overlap=self.TEXT_SPLITTER_CHUNK_OVERLAP,
             rag_top_k=self.RAG_TOP_K,
+            pre_generated_embeddings=self.embeddings_dict,
         )
 
         if initial_gcs_bucket_name:
@@ -139,6 +152,29 @@ class GeminiService:
         logging.info(
             f"GeminiService initialized. LLM: {self.MODEL_NAME}"
         )
+
+    def _load_embeddings(self) -> Dict[str, List[float]]:
+        """Load pre-generated embeddings from JSON file."""
+        try:
+            embeddings_path = Path(self.EMBEDDINGS_FILE)
+            if not embeddings_path.exists():
+                logging.warning(f"Embeddings file not found at {self.EMBEDDINGS_FILE}")
+                return {}
+            
+            with open(embeddings_path, 'r') as f:
+                embeddings = json.load(f)
+            logging.info(f"Loaded {len(embeddings)} pre-generated embeddings")
+            return embeddings
+        except Exception as e:
+            logging.error(f"Error loading embeddings: {e}")
+            return {}
+
+    def get_embedding(self, text: str) -> List[float]:
+        """Get embedding for text, using pre-generated if available."""
+        if text in self.embeddings_dict:
+            return self.embeddings_dict[text]
+        # Fallback to generating embedding if not found
+        return self.embeddings_model.embed_query(text)
 
     def update_rag_sources(
         self, gcs_bucket_name: str, gcs_folder_path: Optional[str] = None
@@ -190,7 +226,7 @@ class GeminiService:
         user_id: str,
         **kwargs
     ) -> str:
-        """Generate a response using RAG with conversation history.
+        """Generate a response using RAG optimized for small datasets.
         
         Args:
             prompt: The user's input prompt
@@ -237,17 +273,20 @@ class GeminiService:
         context_str = "\n\n".join([chunk.page_content for chunk in relevant_chunks])
         logging.info(f"Using {len(relevant_chunks)} chunks for context")
 
-        # Construct full prompt with conversation history
+        # Construct ultra-optimized prompt for small datasets
         full_prompt = (
             f"{prompt_prefix}"
             f"Current date and time: {datetime.utcnow().isoformat()}\n\n"
             f"=== CONVERSATION HISTORY ===\n"
             f"{conversation_history}\n\n"
-            f"=== RELEVANT CONTEXT ===\n"
+            f"=== RELEVANT CONTEXT (SMALL DATASET - MAXIMUM ACCURACY) ===\n"
             f"{context_str}\n\n"
             f"=== USER'S LATEST MESSAGE ===\n"
             f"User: {prompt}\n\n"
-            f"Please provide a helpful response based on the above conversation and context."
+            f"IMPORTANT: This is a small dataset with limited documents. "
+            f"Please provide a comprehensive response using ALL relevant information "
+            f"from the context above, especially information marked as [IMPORTANT]. "
+            f"Be thorough and detailed in your response."
         )
 
         try:

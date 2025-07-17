@@ -45,12 +45,13 @@ class CloudStorageService:
                 self.client = storage.Client()
                 logger.info("GCS client initialized using default credentials (e.g., GOOGLE_APPLICATION_CREDENTIALS).")
 
+            # Create bucket reference without checking existence
             self.bucket = self.client.bucket(bucket_name)
-
-            # Attempt to check if the bucket exists and is accessible.
-            # This will raise an exception if the bucket doesn't exist or permissions are insufficient.
-            self.bucket.exists()
-            logger.info(f"Successfully connected to GCS bucket: '{bucket_name}'")
+            logger.info(f"Using GCS bucket: {bucket_name}")
+            
+            # Skip the existence check to avoid permission issues
+            # The actual permissions will be checked during operations
+            pass
 
         except Exception as e:
             logger.error(f"Failed to initialize CloudStorageService for bucket '{bucket_name}': {e}")

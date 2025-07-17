@@ -90,6 +90,8 @@ def files():
 @core.route("/chat", methods=["POST"])
 def chat():
     gemini = get_gemini_service()
-    # Rest of the chat implementation
     return json.dumps({"message": "Chat endpoint"}), 200, {"Content-Type": "application/json"}
 
+@core.route('/health', methods=['GET'])
+def status():
+    return json.dumps({"message": f'Hermes API Status : Running!'}), 200, {"ContentType": "application/json"}

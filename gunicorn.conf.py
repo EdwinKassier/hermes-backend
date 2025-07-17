@@ -8,7 +8,7 @@ backlog = 2048
 # Worker processes
 workers = int(os.getenv("WEB_CONCURRENCY", multiprocessing.cpu_count() * 2 + 1))
 worker_class = "gthread"
-threads = 2
+threads = 4
 worker_connections = 1000
 
 # Timeouts
@@ -41,6 +41,11 @@ tmp_upload_dir = None
 # Limits
 max_requests = 10000
 max_requests_jitter = 1000
+
+# Worker recycling
+graceful_timeout = 30
+preload_app = True
+reload_extra_files = []
 
 def post_fork(server, worker):
     server.log.info("Worker spawned (pid: %s)", worker.pid)

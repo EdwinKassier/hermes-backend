@@ -9,3 +9,7 @@ services:
     restart: "always"
     volumes:
       - .:/app  # Mount the current directory to /app in the container
+      - embeddings_cache:/app/data/embeddings_cache  # Persist embeddings cache
+
+volumes:
+  embeddings_cache:  # Define the volume for embeddings cache

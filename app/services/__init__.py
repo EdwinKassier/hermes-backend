@@ -10,10 +10,12 @@ from .IdentityService import IdentityService
 from .CloudStorageService import CloudStorageService
 from .GeminiService import GeminiService
 from .TTSService import TTSService
+from .EmbeddingCacheService import EmbeddingCacheService
 
 __all__ = [
     'IdentityService',
     'CloudStorageService',
     'GeminiService',
     'TTSService',
+    'EmbeddingCacheService',
 ]
