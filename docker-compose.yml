@@ -1,15 +1,73 @@
-version: '3'
+# ==============================================================================
+# Hermes Backend - Unified Docker Compose
+# ==============================================================================
+# Usage:
+#   Development (with ML):  docker-compose up
+#   Production (no ML):     docker-compose -f docker-compose.yml up --build
+# 
+# Environment variables can be set in .env file
+# ==============================================================================
+
+version: '3.8'
+
 services:
-  flask-app:
+  hermes-backend:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # Install ML dependencies for local development
+        # Set to 'false' for production-like testing
+        INSTALL_ML: ${INSTALL_ML:-true}
+    image: hermes-backend:latest
+    container_name: hermes-backend
     ports:
-      - "8080:8080"
-    restart: "always"
+      - "${PORT:-8080}:8080"
+    environment:
+      # Application
+      - APPLICATION_ENV=${APPLICATION_ENV:-development}
+      - PORT=${PORT:-8080}
+      - APP_NAME=hermes-backend
+      
+      # TTS Configuration
+      - TTS_PROVIDER=${TTS_PROVIDER:-google}
+      - TTS_DEVICE=${TTS_DEVICE:-cpu}
+      
+      # Google Cloud
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials.json
+      - GOOGLE_PROJECT_ID=${GOOGLE_PROJECT_ID}
+      - GOOGLE_PROJECT_LOCATION=${GOOGLE_PROJECT_LOCATION}
+      
+      # Supabase (Required for Gemini RAG functionality)
+      - SUPABASE_URL=${SUPABASE_PROJECT_URL}
+      - SUPABASE_DATABASE_URL=${SUPABASE_PROJECT_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      
+      # Cloud Storage
+      - GCS_BUCKET_NAME=${GCS_BUCKET_NAME}
+      
+      # Base Prompt
+      - BASE_PROMPT=${BASE_PROMPT}
+      
+      # Prism (Attendee API Integration)
+      - ATTENDEE_API_KEY=${ATTENDEE_API_KEY}
+      - PRISM_BASE_PROMPT=${PRISM_BASE_PROMPT:-You are Prism, an AI voice assistant for meetings.}
+      - WEBHOOK_BASE_URL=${WEBHOOK_BASE_URL}
+      - WEBSOCKET_BASE_URL=${WEBSOCKET_BASE_URL}
     volumes:
-      - .:/app  # Mount the current directory to /app in the container
-      - embeddings_cache:/app/data/embeddings_cache  # Persist embeddings cache
+      # Mount code for hot-reload in development
+      - .:/app
+      # Preserve Python cache between runs
+      - python-cache:/home/hermes/.cache
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8080/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
 volumes:
-  embeddings_cache:  # Define the volume for embeddings cache
+  python-cache:
+    driver: local

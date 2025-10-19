@@ -1,7 +1,109 @@
+# ==============================================================================
+# Docker Ignore File - Exclude from Docker builds
+# ==============================================================================
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual Environments
+venv/
+env/
+ENV/
+.venv/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+*.cover
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# CI/CD
+.github/
+
+# Docker
 Dockerfile
+Dockerfile.dev
+docker-compose*.yml
+.dockerignore
+
+# Documentation
 README.md
-*.pyc
-*.pyo
-*.pyd
-__pycache__
-.pytest_cache
+*.md
+docs/
+*.png
+*.jpg
+*.jpeg
+
+# Logs
+log/*.log
+*.log
+
+# Database (if you don't want to copy it)
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment & Secrets (CRITICAL - Never copy these!)
+.env
+.env.*
+credentials*.json
+*-key.json
+*.pem
+*.key
+*.cert
+
+# Development Scripts
+scripts/deploy*.sh
+scripts/test*.sh
+Makefile
+
+# Test files
+tests/
+test_*.py
+*_test.py
+
+# Large data files (load from GCS instead)
+data/embeddings_cache/*.json
+
+# Audio files (TTS audio prompts)
+# Excluded from Docker builds - production uses Google TTS (no audio files needed)
+# For development with Chatterbox TTS, mount as volume: -v ./data:/app/data
+*.wav
+*.mp3
+*.mp4
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Cache
+.cache/
+*.cache
+
+# OS
+Thumbs.db
+.DS_Store

@@ -1,7 +1,20 @@
-# Build stage
+# ==============================================================================
+# Hermes Backend - Unified Dockerfile
+# ==============================================================================
+# Build for Production: docker build --build-arg INSTALL_ML=false .
+# Build for Development: docker build --build-arg INSTALL_ML=true .
+# ==============================================================================
+
+# ==============================================================================
+# Build Stage - Compile dependencies
+# ==============================================================================
 FROM python:3.11-slim as builder
 
-# Set environment variables
+# Build arguments
+ARG INSTALL_ML=false
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Prevent Python from writing .pyc files and buffering stdout/stderr
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -10,66 +23,94 @@ ENV PYTHONUNBUFFERED=1 \
 # Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
-    libsndfile1 \
-    ffmpeg \
+    && if [ "$INSTALL_ML" = "true" ]; then \
+        apt-get install -y --no-install-recommends libsndfile1 ffmpeg; \
+    fi \
     && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
+# Create app directory
 WORKDIR /app
 
 # Copy requirements file
-COPY requirements.txt .
+COPY requirements.txt ./
 
-# Upgrade pip and install dependencies
+# Install Python dependencies
+# Conditionally filter out ML and dev packages for production
 RUN python -m pip install --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir \
-    pypdf \
-    google-cloud-storage \
-    langchain-google-vertexai \
-    langchain \
-    python-dotenv
+    pip install --user --no-cache-dir "numpy>=1.24.0,<2.0.0" && \
+    if [ "$INSTALL_ML" = "true" ]; then \
+        echo "Installing ALL dependencies (including ML/dev)..."; \
+        pip install --user --no-cache-dir -r requirements.txt; \
+    else \
+        echo "Installing production dependencies (excluding ML/dev)..."; \
+        grep -v "^torch" requirements.txt | \
+        grep -v "^torchaudio" | \
+        grep -v "^chatterbox-tts" | \
+        grep -v "^transformers" | \
+        grep -v "^pytest" | \
+        grep -v "^black" | \
+        grep -v "^flake8" | \
+        grep -v "^mypy" | \
+        grep -v "^pylint" | \
+        grep -v "^ipython" | \
+        grep -v "^ipdb" | \
+        grep -v "^flask-testing" | \
+        grep -v "^iniconfig" | \
+        grep -v "^pluggy" | \
+        pip install --user --no-cache-dir -r /dev/stdin; \
+    fi
 
-# Copy the entire application code
-COPY . .
+# ==============================================================================
+# Runtime Stage - Minimal production image
+# ==============================================================================
+FROM python:3.11-slim
 
-# Copy credentials file
-COPY credentials.json ./credentials.json
+# Build arguments (need to redeclare in new stage)
+ARG INSTALL_ML=false
+ARG DEBIAN_FRONTEND=noninteractive
 
-# Runtime stage
-FROM nvidia/cuda:12.9.0-cudnn-runtime-ubuntu22.04
-
-# Set environment variables
+# Prevent Python from writing .pyc files and buffering stdout/stderr
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PYTHONPATH=/app \
+    PATH=/home/hermes/.local/bin:$PATH
 
-# Install runtime dependencies
+# Install only runtime dependencies
+# Note: ffmpeg is always installed (required for Prism audio processing)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.11 \
-    python3.11-dev \
-    python3-pip \
-    libsndfile1 \
+    ca-certificates \
     ffmpeg \
+    libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user for security
+RUN useradd -m -u 1000 hermes && \
+    mkdir -p /app/log && \
+    chown -R hermes:hermes /app
 
 # Set working directory
 WORKDIR /app
 
-# Copy requirements file
-COPY requirements.txt .
+# Copy installed dependencies from builder to hermes user's home
+COPY --from=builder --chown=hermes:hermes /root/.local /home/hermes/.local
 
-# Upgrade pip and install dependencies
-RUN python3 -m pip install --upgrade pip && \
-    pip3 install --no-cache-dir -r requirements.txt
+# Copy application code (excluding files in .dockerignore)
+COPY --chown=hermes:hermes . .
 
+# Ensure proper permissions
+RUN chmod +x /app/*.py 2>/dev/null || true && \
+    chmod -R 755 /app/log
 
-# Copy application code and pre-generated embeddings from builder
-COPY --from=builder /app /app
+# Switch to non-root user
+USER hermes
 
-# Set Python path
-ENV PYTHONPATH=/app
+# Expose port (Cloud Run will override this via PORT env var)
+EXPOSE 8080
 
-# Run the application
-CMD ["gunicorn", "--config", "gunicorn.conf.py", "run:app"]
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD python -c "import requests; requests.get('http://localhost:8080/health', timeout=5)"
+
+# Run the application with Gunicorn (using config file for gevent worker)
+# Use full path to ensure gunicorn is found
+CMD ["/home/hermes/.local/bin/gunicorn", "--config", "gunicorn.conf.py", "run:app"]

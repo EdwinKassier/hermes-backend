@@ -88,4 +88,8 @@ config = {
     'development': Development,
     'staging': Staging,
     'production': Production,
-} 
+}
+
+# Explicit exports for better module discovery
+__all__ = ['config', 'BaseConfig', 'Development', 'Staging', 'Production']
+ 

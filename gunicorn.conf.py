@@ -1,22 +1,32 @@
+# CRITICAL: Gevent monkey patching MUST be first
+# Only import and patch if gevent is available
+try:
+    import gevent.monkey
+    gevent.monkey.patch_all()
+    GEVENT_AVAILABLE = True
+except ImportError:
+    GEVENT_AVAILABLE = False
+    print("WARNING: gevent not available, falling back to sync worker")
+
 import multiprocessing
-import os
 
 # Server socket settings
 bind = "0.0.0.0:8080"
 backlog = 2048
 
 # Worker processes
-workers = int(os.getenv("WEB_CONCURRENCY", multiprocessing.cpu_count() * 2 + 1))
-worker_class = "gthread"
-threads = 4
-worker_connections = 1000
+# Note: Using gevent for WebSocket support (simple-websocket compatible)
+# Fallback to sync worker if gevent not available
+workers = 1  # Single worker for WebSocket session affinity
+worker_class = "gevent" if GEVENT_AVAILABLE else "sync"
+worker_connections = 1000 if GEVENT_AVAILABLE else 40
 
 # Timeouts
 timeout = 120
 keepalive = 65
 
-# Preload app for faster startup
-preload_app = True
+# Preload app disabled to avoid DNS caching issues
+preload_app = False
 
 # Logging
 accesslog = "-"
@@ -44,7 +54,6 @@ max_requests_jitter = 1000
 
 # Worker recycling
 graceful_timeout = 30
-preload_app = True
 reload_extra_files = []
 
 def post_fork(server, worker):
