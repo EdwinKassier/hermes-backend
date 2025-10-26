@@ -21,10 +21,13 @@ try:
     from langchain_community.vectorstores import SupabaseVectorStore
     from langchain_google_vertexai import VertexAIEmbeddings
     from supabase import create_client
+    import vertexai
+    import google.auth
     SUPABASE_AVAILABLE = True
 except ImportError:
     SupabaseVectorStore = None
     create_client = None
+    vertexai = None
     SUPABASE_AVAILABLE = False
 
 # Import tools and services
@@ -93,6 +96,21 @@ class GeminiService:
         try:
             # Configure the Gemini API for LLM
             genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
+            
+            # Initialize Vertex AI SDK with Cloud Run's default credentials
+            # This makes it use the service account attached to Cloud Run
+            if vertexai is not None:
+                logging.info("Initializing Vertex AI SDK with project=%s, location=%s", vertex_project, vertex_location)
+                # Get default credentials from Cloud Run environment
+                credentials, project_id = google.auth.default()
+                logging.info("Using service account credentials (project: %s)", project_id)
+                
+                # Initialize Vertex AI with explicit credentials
+                vertexai.init(
+                    project=vertex_project,
+                    location=vertex_location,
+                    credentials=credentials
+                )
             
             # Initialize VertexAI embeddings model
             # MUST use text-embedding-005 to match existing Supabase embeddings
