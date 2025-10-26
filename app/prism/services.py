@@ -423,24 +423,38 @@ Keep it conversational and warm. This will be spoken aloud, so make it sound nat
                     logger.info(f"✅ Step 1 COMPLETE: Audio generated ({len(audio_data)} bytes)")
                     audio_generated = True
                     
-                    # STEP 2: Convert audio to MP3 and send via output_audio HTTP endpoint
+                    # STEP 2: Send audio via output_audio HTTP endpoint
                     # Attendee API requires MP3 format for audio output
                     try:
-                        logger.info(f"🎤 Step 2: Converting audio to MP3 and sending via output_audio endpoint...")
+                        logger.info(f"🎤 Step 2: Sending audio via output_audio endpoint...")
                         
-                        # Convert WAV to MP3 (required by Attendee API)
-                        from pydub import AudioSegment
-                        import io
+                        # TTS service already returns MP3 format, so we can send it directly
+                        # If it's not MP3, we need to convert it
+                        audio_format = tts_result.get('audio_format', 'unknown')
                         
-                        # Load WAV audio
-                        audio = AudioSegment.from_wav(io.BytesIO(audio_data))
-                        
-                        # Export as MP3
-                        mp3_buffer = io.BytesIO()
-                        audio.export(mp3_buffer, format="mp3")
-                        mp3_data = mp3_buffer.getvalue()
-                        
-                        logger.info(f"Converted {len(audio_data)} bytes (WAV) to {len(mp3_data)} bytes (MP3)")
+                        if audio_format == 'mp3':
+                            # Audio is already MP3, send directly
+                            mp3_data = audio_data
+                            logger.info(f"Audio is already in MP3 format ({len(mp3_data)} bytes)")
+                        else:
+                            # Convert to MP3 if needed
+                            from pydub import AudioSegment
+                            import io
+                            
+                            logger.info(f"Converting {audio_format} to MP3...")
+                            
+                            # Load audio based on format
+                            if audio_format == 'wav':
+                                audio = AudioSegment.from_wav(io.BytesIO(audio_data))
+                            else:
+                                audio = AudioSegment.from_file(io.BytesIO(audio_data), format=audio_format)
+                            
+                            # Export as MP3
+                            mp3_buffer = io.BytesIO()
+                            audio.export(mp3_buffer, format="mp3")
+                            mp3_data = mp3_buffer.getvalue()
+                            
+                            logger.info(f"Converted {len(audio_data)} bytes ({audio_format}) to {len(mp3_data)} bytes (MP3)")
                         
                         # Send via HTTP POST to /output_audio endpoint
                         self.attendee_client.send_output_audio(bot_id, mp3_data)

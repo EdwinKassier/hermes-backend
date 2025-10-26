@@ -47,6 +47,17 @@ class RedisSessionStore:
         """Get Redis key for bot_id -> session_id mapping."""
         return f"prism:bot_mapping:{bot_id}"
     
+    def _serialize_datetime(self, obj):
+        """Recursively convert datetime objects to ISO format strings."""
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        elif isinstance(obj, dict):
+            return {k: self._serialize_datetime(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._serialize_datetime(item) for item in obj]
+        else:
+            return obj
+    
     def save_session(self, session: PrismSession) -> None:
         """
         Save session to Redis.
@@ -58,10 +69,8 @@ class RedisSessionStore:
             # Convert session to dict
             session_dict = asdict(session)
             
-            # Convert datetime objects to ISO format strings
-            session_dict['created_at'] = session.created_at.isoformat()
-            session_dict['updated_at'] = session.updated_at.isoformat()
-            session_dict['last_activity'] = session.last_activity.isoformat()
+            # Convert all datetime objects to ISO format strings (including nested ones)
+            session_dict = self._serialize_datetime(session_dict)
             
             # Convert enums to values
             session_dict['bot_state'] = session.bot_state.value
@@ -111,6 +120,24 @@ class RedisSessionStore:
             # Convert enum values back to enums
             session_dict['bot_state'] = BotState(session_dict['bot_state'])
             session_dict['status'] = SessionStatus(session_dict['status'])
+            
+            # Convert transcript timestamps back to datetime objects
+            if 'transcripts' in session_dict and session_dict['transcripts']:
+                for transcript in session_dict['transcripts']:
+                    if 'timestamp' in transcript and isinstance(transcript['timestamp'], str):
+                        transcript['timestamp'] = datetime.fromisoformat(transcript['timestamp'])
+            
+            # Reconstruct nested TranscriptEntry objects
+            if 'transcripts' in session_dict:
+                session_dict['transcripts'] = [
+                    TranscriptEntry(**t) for t in session_dict['transcripts']
+                ]
+            
+            # Reconstruct nested AudioChunkOutgoing objects
+            if 'audio_queue' in session_dict:
+                session_dict['audio_queue'] = [
+                    AudioChunkOutgoing(**a) for a in session_dict['audio_queue']
+                ]
             
             # Reconstruct session object
             return PrismSession(**session_dict)
