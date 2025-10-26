@@ -1,12 +1,3 @@
-# IMPORTANT: Gevent monkey patching MUST be first, before any other imports
-# This prevents RecursionError when using requests/urllib3 with gevent
-
-# Note: GEVENT_RESOLVER=dnspython must be set in environment BEFORE Python starts
-# This is handled in scripts/dev_with_ngrok.sh
-
-import gevent.monkey
-gevent.monkey.patch_all()
-
 from app import create_app
 from app.config.environment import get_env
 

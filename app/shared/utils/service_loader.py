@@ -11,7 +11,9 @@ os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "./credentials.json"
 # Environment variables
 GCS_BUCKET_NAME = os.getenv('GCS_BUCKET_NAME', 'default-bucket-name')
 GCS_CREDENTIALS_PATH = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
-TTS_PROVIDER = os.getenv('TTS_PROVIDER', 'google')  # 'google' or 'chatterbox'
+# TTS provider: 'elevenlabs', 'google', or 'chatterbox'
+TTS_PROVIDER = os.getenv('TTS_PROVIDER', 'elevenlabs')
+EL_API_KEY = os.getenv('EL_API_KEY')  # ElevenLabs API key
 
 
 @lru_cache(maxsize=1)
@@ -32,21 +34,22 @@ def get_cloud_storage_config():
 @lru_cache(maxsize=1)
 def get_tts_service(device: Optional[str] = None) -> TTSService:
     """Lazy load and cache the TTSService instance.
-    
+
     Args:
-        device: The device to load the model on (e.g., 'cuda', 'cpu', 'mps').
-                If None, it will automatically detect the best available device.
+        device: The device to load the model on (e.g., 'cuda', 'cpu',
+                'mps'). If None, automatically detect the best device.
                 Only used for Chatterbox provider.
-    
+
     Returns:
         TTSService instance configured based on TTS_PROVIDER env var
     """
     cloud_storage_config = get_cloud_storage_config()
-    
+
     return TTSService(
         tts_provider=TTS_PROVIDER,
         device=device,
-        cloud_storage_config=cloud_storage_config
+        cloud_storage_config=cloud_storage_config,
+        elevenlabs_api_key=EL_API_KEY
     )
 
 

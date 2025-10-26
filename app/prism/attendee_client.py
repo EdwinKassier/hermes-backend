@@ -7,6 +7,7 @@ Based on official Attendee documentation:
 - Main endpoint: POST /bots (create bot with meeting URL)
 """
 import os
+import base64
 import logging
 import requests
 from typing import Optional, Dict, Any
@@ -14,8 +15,7 @@ from typing import Optional, Dict, Any
 from .constants import (
     ATTENDEE_API_BASE_URL,
     ATTENDEE_API_VERSION,
-    AUDIO_SAMPLE_RATE,
-    AUDIO_ENCODING
+    AUDIO_SAMPLE_RATE
 )
 from .exceptions import AttendeeAPIError, BotCreationError
 from .schemas import CreateBotResponse
@@ -161,9 +161,8 @@ class AttendeeClient:
         endpoint = f"{self.base_url}/bots/{bot_id}"
         
         try:
-            response = requests.get(
+            response = self.session.get(
                 endpoint,
-                headers=self.headers,
                 timeout=10
             )
             
@@ -277,7 +276,6 @@ class AttendeeClient:
             
             # Attendee API expects JSON with base64-encoded MP3 audio
             # Payload format: {"data": "base64_encoded_mp3", "type": "audio/mp3"}
-            import base64
             audio_base64 = base64.b64encode(audio_data).decode('utf-8')
             
             payload = {

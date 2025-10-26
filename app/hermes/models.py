@@ -140,6 +140,10 @@ class ProcessRequestResult(BaseModel):
     message: str = Field(..., description="Response message")
     response_mode: ResponseMode = Field(..., description="Response delivery mode")
     audio_url: Optional[str] = Field(default=None, description="Audio URL if TTS mode")
+    tts_provider: Optional[str] = Field(
+        default=None,
+        description="TTS provider (elevenlabs, google, chatterbox)"
+    )
     user_id: str = Field(..., description="User identifier")
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     metadata: Dict[str, Any] = Field(default_factory=dict)
@@ -151,6 +155,7 @@ class ProcessRequestResult(BaseModel):
                 "message": "AI response",
                 "response_mode": "text",
                 "audio_url": None,
+                "tts_provider": None,
                 "user_id": "abc123",
                 "timestamp": "2024-01-01T00:00:00Z",
                 "metadata": {}

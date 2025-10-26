@@ -2,72 +2,69 @@
 # Hermes Backend - Unified Docker Compose
 # ==============================================================================
 # Usage:
-#   Development (with ML):  docker-compose up
-#   Production (no ML):     docker-compose -f docker-compose.yml up --build
-# 
+#   Development:  docker-compose up --build
+#   Production:   docker-compose -f docker-compose.yml up --build
+#
 # Environment variables can be set in .env file
 # ==============================================================================
-
-version: '3.8'
 
 services:
   hermes-backend:
     build:
       context: .
       dockerfile: Dockerfile
-      args:
-        # Install ML dependencies for local development
-        # Set to 'false' for production-like testing
-        INSTALL_ML: ${INSTALL_ML:-true}
-    image: hermes-backend:latest
+    image: hermes-backend:${APPLICATION_ENV:-latest}
     container_name: hermes-backend
     ports:
       - "${PORT:-8080}:8080"
+    
+    # Load environment variables from .env file
+    # Note: Add your real API keys to .env or create a .env.production file
+    env_file:
+      - .env
+      - .env.local
+    
+    # Override specific environment variables for Docker context
     environment:
-      # Application
-      - APPLICATION_ENV=${APPLICATION_ENV:-development}
-      - PORT=${PORT:-8080}
-      - APP_NAME=hermes-backend
-      
-      # TTS Configuration
-      - TTS_PROVIDER=${TTS_PROVIDER:-google}
-      - TTS_DEVICE=${TTS_DEVICE:-cpu}
-      
-      # Google Cloud
-      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
-      - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials.json
-      - GOOGLE_PROJECT_ID=${GOOGLE_PROJECT_ID}
-      - GOOGLE_PROJECT_LOCATION=${GOOGLE_PROJECT_LOCATION}
-      
-      # Supabase (Required for Gemini RAG functionality)
-      - SUPABASE_URL=${SUPABASE_PROJECT_URL}
-      - SUPABASE_DATABASE_URL=${SUPABASE_PROJECT_URL}
-      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
-      
-      # Cloud Storage
-      - GCS_BUCKET_NAME=${GCS_BUCKET_NAME}
-      
-      # Base Prompt
-      - BASE_PROMPT=${BASE_PROMPT}
-      
-      # Prism (Attendee API Integration)
-      - ATTENDEE_API_KEY=${ATTENDEE_API_KEY}
-      - PRISM_BASE_PROMPT=${PRISM_BASE_PROMPT:-You are Prism, an AI voice assistant for meetings.}
-      - WEBHOOK_BASE_URL=${WEBHOOK_BASE_URL}
-      - WEBSOCKET_BASE_URL=${WEBSOCKET_BASE_URL}
-    volumes:
-      # Mount code for hot-reload in development
-      - .:/app
-      # Preserve Python cache between runs
-      - python-cache:/home/hermes/.cache
+      - PORT=8080
+      - REDIS_URL=redis://redis:6379/0
+    
+    # Volumes - commented out for production, uncomment for development
+    # volumes:
+    #   - .:/app
+    
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8080/health', timeout=5)"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
+    
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # Redis service
+  redis:
+    image: redis:7-alpine
+    container_name: hermes-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    command: >
+      redis-server 
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
 volumes:
-  python-cache:
-    driver: local
+  redis-data:
+    name: hermes-redis-data

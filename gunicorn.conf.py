@@ -1,13 +1,4 @@
-# CRITICAL: Gevent monkey patching MUST be first
-# Only import and patch if gevent is available
-try:
-    import gevent.monkey
-    gevent.monkey.patch_all()
-    GEVENT_AVAILABLE = True
-except ImportError:
-    GEVENT_AVAILABLE = False
-    print("WARNING: gevent not available, falling back to sync worker")
-
+import os
 import multiprocessing
 
 # Server socket settings
@@ -15,11 +6,37 @@ bind = "0.0.0.0:8080"
 backlog = 2048
 
 # Worker processes
-# Note: Using gevent for WebSocket support (simple-websocket compatible)
-# Fallback to sync worker if gevent not available
-workers = 1  # Single worker for WebSocket session affinity
-worker_class = "gevent" if GEVENT_AVAILABLE else "sync"
-worker_connections = 1000 if GEVENT_AVAILABLE else 40
+# Note: Using sync worker since WebSockets are now handled by separate server
+# This prevents socket conflicts and ensures reliable HTTP response handling
+
+# Determine provider for optimal worker configuration
+TTS_PROVIDER = os.getenv('TTS_PROVIDER', 'elevenlabs').lower()
+
+if TTS_PROVIDER == 'chatterbox':
+    # Chatterbox: CPU-bound, high memory, NOT thread-safe
+    # Use single worker to prevent:
+    # - Model state corruption (race conditions)
+    # - Memory exhaustion (2.5GB per worker)
+    # - CPU contention (GIL thrashing)
+    workers = 1
+    worker_connections = 50  # Lower for CPU-bound work
+    print("⚠️  Chatterbox mode: Single worker (NOT suitable for high scale)")
+    print("    Recommendation: Use ElevenLabs or Google for production scale")
+
+else:
+    # ElevenLabs/Google: I/O-bound, low memory, thread-safe
+    # Use multiple workers for true parallelism and fault isolation
+    cpu_count = multiprocessing.cpu_count()
+    default_workers = min(cpu_count * 2, 8)  # 2x CPU cores, max 8
+    workers = int(os.getenv('GUNICORN_WORKERS', default_workers))
+    worker_connections = 1000
+    print(f"✅ {TTS_PROVIDER.title()} mode: {workers} workers × {worker_connections} connections")
+    print(f"   Theoretical capacity: {workers * worker_connections} concurrent connections")
+    print(f"   Expected throughput: ~{workers * 100} req/s")
+
+# Use sync worker for reliable HTTP handling (WebSockets handled by separate server)
+worker_class = "sync"
+print("✅ Using sync worker (WebSockets handled by separate server)")
 
 # Timeouts
 timeout = 120

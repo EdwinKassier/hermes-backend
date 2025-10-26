@@ -3,7 +3,7 @@ Prism Domain Schemas - Request/response validation using Pydantic
 
 Following patterns from hermes/schemas.py for consistency.
 """
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, validator
 from typing import Optional
 from datetime import datetime
 import re
@@ -20,13 +20,27 @@ class StartSessionRequest(BaseModel):
     @classmethod
     def validate_meeting_url(cls, v):
         """Validate Google Meet URL format."""
-        # Google Meet URL pattern: https://meet.google.com/abc-defg-hij
-        pattern = r'^https://meet\.google\.com/[a-z]{3}-[a-z]{4}-[a-z]{3}$'
-        if not re.match(pattern, v):
+        # Check it's a meet.google.com URL
+        if not v.startswith('https://meet.google.com/'):
             raise ValueError(
-                'Invalid Google Meet URL format. '
-                'Expected: https://meet.google.com/xxx-xxxx-xxx'
+                'URL must be a Google Meet link (https://meet.google.com/...)'
             )
+        
+        # Extract meeting code (everything after last /)
+        meeting_code = v.split('/')[-1]
+        
+        # Validate meeting code: alphanumeric and hyphens only
+        # Google Meet codes are typically 3 segments separated by hyphens
+        if not re.match(r'^[a-z0-9-]+$', meeting_code):
+            raise ValueError(
+                'Meeting code contains invalid characters. '
+                'Expected format: https://meet.google.com/xxx-xxxx-xxx'
+            )
+        
+        # Minimum reasonable length check
+        if len(meeting_code) < 7:
+            raise ValueError('Meeting code too short')
+        
         return v
 
 
@@ -84,6 +98,31 @@ class AttendeeWebhookPayload(BaseModel):
     bot_metadata: Optional[dict] = None
     data: dict
     timestamp: Optional[datetime] = None
+    
+    class Config:
+        # Allow extra fields for future compatibility
+        extra = "allow"
+        
+    @validator('bot_id')
+    def validate_bot_id(cls, v):
+        if not v or not isinstance(v, str):
+            raise ValueError('bot_id must be a non-empty string')
+        if len(v) < 3:
+            raise ValueError('bot_id must be at least 3 characters long')
+        return v
+    
+    @validator('data')
+    def validate_data(cls, v):
+        if not isinstance(v, dict):
+            raise ValueError('data must be a dictionary')
+        return v
+    
+    @validator('trigger')
+    def validate_trigger(cls, v):
+        valid_triggers = ['bot.state_change', 'transcript.update', 'bot.error']
+        if v not in valid_triggers:
+            raise ValueError(f'trigger must be one of: {valid_triggers}')
+        return v
 
 
 class BotStateChangeData(BaseModel):
@@ -115,6 +154,32 @@ class TranscriptUpdateData(BaseModel):
     timestamp_ms: int
     duration_ms: int
     transcription: dict  # Contains {"transcript": "text here"}
+    
+    @validator('speaker_name')
+    def validate_speaker_name(cls, v):
+        if not v or not isinstance(v, str):
+            raise ValueError('speaker_name must be a non-empty string')
+        return v
+    
+    @validator('timestamp_ms')
+    def validate_timestamp_ms(cls, v):
+        if not isinstance(v, int) or v <= 0:
+            raise ValueError('timestamp_ms must be a positive integer')
+        return v
+    
+    @validator('duration_ms')
+    def validate_duration_ms(cls, v):
+        if not isinstance(v, int) or v < 0:
+            raise ValueError('duration_ms must be a non-negative integer')
+        return v
+    
+    @validator('transcription')
+    def validate_transcription(cls, v):
+        if not isinstance(v, dict):
+            raise ValueError('transcription must be a dictionary')
+        if 'transcript' not in v:
+            raise ValueError('transcription must contain a "transcript" field')
+        return v
     
     @property
     def speaker(self) -> str:

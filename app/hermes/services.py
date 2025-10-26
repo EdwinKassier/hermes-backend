@@ -5,7 +5,6 @@ import logging
 from .models import (
     ProcessRequestResult,
     GeminiResponse,
-    TTSResponse,
     UserIdentity,
     ResponseMode,
     ConversationContext
@@ -79,8 +78,9 @@ class HermesService:
 
             # Generate TTS if requested
             audio_url = None
+            tts_provider = None
             if response_mode == ResponseMode.TTS:
-                audio_url = self.generate_tts(gemini_response.content)
+                audio_url, tts_provider = self.generate_tts(gemini_response.content)
 
             # Build result
             result = ProcessRequestResult(
@@ -88,6 +88,7 @@ class HermesService:
                 response_mode=response_mode,
                 audio_url=audio_url,
                 user_id=user_identity.user_id,
+                tts_provider=tts_provider,
                 metadata={
                     "model": gemini_response.model_used,
                     "prompt_length": len(text),
@@ -193,7 +194,7 @@ class HermesService:
             logger.error(f"AI generation failed: {e}")
             raise AIServiceError(f"Failed to generate AI response: {str(e)}")
 
-    def generate_tts(self, text: str) -> str:
+    def generate_tts(self, text: str) -> tuple[str, str]:
         """
         Generate Text-to-Speech audio (public method).
         
@@ -201,14 +202,15 @@ class HermesService:
             text: Text to synthesize
             
         Returns:
-            Cloud storage URL for the audio file
+            Tuple of (cloud_url, tts_provider)
             
         Raises:
             TTSServiceError: If TTS generation fails
         """
         try:
             tts_result = self.tts_service.generate_audio(text)
-            return tts_result['cloud_url']
+            tts_provider = self.tts_service.tts_provider
+            return tts_result['cloud_url'], tts_provider
 
         except (ValueError, TypeError, KeyError) as e:
             logger.error(f"TTS generation failed: {e}")

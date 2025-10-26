@@ -88,6 +88,9 @@ class PrismSession:
     # Response generation lock (prevent concurrent responses)
     is_generating_response: bool = False
     
+    # Transcript tracking (for user WebSocket streaming)
+    last_sent_transcript_index: int = 0
+    
     # Metadata
     error_message: Optional[str] = None
     last_activity: datetime = field(default_factory=datetime.utcnow)

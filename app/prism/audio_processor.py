@@ -13,6 +13,7 @@ Attendee Requirements (per documentation):
 import base64
 import io
 import logging
+from typing import List
 from pydub import AudioSegment
 
 from .constants import AUDIO_SAMPLE_RATE, AUDIO_BIT_DEPTH, AUDIO_CHANNELS
@@ -36,14 +37,14 @@ class AudioProcessor:
     ) -> bytes:
         """
         Convert audio to 16-bit PCM format required by Attendee.
-        
+
         Args:
             audio_data: Raw audio bytes from TTS service
             source_format: Source audio format ("mp3", "wav", "ogg", etc.)
-        
+
         Returns:
             bytes: Raw 16-bit PCM audio data
-        
+
         Raises:
             AudioProcessingError: If conversion fails
         """
@@ -112,7 +113,7 @@ class AudioProcessor:
     def split_into_chunks(
         pcm_data: bytes,
         chunk_size: int = 4096
-    ) -> list[bytes]:
+    ) -> List[bytes]:
         """
         Split PCM audio into chunks for streaming.
         
@@ -121,7 +122,7 @@ class AudioProcessor:
             chunk_size: Size of each chunk in bytes
         
         Returns:
-            list[bytes]: List of audio chunks
+            List[bytes]: List of audio chunks
         """
         chunks = []
         for i in range(0, len(pcm_data), chunk_size):

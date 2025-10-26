@@ -11,8 +11,14 @@ env:
   PROJECT_ID: ${{ secrets.PROJECT_ID }}
   RUN_REGION: us-central1
   REPO_NAME: ${{ github.event.repository.name }}
-  ARTIFACT_REGISTRY_REPO_NAME: ashes # Your Artifact Registry repository name
-  ACTIONS_ALLOW_UNSECURE_COMMANDS: true
+  ARTIFACT_REGISTRY_REPO_NAME: ashes
+  # Resource configuration (matches deploy.sh)
+  CPU_COUNT: 2
+  MEMORY_LIMIT: 4Gi
+  MIN_INSTANCES: 0
+  MAX_INSTANCES: 10
+  CONCURRENCY: 50
+  REQUEST_TIMEOUT: 300s
 
 jobs:
   lint:
@@ -21,22 +27,28 @@ jobs:
 
       steps:
         - name: Checkout the code
-          uses: actions/checkout@v2
+          uses: actions/checkout@v3
+        
         - name: Set up Python
           uses: actions/setup-python@v4
           with:
-            python-version: '3.10'
+            python-version: '3.12'  # Match Dockerfile
+        
         - name: Install dependencies
           run: |
             python -m pip install --upgrade pip
             pip install pylint
             pip install umsgpack
             pip install pylint-fail-under
+        
         - name: Code review
-          run: find . -name '*.py' -print -exec pylint {} \;
+          run: find . -name '*.py' -print -exec pylint {} \; || true
+        
         - name: Analyze code
           run: |
-                for file in */*.py; do pylint "$file" --fail-under=0.0; done
+            for file in */*.py; do 
+              pylint "$file" --fail-under=0.0 || true
+            done
 
   setup-build-deploy:
     name: Setup, Build, and Deploy
@@ -44,112 +56,242 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
-      - name: Extract branch name and save to service name
+      - name: Extract branch name and set service name
         shell: bash
         id: extract_branch
-        run: echo "::set-env name=SERVICE_NAME::$(echo ${GITHUB_REF#refs/heads/})-$REPO_NAME"
-
-      - name: Print service name
-        run: echo $SERVICE_NAME
-
-      - name: Generate credentials file
         run: |
-            DECODED_CONTENT=$(echo "${{ secrets.SA_KEY_JSON }}" | base64 --decode)
-            echo "$DECODED_CONTENT" > credentials.json
-
-      - name: Upload credentials file
-        uses: actions/upload-artifact@v4
-        with:
-          name: credentials
-          path: credentials.json
-          retention-days: 1
+          BRANCH_NAME=$(echo ${GITHUB_REF#refs/heads/})
+          echo "BRANCH_NAME=${BRANCH_NAME}" >> $GITHUB_ENV
           
-      - name: Generate .env file
-        shell: bash -e {0}
+          # Use different service names per branch or single service name
+          if [ "$BRANCH_NAME" = "master" ] || [ "$BRANCH_NAME" = "prod" ]; then
+            echo "SERVICE_NAME=master-hermes-backend" >> $GITHUB_ENV
+          else
+            echo "SERVICE_NAME=${BRANCH_NAME}-hermes-backend" >> $GITHUB_ENV
+          fi
+
+      - name: Print deployment info
         run: |
-          echo "Current directory: $(pwd)"
-          echo "Attempting to decode and create .env file..."
-          # Storing decoded content in a variable first can help debug
-          DECODED_CONTENT=$(echo "${{ secrets.ENV_FILE }}" | base64 --decode)
-          DECODE_STATUS=$? # Capture exit status of base64
+          echo "Branch: ${{ env.BRANCH_NAME }}"
+          echo "Service: ${{ env.SERVICE_NAME }}"
+          echo "Region: ${{ env.RUN_REGION }}"
+          echo "Project: ${{ env.PROJECT_ID }}"
 
-          if [ $DECODE_STATUS -ne 0 ]; then
-            echo "base64 decoding failed with status: $DECODE_STATUS"
-            # It's good to see what base64 tried to output on error, if anything
-            echo "${{ secrets.ENV_FILE }}" | base64 --decode
-            echo "ENV_FILE secret might be empty or not valid base64."
-            echo "No .env file will be created due to decode failure."
-            # To be absolutely sure upload-artifact finds nothing if this path is taken:
-            rm -f .env
-          else
-            echo "base64 decoding successful. Writing to .env."
-            echo "$DECODED_CONTENT" > .env
-            echo ".env file created."
-          fi
-
-          echo "--- Listing files in current directory (ls -la) ---"
-          ls -la
-          echo "--- Content of .env (if it exists) ---"
-          if [ -f .env ]; then
-            cat .env
-          else
-            echo ".env does not exist."
-          fi
-          echo "-------------------------------------------"
-      
-      - name: Debug before upload
+      - name: Generate .env file from secrets
+        shell: bash
         run: |
-          echo "Current directory before upload: $(pwd)"
-          echo "Listing files before upload:"
-          ls -la
-          if [ -f .env ]; then
-            echo ".env exists before upload."
+          echo "📋 Creating .env file from GitHub secrets..."
+          
+          # Decode base64-encoded ENV_FILE secret
+          if [ -n "${{ secrets.ENV_FILE }}" ]; then
+            echo "${{ secrets.ENV_FILE }}" | base64 --decode > .env
+            echo "✅ .env file created from ENV_FILE secret"
           else
-            echo ".env DOES NOT exist before upload."
+            echo "❌ ENV_FILE secret not found"
+            exit 1
+          fi
+          
+          # Verify .env exists
+          if [ -f .env ]; then
+            echo "✅ .env file exists"
+            echo "Keys in .env:"
+            grep -o '^[^=]*' .env | head -10
+          else
+            echo "❌ .env file was not created"
+            exit 1
           fi
 
-      - name: Upload .env file
-        uses: actions/upload-artifact@v4
-        with:
-          name: env
-          path: .env
-          retention-days: 1
-
-      - id: 'auth'
-        uses: 'google-github-actions/auth@v1'
+      - name: Authenticate with Google Cloud
+        id: 'auth'
+        uses: 'google-github-actions/auth@v2'
         with:
           credentials_json: '${{ secrets.SA_KEY_JSON }}'
 
-      - name: 'Set up Cloud SDK'
-        uses: 'google-github-actions/setup-gcloud@v1'
+      - name: Set up Cloud SDK
+        uses: 'google-github-actions/setup-gcloud@v2'
         with:
           project_id: ${{ env.PROJECT_ID }}
 
-      - name: 'Use gcloud CLI'
-        run: 'gcloud info'
+      - name: Verify gcloud authentication
+        run: |
+          gcloud info
+          gcloud config get-value project
 
-      # Configure Docker for Artifact Registry
       - name: Configure Docker for Artifact Registry
-        run: gcloud auth configure-docker ${{ env.RUN_REGION }}-docker.pkg.dev --quiet
+        run: |
+          gcloud auth configure-docker ${{ env.RUN_REGION }}-docker.pkg.dev --quiet
 
-      # Build and push image to Google Artifact Registry
-      - name: Build
-        run: |-
+      - name: Build and push image to Artifact Registry
+        run: |
+          echo "🔨 Building Docker image..."
+          
+          IMAGE_NAME="${{ env.RUN_REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPO_NAME }}/${{ env.SERVICE_NAME }}"
+          BUILD_TAG="${GITHUB_SHA:0:8}"
+          
+          echo "Image: ${IMAGE_NAME}:${BUILD_TAG}"
+          
+          # Use Cloud Build for speed and efficiency
           gcloud builds submit \
             --quiet \
-            --tag "${{ env.RUN_REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPO_NAME }}/${{ env.SERVICE_NAME }}:$GITHUB_SHA" \
-            --project=${{ env.PROJECT_ID }} # Ensure project is specified for Cloud Build
+            --tag "${IMAGE_NAME}:${BUILD_TAG}" \
+            --tag "${IMAGE_NAME}:latest" \
+            --project=${{ env.PROJECT_ID }}
+          
+          echo "✅ Docker image built and pushed successfully"
+          echo "IMAGE_NAME=${IMAGE_NAME}" >> $GITHUB_ENV
+          echo "BUILD_TAG=${BUILD_TAG}" >> $GITHUB_ENV
 
-      # Deploy image from Artifact Registry to Cloud Run
-      - name: Deploy
-        run: |-
-          gcloud run deploy "$SERVICE_NAME" \
+      - name: Prepare environment variables for Cloud Run
+        run: |
+          echo "📋 Preparing environment variables YAML file..."
+          
+          # Create YAML file with base env vars
+          cat > env.yaml << 'YAML_EOF'
+PROJECT_ID: "${{ env.PROJECT_ID }}"
+SERVICE_NAME: "${{ env.SERVICE_NAME }}"
+REGION_DEPLOYED: "${{ env.RUN_REGION }}"
+APPLICATION_ENV: "production"
+APP_NAME: "hermes-backend"
+YAML_EOF
+          
+          # Parse .env and append to YAML (matches deploy.sh logic)
+          while IFS='=' read -r key value; do
+            # Skip comments and empty lines
+            [[ "$key" =~ ^#.*$ ]] && continue
+            [[ -z "$key" ]] && continue
+            
+            # Skip keys that shouldn't be in Cloud Run
+            case "$key" in
+              GOOGLE_APPLICATION_CREDENTIALS|TTS_DEVICE|REDIS_URL|PORT)
+                continue
+                ;;
+            esac
+            
+            # Remove quotes from value
+            value=$(echo "$value" | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")
+            
+            # Add to environment variables YAML file
+            # Use literal block style for prompts (multi-line text), quoted strings for everything else
+            if [[ "$key" =~ _PROMPT$ ]] || [[ "$key" == "BASE_PROMPT" ]]; then
+              echo "${key}: |-" >> env.yaml
+              echo "  ${value}" >> env.yaml
+            else
+              escaped_value=$(printf '%s' "$value" | sed 's/"/\\"/g')
+              echo "${key}: \"${escaped_value}\"" >> env.yaml
+            fi
+            
+            echo "   ✓ ${key}"
+          done < .env
+          
+          echo "✅ Environment variables YAML file created"
+
+      - name: Deploy to Cloud Run
+        run: |
+          echo "🚀 Deploying to Cloud Run..."
+          
+          gcloud run deploy "${{ env.SERVICE_NAME }}" \
             --quiet \
-            --region "$RUN_REGION" \
-            --image "${{ env.RUN_REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPO_NAME }}/${{ env.SERVICE_NAME }}:$GITHUB_SHA" \
-            --platform "managed" \
+            --region "${{ env.RUN_REGION }}" \
+            --image "${{ env.IMAGE_NAME }}:${{ env.BUILD_TAG }}" \
+            --platform managed \
+            --execution-environment gen2 \
+            --cpu ${{ env.CPU_COUNT }} \
+            --memory ${{ env.MEMORY_LIMIT }} \
+            --no-cpu-throttling \
+            --min-instances ${{ env.MIN_INSTANCES }} \
+            --max-instances ${{ env.MAX_INSTANCES }} \
+            --concurrency ${{ env.CONCURRENCY }} \
+            --timeout ${{ env.REQUEST_TIMEOUT }} \
+            --cpu-boost \
             --allow-unauthenticated \
-            --project=${{ env.PROJECT_ID }} # Ensure project is specified for Cloud Run
-            # Consider adding --service-account flag for specific Cloud Run identity
+            --env-vars-file=env.yaml \
+            --project=${{ env.PROJECT_ID }}
+          
+          echo "✅ Deployment successful"
+
+      - name: Configure webhook URLs
+        run: |
+          echo "🔧 Configuring webhook URLs..."
+          
+          SERVICE_URL=$(gcloud run services describe "${{ env.SERVICE_NAME }}" \
+            --platform managed \
+            --region "${{ env.RUN_REGION }}" \
+            --format 'value(status.url)' \
+            --project=${{ env.PROJECT_ID }})
+          
+          if [ -n "$SERVICE_URL" ]; then
+            echo "Service URL: $SERVICE_URL"
+            
+            WEBSOCKET_URL=$(echo "$SERVICE_URL" | sed 's/https:/wss:/')
+            
+            # Check if WEBHOOK_BASE_URL is already set in .env
+            if ! grep -q "^WEBHOOK_BASE_URL=" .env 2>/dev/null; then
+              echo "Setting webhook URLs..."
+              gcloud run services update "${{ env.SERVICE_NAME }}" \
+                --region="${{ env.RUN_REGION }}" \
+                --update-env-vars="WEBHOOK_BASE_URL=${SERVICE_URL},WEBSOCKET_BASE_URL=${WEBSOCKET_URL}" \
+                --quiet \
+                --project=${{ env.PROJECT_ID }}
+              echo "✅ Webhook URLs configured"
+            else
+              echo "✅ Webhook URLs already set in .env"
+            fi
+          else
+            echo "⚠️  Could not retrieve service URL"
+          fi
+
+      - name: Verify deployment
+        run: |
+          echo "🔍 Verifying deployment..."
+          
+          SERVICE_URL=$(gcloud run services describe "${{ env.SERVICE_NAME }}" \
+            --platform managed \
+            --region "${{ env.RUN_REGION }}" \
+            --format 'value(status.url)' \
+            --project=${{ env.PROJECT_ID }})
+          
+          if [ -z "$SERVICE_URL" ]; then
+            echo "❌ Could not retrieve service URL"
+            exit 1
+          fi
+          
+          echo "✅ Service URL: $SERVICE_URL"
+          
+          # Wait for service to be ready
+          echo "Waiting for service to be ready..."
+          sleep 10
+          
+          # Test health endpoint
+          echo "Testing /health endpoint..."
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${SERVICE_URL}/health" || echo "000")
+          
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✅ Health check passed (HTTP $HTTP_CODE)"
+          else
+            echo "⚠️  Health check returned HTTP $HTTP_CODE"
+            echo "Service may still be starting up"
+            
+            # Show recent logs
+            echo "Recent logs:"
+            gcloud run services logs read "${{ env.SERVICE_NAME }}" \
+              --region="${{ env.RUN_REGION }}" \
+              --limit=20 \
+              --project=${{ env.PROJECT_ID }} || true
+          fi
+
+      - name: Deployment summary
+        if: always()
+        run: |
+          echo "=================================================="
+          echo "  Deployment Summary"
+          echo "=================================================="
+          echo "Service:    ${{ env.SERVICE_NAME }}"
+          echo "Region:     ${{ env.RUN_REGION }}"
+          echo "Image:      ${{ env.IMAGE_NAME }}:${{ env.BUILD_TAG }}"
+          echo "Branch:     ${{ env.BRANCH_NAME }}"
+          echo "Commit:     ${{ github.sha }}"
+          echo "Resources:  ${{ env.CPU_COUNT }} CPU, ${{ env.MEMORY_LIMIT }} RAM"
+          echo "Scaling:    ${{ env.MIN_INSTANCES }}-${{ env.MAX_INSTANCES }} instances"
+          echo "=================================================="

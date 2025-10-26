@@ -109,6 +109,9 @@ class ProcessRequestResponseSchema(BaseModel):
     message: str = Field(..., description="The AI-generated response")
     response_mode: str = Field(..., description="Response delivery mode")
     wave_url: Optional[str] = Field(None, description="Audio URL if TTS mode")
+    tts_provider: Optional[str] = Field(
+        None, description="TTS provider (elevenlabs, google, chatterbox)"
+    )
     user_id: str = Field(..., description="User identifier")
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     metadata: Dict[str, Any] = Field(default_factory=dict)
@@ -120,6 +123,7 @@ class ProcessRequestResponseSchema(BaseModel):
                 "message": "AI generated response",
                 "response_mode": "text",
                 "wave_url": None,
+                "tts_provider": None,
                 "user_id": "abc123",
                 "timestamp": "2024-01-01T00:00:00Z",
                 "metadata": {"model": "gemini-pro", "tokens": 150}

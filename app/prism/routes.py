@@ -11,6 +11,7 @@ Following patterns from hermes/routes.py for consistency.
 import json
 import logging
 import os
+import time
 from datetime import datetime
 from flask import Blueprint, request, jsonify
 from simple_websocket import Server, ConnectionClosed
@@ -33,8 +34,7 @@ logger = logging.getLogger(__name__)
 # Create blueprint
 prism_bp = Blueprint('prism', __name__, url_prefix='/api/v1/prism')
 
-# Get service
-prism_service = get_prism_service()
+# Service will be lazy-loaded in each route to avoid initialization errors at import time
 
 
 # ==============================================================================
@@ -165,7 +165,7 @@ def start_session():
                         
                         # Handle ping
                         if message.get("type") == "ping":
-                            ws.send(json.dumps({"type": "pong"}))
+                            _ws_send_ping(ws)
                         
                         # Handle close request
                         elif message.get("action") == "close":
@@ -176,6 +176,7 @@ def start_session():
                 
                 # Send periodic status updates
                 session = prism_service.get_session(session_id)
+                _ws_send_status(ws, session, "Session active")
                 
                 # Send any new transcripts (check if there are new ones)
                 # Note: In a real implementation, we'd track which transcripts were sent
@@ -256,10 +257,8 @@ def bot_audio():
         logger.info(f"Bot WebSocket connected for session {session_id}")
         
         # Send connection confirmation
-        ws.send(json.dumps({
-            "type": "status",
-            "message": "Bot connected"
-        }))
+        session = prism_service.get_session(session_id)
+        _ws_send_status(ws, session, "Bot connected")
         
         # Handle bidirectional communication
         while True:
@@ -297,7 +296,6 @@ def bot_audio():
                         # For the first 10 chunks, send IMMEDIATELY with no delay to establish stream
                         # For chunks 10-20, send at 10% speed
                         # Then pace normally to match playback duration
-                        import time
                         chunk_duration = len(audio_chunk.data) / 32000.0  # seconds
                         
                         if audio_chunk.sequence < 10:
@@ -312,6 +310,8 @@ def bot_audio():
                             time.sleep(chunk_duration)
                     except Exception as e:
                         logger.error(f"Failed to send audio chunk: {str(e)}")
+                        # Break out of audio sending loop on error to prevent cascade
+                        break
                 
             except TimeoutError:
                 # Normal timeout, continue loop
@@ -407,7 +407,7 @@ def webhook():
         payload = request.get_json()
         
         if not payload:
-            return jsonify({"error": "No payload"}), 400
+            return _send_error_response("No payload provided", 400, "InvalidRequest")
         
         # Log raw payload for debugging
         logger.info(f"=== WEBHOOK RECEIVED === Payload: {payload}")
@@ -418,13 +418,13 @@ def webhook():
             logger.info(f"Webhook validated: trigger={webhook_data.trigger}, bot_id={webhook_data.bot_id}, data={webhook_data.data}")
         except ValidationError as e:
             logger.error(f"Invalid webhook payload: {str(e)}")
-            return jsonify({"error": str(e)}), 400
+            return _send_error_response(str(e), 400, "InvalidPayload")
         
         # Get session by bot ID
         session = prism_service.get_session_by_bot_id(webhook_data.bot_id)
         if not session:
             logger.warning(f"Received webhook for unknown bot: {webhook_data.bot_id}")
-            return jsonify({"error": "Bot not found"}), 404
+            return _send_error_response("Bot not found", 404, "BotNotFound")
         
         # Handle different triggers
         if webhook_data.trigger == WebhookTrigger.BOT_STATE_CHANGE:
@@ -438,12 +438,13 @@ def webhook():
         
         else:
             logger.warning(f"Unknown webhook trigger: {webhook_data.trigger}")
+            return _send_error_response(f"Unknown trigger: {webhook_data.trigger}", 400, "InvalidTrigger")
         
         return jsonify({"status": "ok"}), 200
     
     except Exception as e:
         logger.error(f"Webhook error: {str(e)}")
-        return jsonify({"error": str(e)}), 500
+        return _send_error_response(str(e), 500, "WebhookError")
 
 
 def _handle_bot_state_change(session_id: str, webhook_data: AttendeeWebhookPayload):
@@ -493,20 +494,35 @@ def _handle_bot_error(session_id: str, webhook_data: AttendeeWebhookPayload):
 # HELPER FUNCTIONS
 # ==============================================================================
 
-def _ws_send_error(ws: Server, message: str):
-    """Send error message via WebSocket."""
+def _send_error_response(message: str, status_code: int, error_code: str = None):
+    """Send standardized error response for HTTP endpoints."""
+    response = ErrorResponse(
+        error=error_code or "UnknownError",
+        message=message,
+        status_code=status_code
+    )
+    return jsonify(response.dict()), status_code
+
+
+def _ws_send_error(ws: Server, message: str, error_code: str = None):
+    """Send standardized error message via WebSocket."""
     try:
-        ws.send(json.dumps({
-            "type": "error",
+        error_data = {
+            "type": MESSAGE_TYPE_ERROR,
             "message": message,
-            "timestamp": datetime.utcnow().isoformat()
-        }))
+            "timestamp": datetime.utcnow().isoformat(),
+            "error_code": error_code
+        }
+        ws.send(json.dumps(error_data))
+        logger.debug(f"Sent WebSocket error: {message}")
+    except ConnectionClosed:
+        logger.debug("Cannot send error - WebSocket connection closed")
     except Exception as e:
         logger.error(f"Failed to send error via WebSocket: {str(e)}")
 
 
 def _ws_send_status(ws: Server, session, message: str):
-    """Send status update via WebSocket."""
+    """Send standardized status update via WebSocket."""
     try:
         response = SessionStatusResponse(
             session_id=session.session_id,
@@ -517,8 +533,26 @@ def _ws_send_status(ws: Server, session, message: str):
         )
         # Use model_dump_json() to properly serialize datetime fields
         ws.send(response.model_dump_json())
+        logger.debug(f"Sent WebSocket status: {message}")
+    except ConnectionClosed:
+        logger.debug("Cannot send status - WebSocket connection closed")
     except Exception as e:
         logger.error(f"Failed to send status via WebSocket: {str(e)}")
+
+
+def _ws_send_ping(ws: Server):
+    """Send standardized pong message via WebSocket."""
+    try:
+        pong_data = {
+            "type": MESSAGE_TYPE_PONG,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        ws.send(json.dumps(pong_data))
+        logger.debug("Sent WebSocket pong")
+    except ConnectionClosed:
+        logger.debug("Cannot send pong - WebSocket connection closed")
+    except Exception as e:
+        logger.error(f"Failed to send pong via WebSocket: {str(e)}")
 
 
 # ==============================================================================

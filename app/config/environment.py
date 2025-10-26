@@ -16,6 +16,7 @@ def load_environment():
         'GOOGLE_API_KEY': environ.get('GOOGLE_API_KEY'),
         'GOOGLE_PROJECT_ID': environ.get('GOOGLE_PROJECT_ID'),
         'GOOGLE_PROJECT_LOCATION': environ.get('GOOGLE_PROJECT_LOCATION'),
+        'EL_API_KEY': environ.get('EL_API_KEY'),  # ElevenLabs API key
         'PORT': int(environ.get('PORT', 8080)),
         # Supabase Vector Store Configuration
         'SUPABASE_DATABASE_URL': environ.get('SUPABASE_DATABASE_URL'),

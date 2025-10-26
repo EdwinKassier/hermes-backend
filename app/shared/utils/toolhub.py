@@ -7,46 +7,57 @@ import os
 import importlib
 import inspect
 from typing import List
-from langchain.tools import BaseTool
 from pathlib import Path
 
-def get_all_tools() -> List[BaseTool]:
+# Optional LangChain dependency
+try:
+    from langchain.tools import BaseTool
+    LANGCHAIN_AVAILABLE = True
+except ImportError:
+    BaseTool = None
+    LANGCHAIN_AVAILABLE = False
+
+def get_all_tools():
     """
     Returns a list of all available tools by dynamically loading them from the tools directory.
-    
+
     Returns:
-        list[BaseTool]: List of all available tool instances
+        list[BaseTool] or list: List of all available tool instances, or empty list if LangChain not available
     """
+    if not LANGCHAIN_AVAILABLE or BaseTool is None:
+        print("LangChain not available. No tools loaded.")
+        return []
+
     tools = []
     tools_dir = Path(__file__).parent / "tools"
-    
+
     # Skip __init__.py and __pycache__
     for file in tools_dir.glob("*.py"):
         if file.name.startswith("__"):
             continue
-            
+
         # Convert file path to module path
-        module_name = f"app.utils.tools.{file.stem}"
+        module_name = f"app.shared.utils.tools.{file.stem}"
         try:
             # Import the module
             module = importlib.import_module(module_name)
-            
+
             # Find all classes in the module that inherit from BaseTool
             for name, obj in inspect.getmembers(module):
-                if (inspect.isclass(obj) and 
-                    issubclass(obj, BaseTool) and 
+                if (inspect.isclass(obj) and
+                    issubclass(obj, BaseTool) and
                     obj != BaseTool):
                     tools.append(obj())
-                    
+
         except Exception as e:
             print(f"Error loading tool from {file}: {e}")
             
     return tools
 
-def get_tool_by_name(tool_name: str) -> BaseTool | None:
+def get_tool_by_name(tool_name: str):
     """
     Get a specific tool by its name.
-    
+
     Args:
         tool_name (str): The name of the tool to retrieve
 

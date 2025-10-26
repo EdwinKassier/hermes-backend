@@ -123,6 +123,7 @@ def process_request():
         message=result.message,
         response_mode=result.response_mode.value,
         wave_url=result.audio_url,
+        tts_provider=result.tts_provider,
         user_id=result.user_id,
         timestamp=result.timestamp,
         metadata=result.metadata

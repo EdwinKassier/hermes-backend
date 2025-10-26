@@ -157,16 +157,12 @@ fi
 export WEBHOOK_BASE_URL=$NGROK_URL
 export WEBSOCKET_BASE_URL=$NGROK_WSS_URL
 
-# Configure gevent DNS resolver to fix DNS issues with Google APIs
-export GEVENT_RESOLVER=dnspython
-
 echo "📝 Environment configured:"
 echo "   WEBHOOK_BASE_URL=$WEBHOOK_BASE_URL"
 echo "   WEBSOCKET_BASE_URL=$WEBSOCKET_BASE_URL"
-echo "   GEVENT_RESOLVER=$GEVENT_RESOLVER"
 echo ""
 
-# Use gunicorn with gevent worker for WebSocket support
+# Use gunicorn with sync worker (WebSockets handled by separate server)
 ./venv/bin/gunicorn --config gunicorn.conf.py run:app &
 SERVER_PID=$!
 

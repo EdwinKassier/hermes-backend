@@ -1,5 +1,8 @@
 # Hermes Backend Makefile
 
+# Use 'venv' as the virtual environment directory name for consistency.
+VENV_DIR=venv
+
 .PHONY: help install dev dev-ngrok test lint clean
 
 help: ## Show this help message
@@ -7,13 +10,13 @@ help: ## Show this help message
 	@echo ""
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
-install: ## Install dependencies
-	python3 -m venv venv
-	./venv/bin/pip install --upgrade pip
-	./venv/bin/pip install -r requirements.txt
+install: ## Install dependencies using uv
+	@command -v uv >/dev/null 2>&1 || { echo "Error: uv is not installed. Please install it from https://astral.sh/uv/install.sh"; exit 1; }
+	uv venv $(VENV_DIR)
+	uv sync
 
 dev: ## Start development server (local only)
-	source venv/bin/activate && python run.py
+	uv run python run.py
 
 dev-ngrok: ## Start development server with ngrok tunnel (for Prism testing)
 	./scripts/development/dev_with_ngrok.sh
@@ -22,21 +25,21 @@ ngrok: ## Start only ngrok tunnel (server must be running separately)
 	./scripts/development/start_ngrok.sh
 
 ngrok-status: ## Show ngrok tunnel status
-	@python3 scripts/development/get_ngrok_url.py || echo "ngrok not running"
+	@uv run python scripts/development/get_ngrok_url.py || echo "ngrok not running"
 
 ngrok-url: ## Get ngrok URL and print export statements
-	@python3 scripts/development/get_ngrok_url.py --env
+	@uv run python scripts/development/get_ngrok_url.py --env
 
 ngrok-update: ## Update .env.local with current ngrok URL
-	@python3 scripts/development/get_ngrok_url.py --update
+	@uv run python scripts/development/get_ngrok_url.py --update
 
 test: ## Run tests
-	source venv/bin/activate && pytest
+	uv run pytest
 
 lint: ## Run linters
-	source venv/bin/activate && flake8 app/
+	uv run flake8 app/
 
-clean: ## Clean up temporary files
+clean: ## Clean up temporary files and the virtual environment
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete
 	find . -type f -name "*.pyo" -delete
@@ -46,6 +49,7 @@ clean: ## Clean up temporary files
 	rm -f .coverage
 	rm -f .env.local
 	rm -f /tmp/ngrok.log
+	rm -rf $(VENV_DIR)
 
 install-ngrok: ## Install ngrok (macOS only)
 	@command -v brew >/dev/null 2>&1 || { echo "Error: Homebrew not installed. Install from https://brew.sh"; exit 1; }

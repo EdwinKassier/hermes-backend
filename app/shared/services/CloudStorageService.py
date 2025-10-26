@@ -3,8 +3,15 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional, Tuple
 
-from google.cloud import storage
-from google.oauth2 import service_account # Used if explicit credentials path is given
+# Optional Google Cloud dependencies
+try:
+    from google.cloud import storage
+    from google.oauth2 import service_account
+    GOOGLE_CLOUD_AVAILABLE = True
+except ImportError:
+    storage = None
+    service_account = None
+    GOOGLE_CLOUD_AVAILABLE = False
 
 # Configure logging for the application
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -30,8 +37,16 @@ class CloudStorageService:
             FileNotFoundError: If the specified credentials_path does not exist.
         """
         self.bucket_name = bucket_name
-        self.client: Optional[storage.Client] = None
-        self.bucket: Optional[storage.Bucket] = None
+        self.client = None
+        self.bucket = None
+
+        # Check if Google Cloud dependencies are available
+        if not GOOGLE_CLOUD_AVAILABLE:
+            logger.warning(
+                "Google Cloud dependencies not available. "
+                "Install with: pip install google-cloud-storage google-cloud-texttospeech"
+            )
+            return
 
         try:
             if credentials_path:
@@ -56,7 +71,7 @@ class CloudStorageService:
             logger.error(f"Failed to initialize CloudStorageService for bucket '{bucket_name}': {e}")
             raise RuntimeError(f"CloudStorageService initialization failed: {e}")
 
-    def upload_file(self, local_file_path: str, destination_blob_name: str) -> storage.blob.Blob:
+    def upload_file(self, local_file_path: str, destination_blob_name: str):
         """
         Uploads a local file to the specified destination in the GCS bucket.
 
@@ -66,7 +81,8 @@ class CloudStorageService:
                                          This can include subdirectories (e.g., "audio/my_file.wav").
 
         Returns:
-            google.cloud.storage.blob.Blob: The Blob object representing the uploaded file.
+            google.cloud.storage.blob.Blob or None: The Blob object representing the uploaded file,
+                                                    or None if GCS is not available.
 
         Raises:
             FileNotFoundError: If the local file does not exist.
@@ -76,8 +92,12 @@ class CloudStorageService:
         if not os.path.exists(local_file_path):
             raise FileNotFoundError(f"Local file not found: {local_file_path}")
 
-        if not self.bucket:
-            raise RuntimeError("GCS bucket not initialized. Call __init__ first.")
+        if not GOOGLE_CLOUD_AVAILABLE or not self.client or not self.bucket:
+            logger.warning(
+                f"Cloud storage not available. Skipping upload of '{local_file_path}' "
+                f"to '{destination_blob_name}'. Install google-cloud-storage to enable uploads."
+            )
+            return None
 
         blob = self.bucket.blob(destination_blob_name)
         try:
@@ -89,7 +109,7 @@ class CloudStorageService:
             logger.error(f"Failed to upload '{local_file_path}' to '{destination_blob_name}': {e}")
             raise
 
-    def get_signed_url(self, blob_name: str, expiration_seconds: int = 3600) -> str:
+    def get_signed_url(self, blob_name: str, expiration_seconds: int = 3600) -> Optional[str]:
         """
         Generates a signed URL for a specific blob (file) in the GCS bucket.
         This URL provides temporary access to the file without requiring Google credentials.
@@ -100,15 +120,19 @@ class CloudStorageService:
                                       Defaults to 3600 seconds (1 hour).
 
         Returns:
-            str: The generated signed URL.
+            str or None: The generated signed URL, or None if GCS is not available.
 
         Raises:
             FileNotFoundError: If the specified blob does not exist in the bucket.
             RuntimeError: If the GCS bucket is not initialized.
             Exception: For any GCS signed URL generation errors.
         """
-        if not self.bucket:
-            raise RuntimeError("GCS bucket not initialized. Call __init__ first.")
+        if not GOOGLE_CLOUD_AVAILABLE or not self.client or not self.bucket:
+            logger.warning(
+                f"Cloud storage not available. Cannot generate signed URL for '{blob_name}'. "
+                f"Install google-cloud-storage to enable signed URLs."
+            )
+            return None
 
         blob = self.bucket.blob(blob_name)
         # Ensure the blob exists before attempting to generate a signed URL

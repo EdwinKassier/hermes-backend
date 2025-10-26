@@ -88,7 +88,7 @@ echo ""
 echo "Your Docker image is ready for deployment."
 echo ""
 echo "📋 Next steps:"
-echo "   1. Deploy to Cloud Run: ./scripts/deployment/deploy-fixed.sh"
+echo "   1. Deploy to Cloud Run: ./scripts/deployment/deploy.sh"
 echo "   2. Monitor logs: gcloud run logs tail master-hermes-backend --region=us-central1"
 echo ""
 

@@ -53,6 +53,9 @@ docker-compose*.yml
 README.md
 *.md
 docs/
+# But keep agent prompts (required for AI generation)
+!docs/AgentPrompts/
+!docs/AgentPrompts/*.md
 *.png
 *.jpg
 *.jpeg
@@ -69,7 +72,8 @@ log/*.log
 # Environment & Secrets (CRITICAL - Never copy these!)
 .env
 .env.*
-credentials*.json
+# credentials.json is included for Cloud Run deployment
+# credentials*.json
 *-key.json
 *.pem
 *.key
@@ -107,3 +111,17 @@ temp/
 # OS
 Thumbs.db
 .DS_Store
+
+# uv-specific
+uv.lock
+.uv-cache/
+
+# Development and testing files
+.env.local
+.env.*.local
+ngrok.log
+*.log
+
+# Temporary files
+/tmp/
+/temp/

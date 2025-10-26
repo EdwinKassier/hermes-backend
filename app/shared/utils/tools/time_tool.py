@@ -5,8 +5,15 @@ Tool for getting current time information in different timezones.
 from typing import Type
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from langchain.tools import BaseTool
 from pydantic import BaseModel, Field
+
+# Optional LangChain dependency
+try:
+    from langchain.tools import BaseTool
+    LANGCHAIN_AVAILABLE = True
+except ImportError:
+    BaseTool = object  # Fallback base class
+    LANGCHAIN_AVAILABLE = False
 
 
 class TimeInfoInput(BaseModel):
@@ -32,14 +39,15 @@ class TimeInfoTool(BaseTool):
     def _run(self, timezone: str = "UTC") -> str:
         try:
             current_time = datetime.now(ZoneInfo(timezone))
-            return {
-                "current_time": (
-                    current_time.strftime("%Y-%m-%d %H:%M:%S %Z")
-                ),
-                "timezone": timezone,
-                "timestamp": current_time.timestamp(),
-                "iso_format": current_time.isoformat()
-            }
+            formatted_time = current_time.strftime("%Y-%m-%d %H:%M:%S %Z")
+            iso_time = current_time.isoformat()
+            
+            # Return formatted string for LangChain
+            return (
+                f"Current time in {timezone}: {formatted_time}\n"
+                f"ISO format: {iso_time}\n"
+                f"Unix timestamp: {current_time.timestamp()}"
+            )
         except Exception as e:
             return f"Error getting time information: {str(e)}"
 
