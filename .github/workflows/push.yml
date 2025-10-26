@@ -164,17 +164,59 @@ jobs:
           echo "Image: ${IMAGE_NAME}:${BUILD_TAG}"
           echo "Commit SHA: ${{ github.sha }}"
           echo "Build Tag: ${BUILD_TAG}"
+          echo ""
           
-          # Use Cloud Build for speed and efficiency
+          # Build and push with commit SHA tag
+          echo "Building with Cloud Build..."
           gcloud builds submit \
-            --quiet \
             --tag "${IMAGE_NAME}:${BUILD_TAG}" \
-            --tag "${IMAGE_NAME}:latest" \
+            --project=${{ env.PROJECT_ID }} \
+            --timeout=20m
+          
+          BUILD_STATUS=$?
+          if [ $BUILD_STATUS -ne 0 ]; then
+            echo "❌ Cloud Build failed with exit code: $BUILD_STATUS"
+            exit 1
+          fi
+          
+          echo "✅ Image built: ${IMAGE_NAME}:${BUILD_TAG}"
+          
+          # Tag the image with 'latest' as well
+          echo "Tagging image as :latest..."
+          gcloud artifacts docker tags add \
+            "${IMAGE_NAME}:${BUILD_TAG}" \
+            "${IMAGE_NAME}:latest" \
             --project=${{ env.PROJECT_ID }}
           
+          echo "✅ Image tagged: ${IMAGE_NAME}:latest"
+          echo ""
           echo "✅ Docker image built and pushed successfully"
+          
+          # Export for use in later steps
           echo "IMAGE_NAME=${IMAGE_NAME}" >> $GITHUB_ENV
           echo "BUILD_TAG=${BUILD_TAG}" >> $GITHUB_ENV
+
+      - name: Verify image exists in Artifact Registry
+        run: |
+          echo "🔍 Verifying image exists in Artifact Registry..."
+          
+          # Check if image exists
+          if gcloud artifacts docker images describe \
+            "${{ env.IMAGE_NAME }}:${{ env.BUILD_TAG }}" \
+            --project=${{ env.PROJECT_ID }} > /dev/null 2>&1; then
+            echo "✅ Image verified: ${{ env.IMAGE_NAME }}:${{ env.BUILD_TAG }}"
+          else
+            echo "❌ ERROR: Image not found in Artifact Registry"
+            echo "Expected: ${{ env.IMAGE_NAME }}:${{ env.BUILD_TAG }}"
+            echo ""
+            echo "Listing available images:"
+            gcloud artifacts docker images list \
+              "${{ env.IMAGE_NAME }}" \
+              --project=${{ env.PROJECT_ID }} || true
+            exit 1
+          fi
+          
+          echo ""
 
       - name: Prepare environment variables for Cloud Run
         run: |
