@@ -122,15 +122,15 @@ class RedisSessionStore:
             session_dict['status'] = SessionStatus(session_dict['status'])
             
             # Convert transcript timestamps back to datetime objects
-            if 'transcripts' in session_dict and session_dict['transcripts']:
-                for transcript in session_dict['transcripts']:
+            if 'transcript_history' in session_dict and session_dict['transcript_history']:
+                for transcript in session_dict['transcript_history']:
                     if 'timestamp' in transcript and isinstance(transcript['timestamp'], str):
                         transcript['timestamp'] = datetime.fromisoformat(transcript['timestamp'])
             
             # Reconstruct nested TranscriptEntry objects
-            if 'transcripts' in session_dict:
-                session_dict['transcripts'] = [
-                    TranscriptEntry(**t) for t in session_dict['transcripts']
+            if 'transcript_history' in session_dict:
+                session_dict['transcript_history'] = [
+                    TranscriptEntry(**t) for t in session_dict['transcript_history']
                 ]
             
             # Reconstruct nested AudioChunkOutgoing objects
