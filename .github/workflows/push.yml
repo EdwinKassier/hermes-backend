@@ -148,13 +148,13 @@ jobs:
           echo "📋 Preparing environment variables YAML file..."
           
           # Create YAML file with base env vars
-          cat > env.yaml << 'YAML_EOF'
-PROJECT_ID: "${{ env.PROJECT_ID }}"
-SERVICE_NAME: "${{ env.SERVICE_NAME }}"
-REGION_DEPLOYED: "${{ env.RUN_REGION }}"
-APPLICATION_ENV: "production"
-APP_NAME: "hermes-backend"
-YAML_EOF
+          cat > env.yaml << 'EOF'
+          PROJECT_ID: "${{ env.PROJECT_ID }}"
+          SERVICE_NAME: "${{ env.SERVICE_NAME }}"
+          REGION_DEPLOYED: "${{ env.RUN_REGION }}"
+          APPLICATION_ENV: "production"
+          APP_NAME: "hermes-backend"
+          EOF
           
           # Parse .env and append to YAML (matches deploy.sh logic)
           while IFS='=' read -r key value; do
