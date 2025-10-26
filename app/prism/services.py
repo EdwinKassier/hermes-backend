@@ -712,30 +712,45 @@ ANSWER: YES or NO"""
             # Note: Gemini maintains its own conversation state internally
             # No need to track conversation_context in session
             
-            # Generate TTS audio (WAV format)
-            audio_data = self._generate_tts_audio(response_text)
+            # Generate TTS audio (returns MP3 format)
+            audio_result = self._generate_tts_audio(response_text)
             
-            if not audio_data:
+            if not audio_result or not audio_result.get('audio_data'):
                 logger.warning("No audio generated")
                 return
             
-            # Convert to MP3 and send via HTTP POST to /output_audio endpoint
+            audio_data = audio_result['audio_data']
+            audio_format = audio_result.get('audio_format', 'unknown')
+            
+            # Send audio via HTTP POST to /output_audio endpoint
             try:
-                logger.info(f"Converting audio to MP3 for response: {response_text[:100]}...")
+                logger.info(f"Sending audio for response: {response_text[:100]}...")
                 
-                # Convert WAV to MP3 (required by Attendee API)
-                from pydub import AudioSegment
-                import io
-                
-                # Load WAV audio
-                audio = AudioSegment.from_wav(io.BytesIO(audio_data))
-                
-                # Export as MP3
-                mp3_buffer = io.BytesIO()
-                audio.export(mp3_buffer, format="mp3")
-                mp3_data = mp3_buffer.getvalue()
-                
-                logger.info(f"Converted {len(audio_data)} bytes (WAV) to {len(mp3_data)} bytes (MP3)")
+                # TTS service already returns MP3 format, so we can send it directly
+                # If it's not MP3, we need to convert it
+                if audio_format == 'mp3':
+                    # Audio is already MP3, send directly
+                    mp3_data = audio_data
+                    logger.info(f"Audio is already in MP3 format ({len(mp3_data)} bytes)")
+                else:
+                    # Convert to MP3 if needed
+                    from pydub import AudioSegment
+                    import io
+                    
+                    logger.info(f"Converting {audio_format} to MP3...")
+                    
+                    # Load audio based on format
+                    if audio_format == 'wav':
+                        audio = AudioSegment.from_wav(io.BytesIO(audio_data))
+                    else:
+                        audio = AudioSegment.from_file(io.BytesIO(audio_data), format=audio_format)
+                    
+                    # Export as MP3
+                    mp3_buffer = io.BytesIO()
+                    audio.export(mp3_buffer, format="mp3")
+                    mp3_data = mp3_buffer.getvalue()
+                    
+                    logger.info(f"Converted {len(audio_data)} bytes ({audio_format}) to {len(mp3_data)} bytes (MP3)")
                 
                 # Send via HTTP POST to /output_audio endpoint
                 self.attendee_client.send_output_audio(session.bot_id, mp3_data)
@@ -785,7 +800,7 @@ Generate a natural, conversational response. Keep it concise (1-2 sentences) sin
             logger.error(f"Text generation failed: {str(e)}")
             return None
     
-    def _generate_tts_audio(self, text: str) -> Optional[bytes]:
+    def _generate_tts_audio(self, text: str) -> Optional[Dict[str, Any]]:
         """
         Generate TTS audio for text.
         
@@ -793,7 +808,7 @@ Generate a natural, conversational response. Keep it concise (1-2 sentences) sin
             text: Text to convert to speech
         
         Returns:
-            bytes: Audio data (WAV format)
+            Dict with 'audio_data' (bytes) and 'audio_format' (str), or None if failed
         """
         try:
             logger.info(f"🎵 Generating TTS audio...")
@@ -821,8 +836,13 @@ Generate a natural, conversational response. Keep it concise (1-2 sentences) sin
             except Exception as e:
                 logger.warning("Failed to remove temp file: %s", e)
             
-            logger.info(f"✅ Generated TTS audio: {len(audio_data)} bytes")
-            return audio_data
+            audio_format = tts_result.get('audio_format', 'mp3')
+            logger.info(f"✅ Generated TTS audio: {len(audio_data)} bytes ({audio_format})")
+            
+            return {
+                'audio_data': audio_data,
+                'audio_format': audio_format
+            }
             
         except Exception as e:
             logger.error("TTS generation failed: %s", str(e))
