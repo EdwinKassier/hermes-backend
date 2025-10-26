@@ -112,6 +112,40 @@ class ElevenLabsTTSProvider(BaseTTSProvider):
             if directory and not os.path.exists(directory):
                 raise ValueError(f"Output directory does not exist: {directory}")
     
+    def _clean_text_with_logging(self, text: str) -> str:
+        """
+        Clean text for TTS generation, removing markdown and problematic characters.
+        
+        Args:
+            text: Raw text to clean
+            
+        Returns:
+            Cleaned text suitable for TTS
+        """
+        import re
+        
+        original_text = text
+        
+        # Remove markdown formatting
+        text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)  # **bold**
+        text = re.sub(r'\*([^*]+)\*', r'\1', text)      # *italic*
+        text = re.sub(r'__([^_]+)__', r'\1', text)      # __bold__
+        text = re.sub(r'_([^_]+)_', r'\1', text)        # _italic_
+        text = re.sub(r'`([^`]+)`', r'\1', text)        # `code`
+        text = re.sub(r'```[^`]*```', '', text)         # ```code blocks```
+        text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)  # [link](url)
+        text = re.sub(r'#{1,6}\s+', '', text)           # # headers
+        
+        # Remove problematic characters for speech
+        text = re.sub(r'[•\-—–]+', ', ', text)          # bullet points and dashes
+        text = re.sub(r'\s+', ' ', text)                # normalize whitespace
+        text = text.strip()
+        
+        if text != original_text:
+            logger.debug(f"Cleaned text: '{original_text[:50]}...' -> '{text[:50]}...'")
+        
+        return text
+    
     @cached_tts(_tts_cache)
     def generate_audio(
         self,

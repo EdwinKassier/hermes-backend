@@ -204,12 +204,11 @@ class PrismService:
         except Exception as e:
             logger.warning(f"Error cleaning up WebSocket connections: {str(e)}")
 
-        # Remove from session storage to prevent memory leak
-        with self.websocket_lock:
-            if session_id in self.sessions:
-                del self.sessions[session_id]
+        # Remove from Redis session storage
+        self.session_store.delete_session(session_id)
 
-            # Remove from WebSocket registry (defensive cleanup)
+        # Remove from WebSocket registry (defensive cleanup)
+        with self.websocket_lock:
             if session_id in self.user_websockets:
                 del self.user_websockets[session_id]
 
