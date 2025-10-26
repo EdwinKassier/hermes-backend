@@ -72,6 +72,7 @@ def start_session():
     """
     ws = Server.accept(request.environ)
     session_id = None
+    prism_service = get_prism_service()  # Lazy-load service
     
     try:
         logger.info("User WebSocket connected")
@@ -243,6 +244,7 @@ def bot_audio():
     """
     ws = Server.accept(request.environ)
     session_id = request.args.get('session_id')
+    prism_service = get_prism_service()  # Lazy-load service
     
     if not session_id:
         ws.send(json.dumps({"type": "error", "message": "session_id required"}))
@@ -348,6 +350,7 @@ def _handle_bot_message(session_id: str, message: dict):
         session_id: Session ID
         message: Parsed JSON message
     """
+    prism_service = get_prism_service()  # Lazy-load service
     msg_type = message.get("type")
     
     if msg_type == "transcript":
@@ -403,6 +406,8 @@ def webhook():
         "data": {...}
     }
     """
+    prism_service = get_prism_service()  # Lazy-load service
+    
     try:
         payload = request.get_json()
         
@@ -449,6 +454,7 @@ def webhook():
 
 def _handle_bot_state_change(session_id: str, webhook_data: AttendeeWebhookPayload):
     """Handle bot state change webhook."""
+    prism_service = get_prism_service()  # Lazy-load service
     try:
         logger.info(f"=== HANDLING STATE CHANGE === Session: {session_id}, Bot: {webhook_data.bot_id}")
         logger.info(f"State change data: {webhook_data.data}")
@@ -466,6 +472,7 @@ def _handle_bot_state_change(session_id: str, webhook_data: AttendeeWebhookPaylo
 
 def _handle_transcript_update(session_id: str, webhook_data: AttendeeWebhookPayload):
     """Handle transcript update webhook."""
+    prism_service = get_prism_service()  # Lazy-load service
     try:
         transcript_data = TranscriptUpdateData(**webhook_data.data)
         prism_service.handle_transcript(
@@ -482,6 +489,7 @@ def _handle_transcript_update(session_id: str, webhook_data: AttendeeWebhookPayl
 
 def _handle_bot_error(session_id: str, webhook_data: AttendeeWebhookPayload):
     """Handle bot error webhook."""
+    prism_service = get_prism_service()  # Lazy-load service
     error_message = webhook_data.data.get("message", "Unknown error")
     logger.error(f"Bot error for session {session_id}: {error_message}")
     
