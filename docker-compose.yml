@@ -27,6 +27,8 @@ services:
     # Override specific environment variables for Docker context
     environment:
       - PORT=8080
+      # For local development, use external Redis service
+      # In Cloud Run, container uses internal Redis (no REDIS_URL needed)
       - REDIS_URL=redis://redis:6379/0
     
     # Volumes - commented out for production, uncomment for development
@@ -41,6 +43,8 @@ services:
       retries: 3
       start_period: 40s
     
+    # Note: External Redis used for local development only
+    # In Cloud Run, container runs Redis internally
     depends_on:
       redis:
         condition: service_healthy

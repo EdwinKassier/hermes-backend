@@ -20,9 +20,10 @@ class RedisSessionStore:
         Initialize Redis session store.
         
         Args:
-            redis_url: Redis connection URL. If None, uses REDIS_URL env var.
+            redis_url: Redis connection URL. If None, uses local Redis instance.
         """
-        redis_url = redis_url or os.getenv("REDIS_URL", "redis://localhost:6379/0")
+        # Default to local Redis instance (running in same container)
+        redis_url = redis_url or os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
         
         try:
             self.redis_client = redis.from_url(
