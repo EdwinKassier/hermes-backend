@@ -31,7 +31,7 @@ from typing import List, Optional, Any, Dict
 from dotenv import load_dotenv
 import vertexai
 from vertexai.generative_models import GenerativeModel, Part
-from vertexai.language_models import TextEmbeddingInput, TextEmbeddingModel
+import google.generativeai as genai
 from tenacity import (
     retry, stop_after_attempt, wait_exponential,
     retry_if_exception_type, before_sleep_log
@@ -66,9 +66,10 @@ logger = logging.getLogger(__name__)
 # --------------------- CONFIGURATION ---------------------
 class EmbeddingConfig:
     """Configuration for embedding generation."""
-    EMBEDDING_MODEL = "text-embedding-005"
+    EMBEDDING_MODEL = "models/embedding-001"  # Gemini API embedding model
     GEMINI_VISION_MODEL = "gemini-2.5-flash" # Using the specified multimodal model for OCR
-    EMBEDDING_DIMENSIONS = 768
+    EMBEDDING_DIMENSIONS = 1536  # Higher dimensionality for better accuracy
+    OUTPUT_DIMENSIONALITY = 1536  # Explicit dimension parameter for Gemini API
     TASK_TYPE = "RETRIEVAL_DOCUMENT"
     CHUNK_SIZE = 1000
     CHUNK_OVERLAP = 200
@@ -107,13 +108,13 @@ def load_environment() -> Dict[str, str]:
         'google_project_id': os.getenv('GOOGLE_PROJECT_ID'),
         'google_project_location': os.getenv('GOOGLE_PROJECT_LOCATION', 'us-central1'),
         'supabase_database_url': os.getenv('SUPABASE_DATABASE_URL'),
+        'google_api_key': os.getenv('GOOGLE_API_KEY'),  # For Gemini API embeddings
     }
     
     missing = [k for k, v in env.items() if not v]
     if missing:
         raise EnvironmentError(f"Missing required environment variables: {', '.join(missing)}")
 
-    os.environ.pop('GOOGLE_API_KEY', None)
     env['supabase_url'] = env['supabase_project_url']
     logging.info("Environment configuration loaded successfully.")
     return env
@@ -124,17 +125,23 @@ def load_environment() -> Dict[str, str]:
     retry=retry_if_exception_type(Exception),
     before_sleep=before_sleep_log(logger, logging.WARNING)
 )
-def embed_texts_with_vertexai(
-    texts: List[str], model: TextEmbeddingModel
+def embed_texts_with_gemini(
+    texts: List[str], config: EmbeddingConfig
 ) -> List[np.ndarray]:
-    """Generate embeddings for a list of texts using the Vertex AI model."""
+    """Generate embeddings for a list of texts using the Gemini API with custom dimensions."""
     try:
         all_embeddings = []
-        for i in range(0, len(texts), EmbeddingConfig.BATCH_SIZE):
-            batch = texts[i:i + EmbeddingConfig.BATCH_SIZE]
-            inputs = [TextEmbeddingInput(text, EmbeddingConfig.TASK_TYPE) for text in batch]
-            response = model.get_embeddings(inputs)
-            all_embeddings.extend([np.array(emb.values, dtype=np.float32) for emb in response])
+        for i in range(0, len(texts), config.BATCH_SIZE):
+            batch = texts[i:i + config.BATCH_SIZE]
+            for text in batch:
+                # Use Gemini API embed_content with output_dimensionality parameter
+                result = genai.embed_content(
+                    model=config.EMBEDDING_MODEL,
+                    content=text,
+                    task_type=config.TASK_TYPE.lower(),  # "retrieval_document"
+                    output_dimensionality=config.OUTPUT_DIMENSIONALITY
+                )
+                all_embeddings.append(np.array(result['embedding'], dtype=np.float32))
             logger.info(f"Generated embeddings for {min(i + len(batch), len(texts))}/{len(texts)} chunks.")
         return all_embeddings
     except Exception as e:
@@ -273,13 +280,13 @@ def load_documents_from_gcs(bucket_name: str, folder_path: str, config: Embeddin
 def process_and_split_documents(docs: List[Document], splitter: EnhancedDocumentSplitter) -> List[Document]:
     return [chunk for doc in docs for chunk in splitter.split_document(doc)]
 
-def process_batch(batch: List[Document], supabase: SupabaseClient, model: TextEmbeddingModel) -> None:
+def process_batch(batch: List[Document], supabase: SupabaseClient, config: EmbeddingConfig) -> None:
     try:
         texts = [doc.page_content for doc in batch]
-        embeddings = embed_texts_with_vertexai(texts, model)
+        embeddings = embed_texts_with_gemini(texts, config)
         class PrecomputedEmbedder:
             def embed_documents(self, _texts): return [e.tolist() for e in embeddings]
-            def embed_query(self, _text): return [0.0] * EmbeddingConfig.EMBEDDING_DIMENSIONS
+            def embed_query(self, _text): return [0.0] * config.EMBEDDING_DIMENSIONS
         vector_store = SupabaseVectorStore(
             client=supabase, embedding=PrecomputedEmbedder(),
             table_name="hermes_vectors", query_name="match_documents"
@@ -382,16 +389,18 @@ def setup_supabase_table(db_url: str, config: EmbeddingConfig) -> None:
 # --------------------- MAIN ---------------------
 def main():
     start_time = datetime.now()
-    logger.info("🚀 Starting Vertex AI embedding pipeline with Gemini OCR...")
+    logger.info("🚀 Starting Gemini API embedding pipeline with Gemini OCR...")
     try:
         env = load_environment()
         config = EmbeddingConfig()
 
-        logger.info(f"Initializing Vertex AI: project '{env['google_project_id']}', location '{env['google_project_location']}'...")
-        vertexai.init(project=env['google_project_id'], location=env['google_project_location'])
+        # Configure Gemini API for embeddings
+        genai.configure(api_key=env['google_api_key'])
+        logger.info(f"Using Gemini API embedding model '{config.EMBEDDING_MODEL}' with {config.EMBEDDING_DIMENSIONS} dimensions.")
         
-        embedding_model = TextEmbeddingModel.from_pretrained(config.EMBEDDING_MODEL)
-        logger.info(f"Using embedding model '{config.EMBEDDING_MODEL}' ({config.EMBEDDING_DIMENSIONS} dimensions).")
+        # Initialize Vertex AI for OCR (Gemini Vision)
+        logger.info(f"Initializing Vertex AI for OCR: project '{env['google_project_id']}', location '{env['google_project_location']}'...")
+        vertexai.init(project=env['google_project_id'], location=env['google_project_location'])
         if config.OCR_PROVIDER == "GEMINI":
             logger.info(f"Using OCR model '{config.GEMINI_VISION_MODEL}'.")
 
@@ -419,7 +428,7 @@ def main():
         logger.info(f"Total chunks to process: {total_chunks}")
         for i in range(0, total_chunks, config.BATCH_SIZE):
             batch = all_chunks[i:i + config.BATCH_SIZE]
-            process_batch(batch, supabase_client, embedding_model)
+            process_batch(batch, supabase_client, config)
 
         duration = (datetime.now() - start_time).total_seconds()
         logger.info(

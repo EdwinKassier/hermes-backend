@@ -19,15 +19,11 @@ except ImportError:
 # Optional Vector Store - Standard LangChain integration
 try:
     from langchain_community.vectorstores import SupabaseVectorStore
-    from langchain_google_vertexai import VertexAIEmbeddings
     from supabase import create_client
-    import vertexai
-    import google.auth
     SUPABASE_AVAILABLE = True
 except ImportError:
     SupabaseVectorStore = None
     create_client = None
-    vertexai = None
     SUPABASE_AVAILABLE = False
 
 # Import tools and services
@@ -48,10 +44,10 @@ class GeminiService:
     MAX_RETRIES = 3
     ERROR_MESSAGE = "Sorry, the Hermes LLM service encountered an error."
 
-    # Using text-embedding-005 with 768 dimensions (Vertex AI)
+    # Using models/embedding-001 with 1536 dimensions (Gemini API)
     # IMPORTANT: Must match the model used to create embeddings in Supabase
-    EMBEDDING_MODEL_NAME = "text-embedding-005"  # Vertex AI embedding model
-    EMBEDDING_DIMENSIONS = 768  # Dimension for text-embedding-005
+    EMBEDDING_MODEL_NAME = "models/embedding-001"  # Gemini API embedding model
+    EMBEDDING_DIMENSIONS = 1536  # Higher dimensionality for better accuracy
     TEXT_SPLITTER_CHUNK_SIZE = 1000  # Larger chunks for better context
     TEXT_SPLITTER_CHUNK_OVERLAP = 200  # More overlap for better context retention
     RAG_TOP_K = 5  # Reduced from 30 for better quality
@@ -68,9 +64,6 @@ class GeminiService:
                 "LangChain dependencies not available. "
                 "Install with: pip install langchain-google-genai langchain-google-vertexai langchain-core"
             )
-
-        vertex_project = vertex_project or os.environ.get("GOOGLE_PROJECT_ID")
-        vertex_location = vertex_location or os.environ.get("GOOGLE_PROJECT_LOCATION")
 
         if "GOOGLE_API_KEY" not in os.environ:
             raise ValueError("GOOGLE_API_KEY environment variable not set.")
@@ -92,43 +85,47 @@ class GeminiService:
         self.base_prompts = self._load_agent_prompts()
         logging.info("Loaded base prompts for agents: %s", list(self.base_prompts.keys()))
 
-        # Initialize Gemini embeddings (768 dimensions)
+        # Initialize Gemini embeddings (1536 dimensions)
         try:
-            # Configure the Gemini API for LLM
+            # Configure the Gemini API for LLM and embeddings
             genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
             
-            # Initialize Vertex AI SDK with Cloud Run's default credentials
-            # This makes it use the service account attached to Cloud Run
-            if vertexai is not None:
-                logging.info("Initializing Vertex AI SDK with project=%s, location=%s", vertex_project, vertex_location)
-                # Get default credentials from Cloud Run environment
-                credentials, project_id = google.auth.default()
-                logging.info("Using service account credentials (project: %s)", project_id)
+            # Create custom embeddings wrapper with explicit dimensionality
+            # MUST use models/embedding-001 with 1536 dimensions to match Supabase embeddings
+            class CustomDimensionalityEmbeddings(GoogleGenerativeAIEmbeddings):
+                """Custom embeddings that enforce 1536 dimensions"""
+                def __init__(self, dimensionality: int, **kwargs):
+                    super().__init__(**kwargs)
+                    self.dimensionality = dimensionality
                 
-                # Initialize Vertex AI with explicit credentials
-                vertexai.init(
-                    project=vertex_project,
-                    location=vertex_location,
-                    credentials=credentials
-                )
+                def embed_query(self, text: str) -> list[float]:
+                    """Override to add output_dimensionality parameter"""
+                    result = genai.embed_content(
+                        model=self.model,
+                        content=text,
+                        task_type=self.task_type,
+                        output_dimensionality=self.dimensionality
+                    )
+                    return result['embedding']
+                
+                def embed_documents(self, texts: list[str]) -> list[list[float]]:
+                    """Override to add output_dimensionality parameter"""
+                    return [self.embed_query(text) for text in texts]
             
-            # Initialize VertexAI embeddings model
-            # MUST use text-embedding-005 to match existing Supabase embeddings
-            # Cloud Run provides authentication automatically via service account
-            self.embeddings_model = VertexAIEmbeddings(
-                model_name=self.EMBEDDING_MODEL_NAME,
-                project=vertex_project,
-                location=vertex_location
+            self.embeddings_model = CustomDimensionalityEmbeddings(
+                dimensionality=self.EMBEDDING_DIMENSIONS,
+                model=self.EMBEDDING_MODEL_NAME,
+                google_api_key=os.environ["GOOGLE_API_KEY"],
+                task_type="retrieval_document"
             )
+            
             logging.info(
-                "Initialized Vertex AI Embeddings with model: %s (%dD) [project=%s, location=%s]",
+                "Initialized Gemini API Embeddings with model: %s (%dD)",
                 self.EMBEDDING_MODEL_NAME,
-                self.EMBEDDING_DIMENSIONS,
-                vertex_project,
-                vertex_location
+                self.EMBEDDING_DIMENSIONS
             )
         except Exception as e:
-            logging.error("Failed to initialize Vertex AI Embeddings: %s", e)
+            logging.error("Failed to initialize Gemini API Embeddings: %s", e)
             logging.error(traceback.format_exc())
             raise
 
