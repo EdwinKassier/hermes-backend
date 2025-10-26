@@ -90,9 +90,12 @@ ARTIFACT_REGISTRY_REPO="ashes"
 IMAGE_NAME="${REGION}-docker.pkg.dev/${PROJECT_ID}/${ARTIFACT_REGISTRY_REPO}/${SERVICE_NAME}"
 
 # Resource Configuration
+# Increased memory to account for local Redis + 8 Gunicorn workers
+# Memory breakdown: Redis (256MB) + Workers (2.5GB) + Buffer (1.5GB) = ~4.25GB minimum
+# Allocated 6Gi for safety margin with AI operations, WebSockets, and audio processing
 CPU_COUNT="${CPU_COUNT:-2}"
-MEMORY_LIMIT="${MEMORY_LIMIT:-4Gi}"
-MIN_INSTANCES="${MIN_INSTANCES:-0}"
+MEMORY_LIMIT="${MEMORY_LIMIT:-6Gi}"
+MIN_INSTANCES="${MIN_INSTANCES:-1}"  # Keep 1 instance warm to avoid Redis startup latency
 MAX_INSTANCES="${MAX_INSTANCES:-10}"
 CONCURRENCY="${CONCURRENCY:-50}"
 REQUEST_TIMEOUT="${REQUEST_TIMEOUT:-300s}"
@@ -401,6 +404,10 @@ DEPLOY_CMD="${DEPLOY_CMD} --max-instances ${MAX_INSTANCES}"
 DEPLOY_CMD="${DEPLOY_CMD} --concurrency ${CONCURRENCY}"
 DEPLOY_CMD="${DEPLOY_CMD} --timeout ${REQUEST_TIMEOUT}"
 DEPLOY_CMD="${DEPLOY_CMD} --cpu-boost"
+# Startup probe: Allow time for Redis to initialize before health checks
+DEPLOY_CMD="${DEPLOY_CMD} --startup-probe-period 10"
+DEPLOY_CMD="${DEPLOY_CMD} --startup-probe-failure-threshold 6"
+DEPLOY_CMD="${DEPLOY_CMD} --startup-probe-timeout 5"
 
 if [ "$ALLOW_UNAUTH" = "true" ]; then
     DEPLOY_CMD="${DEPLOY_CMD} --allow-unauthenticated"

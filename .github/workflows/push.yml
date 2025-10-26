@@ -13,9 +13,10 @@ env:
   REPO_NAME: ${{ github.event.repository.name }}
   ARTIFACT_REGISTRY_REPO_NAME: ashes
   # Resource configuration (matches deploy.sh)
+  # Increased for local Redis + 8 Gunicorn workers + AI operations
   CPU_COUNT: 2
-  MEMORY_LIMIT: 4Gi
-  MIN_INSTANCES: 0
+  MEMORY_LIMIT: 6Gi
+  MIN_INSTANCES: 1  # Keep warm to avoid Redis startup latency
   MAX_INSTANCES: 10
   CONCURRENCY: 50
   REQUEST_TIMEOUT: 300s
@@ -292,6 +293,9 @@ jobs:
             --concurrency ${{ env.CONCURRENCY }} \
             --timeout ${{ env.REQUEST_TIMEOUT }} \
             --cpu-boost \
+            --startup-probe-period 10 \
+            --startup-probe-failure-threshold 6 \
+            --startup-probe-timeout 5 \
             --allow-unauthenticated \
             --env-vars-file=env.yaml \
             --project=${{ env.PROJECT_ID }}
