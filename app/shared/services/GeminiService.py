@@ -92,11 +92,10 @@ class GeminiService:
             
             # Create custom embeddings wrapper with explicit dimensionality
             # MUST use models/embedding-001 with 1536 dimensions to match Supabase embeddings
+            _target_dimensionality = self.EMBEDDING_DIMENSIONS  # Store in closure
+            
             class CustomDimensionalityEmbeddings(GoogleGenerativeAIEmbeddings):
                 """Custom embeddings that enforce 1536 dimensions"""
-                def __init__(self, dimensionality: int, **kwargs):
-                    super().__init__(**kwargs)
-                    self.dimensionality = dimensionality
                 
                 def embed_query(self, text: str) -> list[float]:
                     """Override to add output_dimensionality parameter"""
@@ -104,7 +103,7 @@ class GeminiService:
                         model=self.model,
                         content=text,
                         task_type=self.task_type,
-                        output_dimensionality=self.dimensionality
+                        output_dimensionality=_target_dimensionality
                     )
                     return result['embedding']
                 
@@ -113,7 +112,6 @@ class GeminiService:
                     return [self.embed_query(text) for text in texts]
             
             self.embeddings_model = CustomDimensionalityEmbeddings(
-                dimensionality=self.EMBEDDING_DIMENSIONS,
                 model=self.EMBEDDING_MODEL_NAME,
                 google_api_key=os.environ["GOOGLE_API_KEY"],
                 task_type="retrieval_document"
