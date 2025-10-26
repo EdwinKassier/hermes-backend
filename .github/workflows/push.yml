@@ -293,9 +293,6 @@ jobs:
             --concurrency ${{ env.CONCURRENCY }} \
             --timeout ${{ env.REQUEST_TIMEOUT }} \
             --cpu-boost \
-            --startup-probe-period 10 \
-            --startup-probe-failure-threshold 6 \
-            --startup-probe-timeout 5 \
             --allow-unauthenticated \
             --env-vars-file=env.yaml \
             --project=${{ env.PROJECT_ID }}

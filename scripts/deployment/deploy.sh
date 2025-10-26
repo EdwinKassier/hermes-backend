@@ -404,10 +404,6 @@ DEPLOY_CMD="${DEPLOY_CMD} --max-instances ${MAX_INSTANCES}"
 DEPLOY_CMD="${DEPLOY_CMD} --concurrency ${CONCURRENCY}"
 DEPLOY_CMD="${DEPLOY_CMD} --timeout ${REQUEST_TIMEOUT}"
 DEPLOY_CMD="${DEPLOY_CMD} --cpu-boost"
-# Startup probe: Allow time for Redis to initialize before health checks
-DEPLOY_CMD="${DEPLOY_CMD} --startup-probe-period 10"
-DEPLOY_CMD="${DEPLOY_CMD} --startup-probe-failure-threshold 6"
-DEPLOY_CMD="${DEPLOY_CMD} --startup-probe-timeout 5"
 
 if [ "$ALLOW_UNAUTH" = "true" ]; then
     DEPLOY_CMD="${DEPLOY_CMD} --allow-unauthenticated"
