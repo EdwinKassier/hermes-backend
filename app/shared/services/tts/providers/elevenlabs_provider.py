@@ -96,6 +96,22 @@ class ElevenLabsTTSProvider(BaseTTSProvider):
     def is_cpu_bound(self) -> bool:
         return False
     
+    def _validate_text_input(self, text: str) -> None:
+        """Validate text input for TTS generation."""
+        if not text or not text.strip():
+            raise ValueError("Text cannot be empty")
+        if len(text) > 5000:
+            logger.warning(f"Text length {len(text)} exceeds recommended limit of 5000 characters")
+    
+    def _validate_output_filepath(self, output_filepath: Optional[str]) -> None:
+        """Validate output filepath if provided."""
+        if output_filepath:
+            # Check if directory exists
+            import os
+            directory = os.path.dirname(output_filepath)
+            if directory and not os.path.exists(directory):
+                raise ValueError(f"Output directory does not exist: {directory}")
+    
     @cached_tts(_tts_cache)
     def generate_audio(
         self,
