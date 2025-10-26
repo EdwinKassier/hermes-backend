@@ -261,6 +261,18 @@ jobs:
           done < .env
           
           echo "✅ Environment variables YAML file created"
+          echo ""
+          echo "📋 Environment variables being deployed:"
+          echo "Keys loaded from .env:"
+          grep -o '^[A-Z_]*:' env.yaml | sed 's/://' | sort
+          echo ""
+          echo "Checking for excluded keys:"
+          if grep -q "GOOGLE_APPLICATION_CREDENTIALS" env.yaml; then
+            echo "❌ ERROR: GOOGLE_APPLICATION_CREDENTIALS found in env.yaml (should be excluded!)"
+            exit 1
+          else
+            echo "✅ GOOGLE_APPLICATION_CREDENTIALS correctly excluded"
+          fi
 
       - name: Deploy to Cloud Run
         run: |

@@ -88,16 +88,16 @@ class GeminiService:
         self.base_prompts = self._load_agent_prompts()
         logging.info("Loaded base prompts for agents: %s", list(self.base_prompts.keys()))
 
-        # Initialize Gemini embeddings (1536 dimensions)
+        # Initialize Gemini embeddings (768 dimensions)
         try:
             # Configure the Gemini API
             genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
             
-            # Initialize the VertexAI embeddings model
-            self.embeddings_model = VertexAIEmbeddings(
-                model_name=self.EMBEDDING_MODEL_NAME,
-                project=vertex_project,
-                location=vertex_location
+            # Initialize the Google Generative AI embeddings model (uses API key, not Vertex AI)
+            # This avoids needing Vertex AI authentication/permissions
+            self.embeddings_model = GoogleGenerativeAIEmbeddings(
+                model=self.EMBEDDING_MODEL_NAME,
+                google_api_key=os.environ["GOOGLE_API_KEY"]
             )
             logging.info(
                 "Initialized Gemini Embeddings with model: %s (%dD)",
