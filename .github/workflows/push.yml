@@ -84,24 +84,54 @@ jobs:
         run: |
           echo "📋 Creating .env file from GitHub secrets..."
           
-          # Decode base64-encoded ENV_FILE secret
-          if [ -n "${{ secrets.ENV_FILE }}" ]; then
-            echo "${{ secrets.ENV_FILE }}" | base64 --decode > .env
-            echo "✅ .env file created from ENV_FILE secret"
-          else
-            echo "❌ ENV_FILE secret not found"
+          # Check if ENV_FILE secret exists
+          if [ -z "${{ secrets.ENV_FILE }}" ]; then
+            echo "❌ ENV_FILE secret not found or empty"
+            echo ""
+            echo "To fix this, create the ENV_FILE secret:"
+            echo "1. Encode your .env file: cat .env | base64 -w 0"
+            echo "2. Go to: Repository → Settings → Secrets → Actions"
+            echo "3. Create secret named: ENV_FILE"
+            echo "4. Paste the base64 output as the value"
             exit 1
           fi
           
-          # Verify .env exists
-          if [ -f .env ]; then
-            echo "✅ .env file exists"
-            echo "Keys in .env:"
-            grep -o '^[^=]*' .env | head -10
-          else
+          # Decode base64-encoded ENV_FILE secret
+          # Strip whitespace/newlines and decode
+          echo "${{ secrets.ENV_FILE }}" | tr -d '\n\r' | base64 --decode > .env 2>&1
+          DECODE_STATUS=$?
+          
+          if [ $DECODE_STATUS -ne 0 ]; then
+            echo "❌ Failed to decode ENV_FILE secret (exit code: $DECODE_STATUS)"
+            echo ""
+            echo "The ENV_FILE secret appears to be invalid base64."
+            echo ""
+            echo "To fix this:"
+            echo "1. On macOS/Linux: cat .env | base64 -w 0 | pbcopy"
+            echo "2. On Linux (no pbcopy): cat .env | base64 -w 0"
+            echo "3. Update GitHub secret ENV_FILE with the output"
+            echo ""
+            echo "Make sure to use 'base64 -w 0' to avoid newlines!"
+            exit 1
+          fi
+          
+          # Verify .env exists and has content
+          if [ ! -f .env ]; then
             echo "❌ .env file was not created"
             exit 1
           fi
+          
+          if [ ! -s .env ]; then
+            echo "❌ .env file is empty"
+            exit 1
+          fi
+          
+          echo "✅ .env file created successfully"
+          echo "✅ File size: $(wc -c < .env) bytes"
+          echo "✅ Number of lines: $(wc -l < .env)"
+          echo ""
+          echo "Environment variables found:"
+          grep -o '^[^=]*' .env | grep -v '^#' | grep -v '^$' | head -10
 
       - name: Authenticate with Google Cloud
         id: 'auth'
@@ -128,9 +158,12 @@ jobs:
           echo "🔨 Building Docker image..."
           
           IMAGE_NAME="${{ env.RUN_REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPO_NAME }}/${{ env.SERVICE_NAME }}"
-          BUILD_TAG="${GITHUB_SHA:0:8}"
+          # Get first 8 characters of commit SHA
+          BUILD_TAG="$(echo '${{ github.sha }}' | cut -c1-8)"
           
           echo "Image: ${IMAGE_NAME}:${BUILD_TAG}"
+          echo "Commit SHA: ${{ github.sha }}"
+          echo "Build Tag: ${BUILD_TAG}"
           
           # Use Cloud Build for speed and efficiency
           gcloud builds submit \
