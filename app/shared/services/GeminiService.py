@@ -46,7 +46,7 @@ class GeminiService:
     ERROR_MESSAGE = "Sorry, the Hermes LLM service encountered an error."
 
     # Using text-embedding-005 with 768 dimensions
-    EMBEDDING_MODEL_NAME = "text-embedding-005"
+    EMBEDDING_MODEL_NAME = "models/text-embedding-005"  # Full model path for Gemini API
     EMBEDDING_DIMENSIONS = 768  # Dimension for text-embedding-005
     TEXT_SPLITTER_CHUNK_SIZE = 1000  # Larger chunks for better context
     TEXT_SPLITTER_CHUNK_OVERLAP = 200  # More overlap for better context retention
