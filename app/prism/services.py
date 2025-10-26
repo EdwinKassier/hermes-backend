@@ -20,6 +20,7 @@ from .models import PrismSession, AudioChunkOutgoing
 from .constants import BotState, SessionStatus
 from .attendee_client import AttendeeClient
 from .audio_processor import AudioProcessor
+from .session_store import RedisSessionStore
 from .exceptions import (
     BotCreationError,
     SessionNotFoundError,
@@ -51,8 +52,8 @@ class PrismService:
     
     def __init__(self):
         """Initialize service with required dependencies."""
-        self.sessions: Dict[str, PrismSession] = {}  # In-memory session store
-        self.bot_to_session: Dict[str, str] = {}  # Map bot_id -> session_id
+        # Redis-backed session store for multi-worker support
+        self.session_store = RedisSessionStore()
         
         # WebSocket connection registry for sending updates to users
         self.user_websockets: Dict[str, WebSocketServer] = {}  # {session_id: websocket_connection}
@@ -129,8 +130,8 @@ class PrismService:
             status=SessionStatus.CREATED
         )
         
-        # Store session
-        self.sessions[session_id] = session
+        # Store session in Redis
+        self.session_store.save_session(session)
         
         logger.info(f"Created session {session_id} for user {user_id}")
         return session
@@ -148,17 +149,14 @@ class PrismService:
         Raises:
             SessionNotFoundError: If session doesn't exist
         """
-        session = self.sessions.get(session_id)
+        session = self.session_store.get_session(session_id)
         if not session:
             raise SessionNotFoundError(session_id)
         return session
     
     def get_session_by_bot_id(self, bot_id: str) -> Optional[PrismSession]:
         """Get session by bot ID."""
-        session_id = self.bot_to_session.get(bot_id)
-        if session_id:
-            return self.sessions.get(session_id)
-        return None
+        return self.session_store.get_session_by_bot_id(bot_id)
     
     def close_session(self, session_id: str):
         """
@@ -186,14 +184,13 @@ class PrismService:
                 logger.error(f"Failed to delete bot {session.bot_id}: {str(e)}")
                 # Continue with cleanup even if bot deletion fails
 
-            # Clean up bot-to-session mapping
-            if session.bot_id in self.bot_to_session:
-                del self.bot_to_session[session.bot_id]
-
         # Update session status
         session.update_status(SessionStatus.CLOSED)
         session.user_ws_connected = False
         session.bot_ws_connected = False
+        
+        # Save updated session to Redis
+        self.session_store.save_session(session)
 
         # Close any open WebSocket connections
         try:
@@ -263,8 +260,8 @@ class PrismService:
             session.bot_id = bot_response.bot_id
             session.update_status(SessionStatus.BOT_JOINING)
             
-            # Map bot ID to session
-            self.bot_to_session[bot_response.bot_id] = session_id
+            # Save session to Redis (this also creates the bot_id -> session_id mapping)
+            self.session_store.save_session(session)
             
             logger.info(f"Created bot {bot_response.bot_id} for session {session_id}")
             return bot_response.bot_id
@@ -323,6 +320,9 @@ class PrismService:
         if error:
             session.error_message = error
         
+        # Save session state to Redis
+        self.session_store.save_session(session)
+        
         logger.info(f"✅ Bot {bot_id} state changed: {state} → {bot_state.name}")
         
         # SEND STATE UPDATE TO USER WEBSOCKET
@@ -333,6 +333,7 @@ class PrismService:
             # Set flag IMMEDIATELY to prevent race condition
             # (Bot may receive multiple IN_MEETING webhooks within milliseconds)
             session.has_introduced = True
+            self.session_store.save_session(session)  # Save the has_introduced flag
             logger.info(f"🎤 Bot entered IN_MEETING state, triggering introduction for session {session.session_id}")
             # Send introduction (this will handle unmuting at the right time)
             self._send_bot_introduction(session.session_id, bot_id)
@@ -543,6 +544,7 @@ Keep it conversational and warm. This will be spoken aloud, so make it sound nat
         
         # Add to session history
         session.add_transcript(speaker, text, is_final)
+        self.session_store.save_session(session)  # Save transcript update
         
         # Note: Conversation context managed by Gemini internally
         
@@ -564,10 +566,12 @@ Keep it conversational and warm. This will be spoken aloud, so make it sound nat
         if self._should_respond(session):
             logger.info("✅ AI decided to respond...")
             session.is_generating_response = True  # Set lock
+            self.session_store.save_session(session)  # Save lock state
             try:
                 self._generate_and_send_response(session)
             finally:
                 session.is_generating_response = False  # Release lock
+                self.session_store.save_session(session)  # Save unlocked state
         else:
             logger.debug("⏭️ AI decided not to respond to this message")
     
@@ -920,6 +924,7 @@ Generate a natural, conversational response. Keep it concise (1-2 sentences) sin
             session = self.get_session(session_id)
             session.user_ws_connected = True
             session.last_activity = datetime.utcnow()
+            self.session_store.save_session(session)
             if websocket:
                 self.user_websockets[session_id] = websocket
             logger.info(f"User WebSocket connected for session {session_id}")
@@ -930,6 +935,7 @@ Generate a natural, conversational response. Keep it concise (1-2 sentences) sin
             try:
                 session = self.get_session(session_id)
                 session.user_ws_connected = False
+                self.session_store.save_session(session)
                 logger.info(f"User WebSocket disconnected for session {session_id}")
                 
                 # Remove WebSocket from registry
@@ -950,6 +956,7 @@ Generate a natural, conversational response. Keep it concise (1-2 sentences) sin
         session = self.get_session(session_id)
         session.bot_ws_connected = True
         session.last_activity = datetime.utcnow()
+        self.session_store.save_session(session)
         logger.info(f"Bot WebSocket connected for session {session_id}")
     
     def mark_bot_disconnected(self, session_id: str):
@@ -957,6 +964,7 @@ Generate a natural, conversational response. Keep it concise (1-2 sentences) sin
         try:
             session = self.get_session(session_id)
             session.bot_ws_connected = False
+            self.session_store.save_session(session)
             logger.info(f"Bot WebSocket disconnected for session {session_id}")
             
             # Close session if user also disconnected
@@ -1098,7 +1106,7 @@ Generate a natural, conversational response. Keep it concise (1-2 sentences) sin
     @property
     def active_sessions_count(self) -> int:
         """Get count of active sessions for monitoring."""
-        return len(self.sessions)
+        return len(self.session_store.list_all_session_ids())
 
     @property
     def websocket_connections_count(self) -> int:
@@ -1108,12 +1116,22 @@ Generate a natural, conversational response. Keep it concise (1-2 sentences) sin
     @property
     def total_transcripts_processed(self) -> int:
         """Get total number of transcripts processed across all sessions."""
-        return sum(len(session.transcript_history) for session in self.sessions.values())
+        session_ids = self.session_store.list_all_session_ids()
+        return sum(
+            len(session.transcript_history) 
+            for session_id in session_ids
+            if (session := self.session_store.get_session(session_id))
+        )
 
     @property
     def total_audio_chunks_queued(self) -> int:
         """Get total number of audio chunks queued across all sessions."""
-        return sum(len(session.audio_queue) for session in self.sessions.values())
+        session_ids = self.session_store.list_all_session_ids()
+        return sum(
+            len(session.audio_queue) 
+            for session_id in session_ids
+            if (session := self.session_store.get_session(session_id))
+        )
 
     def get_session_metrics(self, session_id: str) -> Dict[str, Any]:
         """
@@ -1145,6 +1163,7 @@ Generate a natural, conversational response. Keep it concise (1-2 sentences) sin
         Returns:
             Dict with system-wide metrics
         """
+        session_ids = self.session_store.list_all_session_ids()[:10]  # Limit to 10 for performance
         return {
             "active_sessions": self.active_sessions_count,
             "websocket_connections": self.websocket_connections_count,
@@ -1153,7 +1172,7 @@ Generate a natural, conversational response. Keep it concise (1-2 sentences) sin
             "webhook_cache_size": len(self.processed_webhooks),
             "sessions": {
                 session_id: self.get_session_metrics(session_id)
-                for session_id in list(self.sessions.keys())[:10]  # Limit to 10 for performance
+                for session_id in session_ids
             }
         }
 
