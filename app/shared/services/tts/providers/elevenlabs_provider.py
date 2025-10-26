@@ -146,6 +146,55 @@ class ElevenLabsTTSProvider(BaseTTSProvider):
         
         return text
     
+    def _handle_cloud_upload(
+        self,
+        local_path: str,
+        sample_rate: int,
+        upload_to_cloud: bool,
+        cloud_destination_path: Optional[str],
+        cloud_storage_service_override,
+        file_extension: str,
+        audio_format: str
+    ) -> Dict[str, Any]:
+        """
+        Handle cloud upload and return result dict.
+        
+        Args:
+            local_path: Local file path
+            sample_rate: Audio sample rate
+            upload_to_cloud: Whether to upload to cloud
+            cloud_destination_path: Destination path in cloud storage
+            cloud_storage_service_override: Override cloud storage service
+            file_extension: File extension
+            audio_format: Audio format (e.g., mp3)
+            
+        Returns:
+            Dict with local_path, sample_rate, and optionally cloud_url
+        """
+        result = {
+            "local_path": local_path,
+            "sample_rate": sample_rate,
+            "audio_format": audio_format
+        }
+        
+        # Attempt cloud upload if requested and cloud storage is available
+        if upload_to_cloud:
+            cloud_service = cloud_storage_service_override or self.cloud_storage_service
+            if cloud_service:
+                try:
+                    cloud_url = cloud_service.upload_file(
+                        local_path=local_path,
+                        destination_path=cloud_destination_path
+                    )
+                    result["cloud_url"] = cloud_url
+                    logger.info(f"Audio uploaded to cloud: {cloud_url}")
+                except Exception as e:
+                    logger.warning(f"Cloud upload failed, using local file only: {str(e)}")
+            else:
+                logger.debug("Cloud storage not available, using local file only")
+        
+        return result
+    
     @cached_tts(_tts_cache)
     def generate_audio(
         self,
