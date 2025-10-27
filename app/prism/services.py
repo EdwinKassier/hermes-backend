@@ -70,6 +70,11 @@ class PrismService:
         import concurrent.futures
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
         
+        # Register cleanup handler for graceful shutdown
+        import signal
+        signal.signal(signal.SIGTERM, self._signal_handler)
+        signal.signal(signal.SIGINT, self._signal_handler)
+        
         # Initialize clients
         self.attendee_client = AttendeeClient()
         self.audio_processor = AudioProcessor()
@@ -222,10 +227,29 @@ class PrismService:
         """Cleanup resources when service is shutting down."""
         logger.info("Cleaning up PrismService resources...")
         
-        # Shutdown thread pool
-        self.executor.shutdown(wait=True)
+        # Shutdown thread pool gracefully
+        self.executor.shutdown(wait=True, timeout=30)
+        
+        # Clear any remaining sessions
+        try:
+            # Get all session keys and clean them up
+            session_keys = self.session_store.redis_client.keys('prism:session:*')
+            for key in session_keys:
+                session_id = key.split(':')[-1]
+                try:
+                    self.close_session(session_id)
+                except Exception as e:
+                    logger.warning(f"Failed to cleanup session {session_id}: {e}")
+        except Exception as e:
+            logger.warning(f"Failed to cleanup sessions: {e}")
         
         logger.info("PrismService cleanup completed")
+    
+    def _signal_handler(self, signum, frame):
+        """Handle shutdown signals gracefully."""
+        logger.info(f"Received signal {signum}, initiating graceful shutdown...")
+        self.cleanup()
+        exit(0)
     
     # ==================== BOT MANAGEMENT ====================
     
@@ -730,8 +754,15 @@ ANSWER: YES or NO"""
         try:
             logger.info(f"🎯 Starting response generation for session {session.session_id}")
             
+            # Validate session still exists
+            try:
+                current_session = self.get_session(session.session_id)
+            except SessionNotFoundError:
+                logger.info("Response generation cancelled - session no longer exists")
+                return
+            
             # Check if we were interrupted before starting
-            if not session.is_generating_response:
+            if not current_session.is_generating_response:
                 logger.info("Response generation cancelled - session was interrupted")
                 return
             
@@ -894,16 +925,22 @@ Generate a natural, conversational response. Keep it concise (1-2 sentences) sin
                 logger.error("TTS did not generate a local file")
                 return None
             
-            # Read audio bytes
-            with open(local_path, 'rb') as f:
-                audio_data = f.read()
-            
-            # Clean up temp file
+            # Read audio bytes and clean up immediately
             try:
+                with open(local_path, 'rb') as f:
+                    audio_data = f.read()
+                
+                # Clean up temp file immediately after reading
                 os.remove(local_path)
                 logger.debug(f"Cleaned up temp file: {local_path}")
             except Exception as e:
-                logger.warning("Failed to remove temp file: %s", e)
+                logger.warning("Failed to read or clean up temp file: %s", e)
+                # Try to clean up even if read failed
+                try:
+                    os.remove(local_path)
+                except:
+                    pass
+                return None
             
             audio_format = tts_result.get('audio_format', 'mp3')
             logger.info(f"✅ Generated TTS audio: {len(audio_data)} bytes ({audio_format})")

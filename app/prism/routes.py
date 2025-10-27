@@ -314,6 +314,10 @@ def bot_audio():
                         logger.error(f"Failed to send audio chunk: {str(e)}")
                         # Break out of audio sending loop on error to prevent cascade
                         break
+                        
+            except Exception as e:
+                logger.error(f"WebSocket error: {str(e)}")
+                break  # Exit loop on error
                 
             except TimeoutError:
                 # Normal timeout, continue loop
