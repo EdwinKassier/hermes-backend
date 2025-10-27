@@ -426,10 +426,15 @@ def webhook():
             return _send_error_response(str(e), 400, "InvalidPayload")
         
         # Get session by bot ID
+        logger.info(f"🔍 Looking up session for bot_id: {webhook_data.bot_id}")
         session = prism_service.get_session_by_bot_id(webhook_data.bot_id)
         if not session:
-            logger.warning(f"Received webhook for unknown bot: {webhook_data.bot_id}")
+            logger.warning(f"❌ Received webhook for unknown bot: {webhook_data.bot_id}")
+            logger.warning(f"Available sessions: {list(prism_service.session_store.redis_client.keys('prism:session:*'))}")
+            logger.warning(f"Available bot mappings: {list(prism_service.session_store.redis_client.keys('prism:bot_mapping:*'))}")
             return _send_error_response("Bot not found", 404, "BotNotFound")
+        else:
+            logger.info(f"✅ Found session {session.session_id} for bot {webhook_data.bot_id}")
         
         # Handle different triggers
         if webhook_data.trigger == WebhookTrigger.BOT_STATE_CHANGE:
@@ -599,4 +604,46 @@ def handle_internal_error(error):
         status_code=500
     )
     return jsonify(response.model_dump()), 500
+
+
+# ==============================================================================
+# HTTP: INTERRUPT RESPONSE ENDPOINT
+# ==============================================================================
+
+@prism_bp.route('/interrupt', methods=['POST'])
+def interrupt_response():
+    """
+    Interrupt any ongoing response generation for a session.
+    
+    POST /api/v1/prism/interrupt
+    {
+        "session_id": "session_123"
+    }
+    """
+    prism_service = get_prism_service()
+    
+    try:
+        data = request.get_json()
+        if not data or 'session_id' not in data:
+            return _send_error_response("session_id required", 400, "InvalidRequest")
+        
+        session_id = data['session_id']
+        success = prism_service.interrupt_response(session_id)
+        
+        if success:
+            return jsonify({
+                "status": "interrupted",
+                "message": f"Response generation interrupted for session {session_id}",
+                "session_id": session_id
+            }), 200
+        else:
+            return jsonify({
+                "status": "no_response",
+                "message": f"No response being generated for session {session_id}",
+                "session_id": session_id
+            }), 200
+            
+    except Exception as e:
+        logger.error(f"Failed to interrupt response: {str(e)}", exc_info=True)
+        return _send_error_response(f"Failed to interrupt response: {str(e)}", 500, "InternalError")
 

@@ -262,6 +262,13 @@ class PrismService:
             # Save session to Redis (this also creates the bot_id -> session_id mapping)
             self.session_store.save_session(session)
             
+            # Verify bot mapping was saved
+            saved_session = self.session_store.get_session_by_bot_id(bot_response.bot_id)
+            if saved_session:
+                logger.info(f"✅ Bot mapping verified: {bot_response.bot_id} -> {session_id}")
+            else:
+                logger.error(f"❌ Bot mapping failed: {bot_response.bot_id} not found in Redis")
+            
             logger.info(f"Created bot {bot_response.bot_id} for session {session_id}")
             return bot_response.bot_id
             
@@ -701,12 +708,34 @@ ANSWER: YES or NO"""
         Args:
             session: PrismSession
         """
+        import time
+        start_time = time.time()
+        max_response_time = 30  # 30 seconds timeout
+        
         try:
+            # Set response generation flag
+            session.is_generating_response = True
+            self.session_store.save_session(session)
+            
+            logger.info(f"🎯 Starting response generation for session {session.session_id}")
+            
+            # Check for timeout before text generation
+            if time.time() - start_time > max_response_time:
+                logger.warning("Response generation timed out before text generation")
+                return
+            
             # Generate text response using Gemini
             response_text = self._generate_text_response(session)
             
             if not response_text:
                 logger.warning("No response generated")
+                return
+            
+            logger.info(f"📝 Generated response: {response_text[:100]}...")
+            
+            # Check for timeout before audio generation
+            if time.time() - start_time > max_response_time:
+                logger.warning("Response generation timed out before audio generation")
                 return
             
             # Note: Gemini maintains its own conversation state internally
@@ -721,6 +750,11 @@ ANSWER: YES or NO"""
             
             audio_data = audio_result['audio_data']
             audio_format = audio_result.get('audio_format', 'unknown')
+            
+            # Check for timeout before sending audio
+            if time.time() - start_time > max_response_time:
+                logger.warning("Response generation timed out before sending audio")
+                return
             
             # Send audio via HTTP POST to /output_audio endpoint
             try:
@@ -761,7 +795,39 @@ ANSWER: YES or NO"""
                 logger.error(f"Failed to send audio response: {str(audio_error)}", exc_info=True)
             
         except Exception as e:
-            logger.error(f"Failed to generate response: {str(e)}")
+            logger.error(f"Failed to generate response: {str(e)}", exc_info=True)
+        finally:
+            # Always clear the response generation flag
+            session.is_generating_response = False
+            self.session_store.save_session(session)
+            logger.info(f"🏁 Response generation completed for session {session.session_id}")
+    
+    def interrupt_response(self, session_id: str) -> bool:
+        """
+        Interrupt any ongoing response generation for a session.
+        
+        Args:
+            session_id: Session ID to interrupt
+            
+        Returns:
+            bool: True if interruption was successful, False if no response was being generated
+        """
+        try:
+            session = self.get_session(session_id)
+            if session.is_generating_response:
+                session.is_generating_response = False
+                self.session_store.save_session(session)
+                logger.info(f"🛑 Interrupted response generation for session {session_id}")
+                return True
+            else:
+                logger.info(f"No response being generated for session {session_id}")
+                return False
+        except SessionNotFoundError:
+            logger.warning(f"Session {session_id} not found for interruption")
+            return False
+        except Exception as e:
+            logger.error(f"Failed to interrupt response for session {session_id}: {str(e)}")
+            return False
     
     def _generate_text_response(self, session: PrismSession) -> Optional[str]:
         """
@@ -810,6 +876,7 @@ Generate a natural, conversational response. Keep it concise (1-2 sentences) sin
         Returns:
             Dict with 'audio_data' (bytes) and 'audio_format' (str), or None if failed
         """
+        import gc
         try:
             logger.info(f"🎵 Generating TTS audio...")
             
@@ -833,11 +900,15 @@ Generate a natural, conversational response. Keep it concise (1-2 sentences) sin
             # Clean up temp file
             try:
                 os.remove(local_path)
+                logger.debug(f"Cleaned up temp file: {local_path}")
             except Exception as e:
                 logger.warning("Failed to remove temp file: %s", e)
             
             audio_format = tts_result.get('audio_format', 'mp3')
             logger.info(f"✅ Generated TTS audio: {len(audio_data)} bytes ({audio_format})")
+            
+            # Force garbage collection to free memory
+            gc.collect()
             
             return {
                 'audio_data': audio_data,
@@ -847,6 +918,9 @@ Generate a natural, conversational response. Keep it concise (1-2 sentences) sin
         except Exception as e:
             logger.error("TTS generation failed: %s", str(e))
             return None
+        finally:
+            # Always force garbage collection
+            gc.collect()
     
     def _queue_audio_for_bot(self, session: PrismSession, audio_data: bytes):
         """
