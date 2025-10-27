@@ -3,6 +3,7 @@ Tests for Hermes service layer.
 Tests business logic with mocked dependencies.
 """
 import pytest
+import unittest
 from unittest.mock import Mock, patch, MagicMock
 from app.hermes.services import HermesService
 from app.hermes.models import UserIdentity, ResponseMode, GeminiResponse
@@ -83,8 +84,12 @@ class TestProcessRequest:
         assert result.tts_provider == 'elevenlabs'
         assert result.response_mode == ResponseMode.TTS
         
-        # Verify TTS was called
-        hermes_service.tts_service.generate_audio.assert_called_once_with("AI response")
+        # Verify TTS was called with correct parameters
+        hermes_service.tts_service.generate_audio.assert_called_once_with(
+            text_input="AI response",
+            upload_to_cloud=True,
+            cloud_destination_path=unittest.mock.ANY
+        )
     
     def test_process_request_empty_text(self, hermes_service, user_identity):
         """Test that empty text raises error"""
