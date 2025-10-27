@@ -48,15 +48,15 @@ class ProcessRequestSchema(BaseModel):
             raise ValueError("Persona must be 'hermes' or 'prisma'")
         return v or 'hermes'
 
-    class Config:
-        """Pydantic configuration."""
-        json_schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "request_text": "Tell me about artificial intelligence",
                 "response_mode": "text",
                 "persona": "hermes"
             }
         }
+    }
 
 
 class ChatMessageSchema(BaseModel):
@@ -92,15 +92,15 @@ class ChatMessageSchema(BaseModel):
             raise ValueError("Persona must be 'hermes' or 'prisma'")
         return v or 'hermes'
 
-    class Config:
-        """Pydantic configuration."""
-        json_schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "message": "Hello, how can you help me today?",
                 "include_context": True,
                 "persona": "hermes"
             }
         }
+    }
 
 
 # Response Schemas
@@ -116,9 +116,8 @@ class ProcessRequestResponseSchema(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
-    class Config:
-        """Pydantic configuration."""
-        json_schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "message": "AI generated response",
                 "response_mode": "text",
@@ -129,6 +128,7 @@ class ProcessRequestResponseSchema(BaseModel):
                 "metadata": {"model": "gemini-pro", "tokens": 150}
             }
         }
+    }
 
 
 class ChatResponseSchema(BaseModel):
@@ -138,9 +138,8 @@ class ChatResponseSchema(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
-    class Config:
-        """Pydantic configuration."""
-        json_schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "message": "I'm here to help! What would you like to know?",
                 "user_id": "abc123",
@@ -148,6 +147,7 @@ class ChatResponseSchema(BaseModel):
                 "metadata": {"model": "gemini-pro"}
             }
         }
+    }
 
 
 class HealthCheckResponseSchema(BaseModel):
@@ -157,9 +157,8 @@ class HealthCheckResponseSchema(BaseModel):
     message: str = Field(..., description="Status message")
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
-    class Config:
-        """Pydantic configuration."""
-        json_schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "status": "healthy",
                 "service": "hermes",
@@ -167,6 +166,7 @@ class HealthCheckResponseSchema(BaseModel):
                 "timestamp": "2024-01-01T00:00:00Z"
             }
         }
+    }
 
 
 class ErrorResponseSchema(BaseModel):
@@ -179,9 +179,8 @@ class ErrorResponseSchema(BaseModel):
     )
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
-    class Config:
-        """Pydantic configuration."""
-        json_schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "error": "INVALID_REQUEST",
                 "message": "Request text cannot be empty",
@@ -189,6 +188,7 @@ class ErrorResponseSchema(BaseModel):
                 "timestamp": "2024-01-01T00:00:00Z"
             }
         }
+    }
 
 
 class AuthResponseSchema(BaseModel):
@@ -197,15 +197,15 @@ class AuthResponseSchema(BaseModel):
     authenticated: bool = Field(..., description="Whether authentication succeeded")
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
-    class Config:
-        """Pydantic configuration."""
-        json_schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "message": "Successful Auth",
                 "authenticated": True,
                 "timestamp": "2024-01-01T00:00:00Z"
             }
         }
+    }
 
 
 class FileListResponseSchema(BaseModel):
@@ -214,15 +214,15 @@ class FileListResponseSchema(BaseModel):
     count: int = Field(..., description="Number of files")
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
-    class Config:
-        """Pydantic configuration."""
-        json_schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "files": ["file1.txt", "file2.txt"],
                 "count": 2,
                 "timestamp": "2024-01-01T00:00:00Z"
             }
         }
+    }
 
 
 # Note: ProcessRequestSchema above handles both query params and JSON body

@@ -3,7 +3,7 @@ Prism Domain Schemas - Request/response validation using Pydantic
 
 Following patterns from hermes/schemas.py for consistency.
 """
-from pydantic import BaseModel, Field, field_validator, validator
+from pydantic import BaseModel, Field, field_validator, field_serializer, ConfigDict
 from typing import Optional
 from datetime import datetime
 import re
@@ -53,10 +53,9 @@ class SessionStatusResponse(BaseModel):
     message: str
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     
-    class Config:
-        json_encoders = {
-            datetime: lambda v: v.isoformat()
-        }
+    @field_serializer('timestamp')
+    def serialize_timestamp(self, value: datetime) -> str:
+        return value.isoformat()
 
 
 class TranscriptMessage(BaseModel):
@@ -66,10 +65,9 @@ class TranscriptMessage(BaseModel):
     timestamp: datetime
     is_final: bool = True
     
-    class Config:
-        json_encoders = {
-            datetime: lambda v: v.isoformat()
-        }
+    @field_serializer('timestamp')
+    def serialize_timestamp(self, value: datetime) -> str:
+        return value.isoformat()
 
 
 class BotAudioMessage(BaseModel):
@@ -78,10 +76,9 @@ class BotAudioMessage(BaseModel):
     data: Optional[dict] = None
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     
-    class Config:
-        json_encoders = {
-            datetime: lambda v: v.isoformat()
-        }
+    @field_serializer('timestamp')
+    def serialize_timestamp(self, value: datetime) -> str:
+        return value.isoformat()
 
 
 class AttendeeWebhookPayload(BaseModel):
@@ -99,26 +96,27 @@ class AttendeeWebhookPayload(BaseModel):
     data: dict
     timestamp: Optional[datetime] = None
     
-    class Config:
-        # Allow extra fields for future compatibility
-        extra = "allow"
+    model_config = ConfigDict(extra='allow')
         
-    @validator('bot_id')
-    def validate_bot_id(cls, v):
+    @field_validator('bot_id')
+    @classmethod
+    def validate_bot_id(cls, v: str) -> str:
         if not v or not isinstance(v, str):
             raise ValueError('bot_id must be a non-empty string')
         if len(v) < 3:
             raise ValueError('bot_id must be at least 3 characters long')
         return v
     
-    @validator('data')
-    def validate_data(cls, v):
+    @field_validator('data')
+    @classmethod
+    def validate_data(cls, v: dict) -> dict:
         if not isinstance(v, dict):
             raise ValueError('data must be a dictionary')
         return v
     
-    @validator('trigger')
-    def validate_trigger(cls, v):
+    @field_validator('trigger')
+    @classmethod
+    def validate_trigger(cls, v: str) -> str:
         valid_triggers = ['bot.state_change', 'transcript.update', 'bot.error']
         if v not in valid_triggers:
             raise ValueError(f'trigger must be one of: {valid_triggers}')
@@ -155,26 +153,30 @@ class TranscriptUpdateData(BaseModel):
     duration_ms: int
     transcription: dict  # Contains {"transcript": "text here"}
     
-    @validator('speaker_name')
-    def validate_speaker_name(cls, v):
+    @field_validator('speaker_name')
+    @classmethod
+    def validate_speaker_name(cls, v: str) -> str:
         if not v or not isinstance(v, str):
             raise ValueError('speaker_name must be a non-empty string')
         return v
     
-    @validator('timestamp_ms')
-    def validate_timestamp_ms(cls, v):
+    @field_validator('timestamp_ms')
+    @classmethod
+    def validate_timestamp_ms(cls, v: int) -> int:
         if not isinstance(v, int) or v <= 0:
             raise ValueError('timestamp_ms must be a positive integer')
         return v
     
-    @validator('duration_ms')
-    def validate_duration_ms(cls, v):
+    @field_validator('duration_ms')
+    @classmethod
+    def validate_duration_ms(cls, v: int) -> int:
         if not isinstance(v, int) or v < 0:
             raise ValueError('duration_ms must be a non-negative integer')
         return v
     
-    @validator('transcription')
-    def validate_transcription(cls, v):
+    @field_validator('transcription')
+    @classmethod
+    def validate_transcription(cls, v: dict) -> dict:
         if not isinstance(v, dict):
             raise ValueError('transcription must be a dictionary')
         if 'transcript' not in v:
@@ -221,8 +223,7 @@ class ErrorResponse(BaseModel):
     status_code: int
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     
-    class Config:
-        json_encoders = {
-            datetime: lambda v: v.isoformat()
-        }
+    @field_serializer('timestamp')
+    def serialize_timestamp(self, value: datetime) -> str:
+        return value.isoformat()
 

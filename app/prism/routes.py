@@ -25,7 +25,7 @@ from .schemas import (
     TranscriptUpdateData,
     ErrorResponse
 )
-from .constants import SessionStatus, WebhookTrigger
+from .constants import SessionStatus, WebhookTrigger, MESSAGE_TYPE_ERROR, MESSAGE_TYPE_PONG
 from .exceptions import PrismException, SessionNotFoundError
 from pydantic import ValidationError
 
@@ -509,7 +509,7 @@ def _send_error_response(message: str, status_code: int, error_code: str = None)
         message=message,
         status_code=status_code
     )
-    return jsonify(response.dict()), status_code
+    return jsonify(response.model_dump()), status_code
 
 
 def _ws_send_error(ws: Server, message: str, error_code: str = None):
@@ -575,7 +575,7 @@ def handle_prism_exception(error: PrismException):
         message=error.message,
         status_code=error.status_code
     )
-    return jsonify(response.dict()), error.status_code
+    return jsonify(response.model_dump()), error.status_code
 
 
 @prism_bp.errorhandler(404)
@@ -586,7 +586,7 @@ def handle_not_found(error):
         message="Resource not found",
         status_code=404
     )
-    return jsonify(response.dict()), 404
+    return jsonify(response.model_dump()), 404
 
 
 @prism_bp.errorhandler(500)
@@ -598,5 +598,5 @@ def handle_internal_error(error):
         message="An internal error occurred",
         status_code=500
     )
-    return jsonify(response.dict()), 500
+    return jsonify(response.model_dump()), 500
 

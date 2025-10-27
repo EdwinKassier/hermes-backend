@@ -19,9 +19,8 @@ class UserIdentity(BaseModel):
     accept_language: str = Field(default="en-US", description="Accept language header")
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
-    class Config:
-        """Pydantic configuration."""
-        json_schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "user_id": "abc123hash",
                 "ip_address": "192.168.1.1",
@@ -30,6 +29,7 @@ class UserIdentity(BaseModel):
                 "timestamp": "2024-01-01T00:00:00Z"
             }
         }
+    }
 
 
 class ConversationMessage(BaseModel):
@@ -48,9 +48,8 @@ class ConversationMessage(BaseModel):
             raise ValueError(f"Role must be one of {allowed_roles}")
         return v
 
-    class Config:
-        """Pydantic configuration."""
-        json_schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "role": "user",
                 "content": "Hello, how are you?",
@@ -58,6 +57,7 @@ class ConversationMessage(BaseModel):
                 "metadata": {"source": "web"}
             }
         }
+    }
 
 
 class ConversationContext(BaseModel):
@@ -78,9 +78,8 @@ class ConversationContext(BaseModel):
         """Get the most recent messages."""
         return self.messages[-limit:]
 
-    class Config:
-        """Pydantic configuration."""
-        json_schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "user_id": "abc123",
                 "messages": [],
@@ -89,6 +88,7 @@ class ConversationContext(BaseModel):
                 "metadata": {}
             }
         }
+    }
 
 
 class GeminiResponse(BaseModel):
@@ -100,9 +100,8 @@ class GeminiResponse(BaseModel):
     model_used: Optional[str] = Field(default=None, description="AI model identifier")
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
-    class Config:
-        """Pydantic configuration."""
-        json_schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "content": "AI generated response",
                 "user_id": "abc123",
@@ -112,6 +111,7 @@ class GeminiResponse(BaseModel):
                 "metadata": {"tokens": 150}
             }
         }
+    }
 
 
 class TTSResponse(BaseModel):
@@ -122,9 +122,8 @@ class TTSResponse(BaseModel):
     format: str = Field(default="wav", description="Audio format")
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
-    class Config:
-        """Pydantic configuration."""
-        json_schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "text": "Hello world",
                 "audio_url": "https://storage.googleapis.com/bucket/audio.wav",
@@ -133,6 +132,7 @@ class TTSResponse(BaseModel):
                 "timestamp": "2024-01-01T00:00:00Z"
             }
         }
+    }
 
 
 class ProcessRequestResult(BaseModel):
@@ -148,9 +148,8 @@ class ProcessRequestResult(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
-    class Config:
-        """Pydantic configuration."""
-        json_schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "message": "AI response",
                 "response_mode": "text",
@@ -161,4 +160,5 @@ class ProcessRequestResult(BaseModel):
                 "metadata": {}
             }
         }
+    }
 

@@ -86,6 +86,7 @@ GOOGLE_MEET_DOMAIN = 'meet.google.com'
 
 # Message type constants
 MESSAGE_TYPE_PING = "ping"
+MESSAGE_TYPE_PONG = "pong"
 MESSAGE_TYPE_ERROR = "error"
 MESSAGE_TYPE_STATUS = "status"
 MESSAGE_TYPE_AUDIO_CHUNK = "audio_chunk"
