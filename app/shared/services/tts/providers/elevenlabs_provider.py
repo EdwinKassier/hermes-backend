@@ -183,8 +183,8 @@ class ElevenLabsTTSProvider(BaseTTSProvider):
             if cloud_service:
                 try:
                     cloud_url = cloud_service.upload_file(
-                        local_path=local_path,
-                        destination_path=cloud_destination_path
+                        local_file_path=local_path,
+                        destination_blob_name=cloud_destination_path
                     )
                     result["cloud_url"] = cloud_url
                     logger.info(f"Audio uploaded to cloud: {cloud_url}")
