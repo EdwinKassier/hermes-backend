@@ -971,39 +971,13 @@ Generate a natural, conversational response. Keep it concise (1-2 sentences) sin
             audio_data: Raw audio data from TTS (WAV format)
         """
         try:
-            # Get TTS result with format information
-            tts_result = self.tts_service.generate_audio(text_input=text, upload_to_cloud=False)
-
-            # Extract audio data and format
-            audio_data = None
-            source_format = "wav"  # Default fallback
-
-            # Read audio file if local path exists
-            if tts_result.get('local_path') and os.path.exists(tts_result['local_path']):
-                with open(tts_result['local_path'], 'rb') as f:
-                    audio_data = f.read()
-
-                # Use format from TTS result, fallback to extension-based detection
-                if tts_result.get('audio_format'):
-                    source_format = tts_result['audio_format']
-                else:
-                    # Fallback: detect from file extension
-                    file_ext = os.path.splitext(tts_result['local_path'])[1].lower()
-                    if file_ext == '.mp3':
-                        source_format = 'mp3'
-                    elif file_ext in ['.wav', '.pcm']:
-                        source_format = 'wav'
-                    else:
-                        source_format = 'wav'  # Default
-
-                # Clean up local file
-                try:
-                    os.remove(tts_result['local_path'])
-                except OSError:
-                    pass
-
-            if audio_data is None:
-                raise RuntimeError("Failed to read audio data from TTS service")
+            # Process the existing audio data directly
+            if not audio_data:
+                logger.error("No audio data provided for queuing")
+                return
+            
+            # Assume WAV format for processing (TTS service returns WAV)
+            source_format = "wav"
 
             logger.info(f"Processing audio: {len(audio_data)} bytes in {source_format} format")
 

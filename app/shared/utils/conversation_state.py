@@ -15,6 +15,23 @@ from datetime import datetime
 from typing import Any, Dict, Generic, Optional, TypeVar, Iterator
 from dataclasses import asdict, is_dataclass
 
+# Import LangChain message types
+try:
+    from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+except ImportError:
+    # Fallback for when LangChain is not available
+    class HumanMessage:
+        def __init__(self, content: str):
+            self.content = content
+    
+    class AIMessage:
+        def __init__(self, content: str):
+            self.content = content
+    
+    class SystemMessage:
+        def __init__(self, content: str):
+            self.content = content
+
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
