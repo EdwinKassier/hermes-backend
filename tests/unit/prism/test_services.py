@@ -343,8 +343,8 @@ class TestTranscriptProcessing:
         assert prism_service._should_skip_obvious_non_response("Hey Prism") is False
         assert prism_service._should_skip_obvious_non_response("Can the bot help?") is False
     
-    def test_prevents_concurrent_response_generation(self, prism_service):
-        """Test that concurrent responses are prevented by lock"""
+    def test_interrupts_previous_response_on_new_transcript(self, prism_service):
+        """Test that new transcripts interrupt previous response generation"""
         mock_session = PrismSession(
             session_id="sess_123",
             user_id="user_456",
@@ -363,8 +363,11 @@ class TestTranscriptProcessing:
                 is_final=True
             )
         
-        # Should not call response generation due to lock
-        prism_service.gemini_service.generate_gemini_response.assert_not_called()
+        # Should interrupt previous response and start new one
+        # The lock should be cleared and new response started
+        assert mock_session.is_generating_response == True  # New response started
+        # Gemini should be called for the new response
+        prism_service.gemini_service.generate_gemini_response.assert_called()
 
 
 @pytest.mark.unit
