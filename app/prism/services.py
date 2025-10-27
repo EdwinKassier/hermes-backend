@@ -66,6 +66,14 @@ class PrismService:
         self.processed_webhooks: OrderedDict = OrderedDict()  # {idempotency_key: timestamp}
         self.webhook_ttl = 600  # 10 minutes TTL
         
+        # Response interruption tracking (thread-safe)
+        self.interrupt_flags: Dict[str, bool] = {}  # {session_id: should_interrupt}
+        self.interrupt_lock = threading.Lock()
+        
+        # Thread pool for response generation (allows interruption)
+        import concurrent.futures
+        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+        
         # Initialize clients
         self.attendee_client = AttendeeClient()
         self.audio_processor = AudioProcessor()
@@ -213,6 +221,19 @@ class PrismService:
                 del self.user_websockets[session_id]
 
         logger.info(f"Successfully closed and deleted session {session_id}")
+    
+    def cleanup(self):
+        """Cleanup resources when service is shutting down."""
+        logger.info("Cleaning up PrismService resources...")
+        
+        # Shutdown thread pool
+        self.executor.shutdown(wait=True)
+        
+        # Clear interrupt flags
+        with self.interrupt_lock:
+            self.interrupt_flags.clear()
+        
+        logger.info("PrismService cleanup completed")
     
     # ==================== BOT MANAGEMENT ====================
     
@@ -587,11 +608,17 @@ Keep it conversational and warm. This will be spoken aloud, so make it sound nat
             logger.info("✅ AI decided to respond...")
             session.is_generating_response = True  # Set lock
             self.session_store.save_session(session)  # Save lock state
-            try:
-                self._generate_and_send_response(session)
-            finally:
-                session.is_generating_response = False  # Release lock
-                self.session_store.save_session(session)  # Save unlocked state
+            
+            # Clear any existing interrupt flag for this session
+            with self.interrupt_lock:
+                self.interrupt_flags.pop(session.session_id, None)
+            
+            # Submit response generation to thread pool (allows interruption)
+            self.executor.submit(self._generate_and_send_response, session)
+            
+            # Don't wait for completion - let it run in background
+            # The response generation will handle its own cleanup
+            logger.info(f"🚀 Response generation started in background for session {session.session_id}")
         else:
             logger.debug("⏭️ AI decided not to respond to this message")
     
@@ -724,6 +751,11 @@ ANSWER: YES or NO"""
                 logger.warning("Response generation timed out before text generation")
                 return
             
+            # Check for interruption before text generation
+            if self._should_interrupt(session.session_id):
+                logger.info("Response generation interrupted before text generation")
+                return
+            
             # Generate text response using Gemini
             response_text = self._generate_text_response(session)
             
@@ -736,6 +768,11 @@ ANSWER: YES or NO"""
             # Check for timeout before audio generation
             if time.time() - start_time > max_response_time:
                 logger.warning("Response generation timed out before audio generation")
+                return
+            
+            # Check for interruption before audio generation
+            if self._should_interrupt(session.session_id):
+                logger.info("Response generation interrupted before audio generation")
                 return
             
             # Note: Gemini maintains its own conversation state internally
@@ -754,6 +791,11 @@ ANSWER: YES or NO"""
             # Check for timeout before sending audio
             if time.time() - start_time > max_response_time:
                 logger.warning("Response generation timed out before sending audio")
+                return
+            
+            # Check for interruption before sending audio
+            if self._should_interrupt(session.session_id):
+                logger.info("Response generation interrupted before sending audio")
                 return
             
             # Send audio via HTTP POST to /output_audio endpoint
@@ -815,9 +857,15 @@ ANSWER: YES or NO"""
         try:
             session = self.get_session(session_id)
             if session.is_generating_response:
+                # Set interrupt flag (thread-safe)
+                with self.interrupt_lock:
+                    self.interrupt_flags[session_id] = True
+                
+                # Also clear the generation flag
                 session.is_generating_response = False
                 self.session_store.save_session(session)
-                logger.info(f"🛑 Interrupted response generation for session {session_id}")
+                
+                logger.info(f"🛑 Interrupt flag set for session {session_id}")
                 return True
             else:
                 logger.info(f"No response being generated for session {session_id}")
@@ -828,6 +876,24 @@ ANSWER: YES or NO"""
         except Exception as e:
             logger.error(f"Failed to interrupt response for session {session_id}: {str(e)}")
             return False
+    
+    def _should_interrupt(self, session_id: str) -> bool:
+        """
+        Check if response generation should be interrupted for a session.
+        
+        Args:
+            session_id: Session ID to check
+            
+        Returns:
+            bool: True if should interrupt, False otherwise
+        """
+        with self.interrupt_lock:
+            should_interrupt = self.interrupt_flags.get(session_id, False)
+            if should_interrupt:
+                # Clear the flag after checking
+                self.interrupt_flags[session_id] = False
+                logger.info(f"🛑 Interrupt detected for session {session_id}")
+            return should_interrupt
     
     def _generate_text_response(self, session: PrismSession) -> Optional[str]:
         """
