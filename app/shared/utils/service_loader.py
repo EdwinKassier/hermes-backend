@@ -5,12 +5,15 @@ from app.shared.services.GeminiService import GeminiService
 from app.shared.services.TTSService import TTSService
 from app.shared.services.CloudStorageService import CloudStorageService
 
-# Set credentials path (centralized location)
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "./credentials.json"
+# Set credentials path only if file exists (for local development)
+# In Cloud Run, credentials come from the service account automatically
+LOCAL_CREDENTIALS_PATH = "./credentials.json"
+if os.path.exists(LOCAL_CREDENTIALS_PATH) and not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = LOCAL_CREDENTIALS_PATH
 
 # Environment variables
-GCS_BUCKET_NAME = os.getenv('GCS_BUCKET_NAME', 'default-bucket-name')
-GCS_CREDENTIALS_PATH = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
+GCS_BUCKET_NAME = os.getenv('GCS_BUCKET_NAME', 'ashes_project_website_artifacts')
+GCS_CREDENTIALS_PATH = os.getenv('GOOGLE_APPLICATION_CREDENTIALS') if os.getenv('GOOGLE_APPLICATION_CREDENTIALS') and os.path.exists(os.getenv('GOOGLE_APPLICATION_CREDENTIALS', '')) else None
 # TTS provider: 'elevenlabs', 'google', or 'chatterbox'
 TTS_PROVIDER = os.getenv('TTS_PROVIDER', 'elevenlabs')
 EL_API_KEY = os.getenv('EL_API_KEY')  # ElevenLabs API key

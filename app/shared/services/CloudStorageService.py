@@ -22,7 +22,7 @@ class CloudStorageService:
     A class to facilitate uploading local files to Google Cloud Storage (GCS)
     and generating signed URLs for downloading those files.
     """
-    def __init__(self, bucket_name: str = "ashes_project_website_artifacts", credentials_path: Optional[str] = "./credentials.json"):
+    def __init__(self, bucket_name: str = "ashes_project_website_artifacts", credentials_path: Optional[str] = None):
         """
         Initializes the CloudStorageService with the target bucket and optional credentials.
 
@@ -31,7 +31,8 @@ class CloudStorageService:
             credentials_path (Optional[str]): Path to a Google Cloud service account key file (JSON).
                                               If None, the client will attempt to authenticate
                                               using default credentials (e.g., GOOGLE_APPLICATION_CREDENTIALS
-                                              environment variable, GCE metadata service). Defaults to None.
+                                              environment variable, GCE metadata service, Cloud Run service account).
+                                              Defaults to None for Cloud Run compatibility.
         Raises:
             RuntimeError: If GCS client fails to initialize or connect to the bucket.
             FileNotFoundError: If the specified credentials_path does not exist.
@@ -49,15 +50,18 @@ class CloudStorageService:
             return
 
         try:
-            if credentials_path:
-                if not os.path.exists(credentials_path):
-                    raise FileNotFoundError(f"Credentials file not found at: {credentials_path}")
+            # Prioritize environment-based credentials (Cloud Run, GCE) over file-based
+            if credentials_path and os.path.exists(credentials_path):
                 credentials = service_account.Credentials.from_service_account_file(credentials_path)
                 self.client = storage.Client(credentials=credentials)
                 logger.info(f"GCS client initialized using credentials from: {credentials_path}")
             else:
+                # Use default credentials (GOOGLE_APPLICATION_CREDENTIALS env var, Cloud Run service account, etc.)
                 self.client = storage.Client()
-                logger.info("GCS client initialized using default credentials (e.g., GOOGLE_APPLICATION_CREDENTIALS).")
+                if os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+                    logger.info(f"GCS client initialized using GOOGLE_APPLICATION_CREDENTIALS: {os.getenv('GOOGLE_APPLICATION_CREDENTIALS')}")
+                else:
+                    logger.info("GCS client initialized using Cloud Run service account or default credentials")
 
             # Create bucket reference without checking existence
             self.bucket = self.client.bucket(bucket_name)
