@@ -604,19 +604,3 @@ def handle_internal_error(error):
         status_code=500
     )
     return jsonify(response.model_dump()), 500
-
-
-# ==============================================================================
-# INTERRUPT LOGIC IS NOW BUILT INTO CORE SYSTEM
-# ==============================================================================
-# 
-# The interrupt functionality is automatically handled when new transcripts
-# arrive while a response is being generated. This provides a more natural
-# conversation flow where the system gracefully handles interruptions.
-#
-# Key behavior:
-# - When user speaks while system is generating a response
-# - Previous response is automatically interrupted
-# - New transcript is processed for potential response
-# - No manual interrupt endpoints needed
-

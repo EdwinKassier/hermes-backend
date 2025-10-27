@@ -66,11 +66,7 @@ class PrismService:
         self.processed_webhooks: OrderedDict = OrderedDict()  # {idempotency_key: timestamp}
         self.webhook_ttl = 600  # 10 minutes TTL
         
-        # Response interruption tracking (thread-safe)
-        self.interrupt_flags: Dict[str, bool] = {}  # {session_id: should_interrupt}
-        self.interrupt_lock = threading.Lock()
-        
-        # Thread pool for response generation (allows interruption)
+        # Thread pool for response generation
         import concurrent.futures
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
         
@@ -228,10 +224,6 @@ class PrismService:
         
         # Shutdown thread pool
         self.executor.shutdown(wait=True)
-        
-        # Clear interrupt flags
-        with self.interrupt_lock:
-            self.interrupt_flags.clear()
         
         logger.info("PrismService cleanup completed")
     
@@ -597,37 +589,24 @@ Keep it conversational and warm. This will be spoken aloud, so make it sound nat
             logger.debug("⏭️ Heuristic filter: skipping obvious non-response")
             return
         
-        # Check if already generating a response
+        # Check if already generating a response - if so, interrupt it
         if session.is_generating_response:
             logger.info(f"🛑 New transcript received while generating response - interrupting previous response")
-            
-            # Interrupt the ongoing response generation
-            with self.interrupt_lock:
-                self.interrupt_flags[session.session_id] = True
-            
-            # Clear the generation flag to allow new response
             session.is_generating_response = False
             self.session_store.save_session(session)
-            
             logger.info(f"✅ Previous response interrupted, processing new transcript")
         
         # Always consult Gemini to decide if we should respond
-        # No threshold - Gemini decides on every message
         if self._should_respond(session):
             logger.info("✅ AI decided to respond...")
-            session.is_generating_response = True  # Set lock
-            self.session_store.save_session(session)  # Save lock state
             
-            # Clear any existing interrupt flag for this session
-            with self.interrupt_lock:
-                self.interrupt_flags.pop(session.session_id, None)
+            # Set generation flag and start response
+            session.is_generating_response = True
+            self.session_store.save_session(session)
             
-            # Submit response generation to thread pool (allows interruption)
+            # Generate response in background thread
             self.executor.submit(self._generate_and_send_response, session)
-            
-            # Don't wait for completion - let it run in background
-            # The response generation will handle its own cleanup
-            logger.info(f"🚀 Response generation started in background for session {session.session_id}")
+            logger.info(f"🚀 Response generation started for session {session.session_id}")
         else:
             logger.debug("⏭️ AI decided not to respond to this message")
     
@@ -749,20 +728,16 @@ ANSWER: YES or NO"""
         max_response_time = 30  # 30 seconds timeout
         
         try:
-            # Set response generation flag
-            session.is_generating_response = True
-            self.session_store.save_session(session)
-            
             logger.info(f"🎯 Starting response generation for session {session.session_id}")
+            
+            # Check if we were interrupted before starting
+            if not session.is_generating_response:
+                logger.info("Response generation cancelled - session was interrupted")
+                return
             
             # Check for timeout before text generation
             if time.time() - start_time > max_response_time:
                 logger.warning("Response generation timed out before text generation")
-                return
-            
-            # Check for interruption before text generation
-            if self._should_interrupt(session.session_id):
-                logger.info("Response generation interrupted before text generation")
                 return
             
             # Generate text response using Gemini
@@ -774,14 +749,14 @@ ANSWER: YES or NO"""
             
             logger.info(f"📝 Generated response: {response_text[:100]}...")
             
+            # Check if interrupted after text generation
+            if not session.is_generating_response:
+                logger.info("Response generation cancelled after text generation")
+                return
+            
             # Check for timeout before audio generation
             if time.time() - start_time > max_response_time:
                 logger.warning("Response generation timed out before audio generation")
-                return
-            
-            # Check for interruption before audio generation
-            if self._should_interrupt(session.session_id):
-                logger.info("Response generation interrupted before audio generation")
                 return
             
             # Note: Gemini maintains its own conversation state internally
@@ -797,14 +772,14 @@ ANSWER: YES or NO"""
             audio_data = audio_result['audio_data']
             audio_format = audio_result.get('audio_format', 'unknown')
             
+            # Check if interrupted before sending audio
+            if not session.is_generating_response:
+                logger.info("Response generation cancelled before sending audio")
+                return
+            
             # Check for timeout before sending audio
             if time.time() - start_time > max_response_time:
                 logger.warning("Response generation timed out before sending audio")
-                return
-            
-            # Check for interruption before sending audio
-            if self._should_interrupt(session.session_id):
-                logger.info("Response generation interrupted before sending audio")
                 return
             
             # Send audio via HTTP POST to /output_audio endpoint
@@ -854,23 +829,6 @@ ANSWER: YES or NO"""
             logger.info(f"🏁 Response generation completed for session {session.session_id}")
     
     
-    def _should_interrupt(self, session_id: str) -> bool:
-        """
-        Check if response generation should be interrupted for a session.
-        
-        Args:
-            session_id: Session ID to check
-            
-        Returns:
-            bool: True if should interrupt, False otherwise
-        """
-        with self.interrupt_lock:
-            should_interrupt = self.interrupt_flags.get(session_id, False)
-            if should_interrupt:
-                # Clear the flag after checking
-                self.interrupt_flags[session_id] = False
-                logger.info(f"🛑 Interrupt detected for session {session_id}")
-            return should_interrupt
     
     def _generate_text_response(self, session: PrismSession) -> Optional[str]:
         """
