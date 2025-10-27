@@ -1,4 +1,5 @@
 """Prism Domain Constants - Following Attendee best practices."""
+
 from enum import Enum
 
 # Attendee API Configuration
@@ -31,6 +32,7 @@ PRISM_TEMPERATURE = 0.7
 
 class BotState(str, Enum):
     """Attendee bot states per official documentation."""
+
     IDLE = "idle"
     JOINING = "joining"
     IN_MEETING = "in_meeting"
@@ -40,6 +42,7 @@ class BotState(str, Enum):
 
 class SessionStatus(str, Enum):
     """Prism session lifecycle states."""
+
     CREATED = "created"
     BOT_CREATING = "bot_creating"
     BOT_JOINING = "bot_joining"
@@ -51,6 +54,7 @@ class SessionStatus(str, Enum):
 
 class WebhookTrigger(str, Enum):
     """Attendee webhook triggers per documentation."""
+
     BOT_STATE_CHANGE = "bot.state_change"
     TRANSCRIPT_UPDATE = "transcript.update"
     BOT_ERROR = "bot.error"
@@ -58,6 +62,7 @@ class WebhookTrigger(str, Enum):
 
 class AudioMessageType(str, Enum):
     """WebSocket message types for bot audio connection."""
+
     AUDIO_CHUNK = "audio_chunk"
     TRANSCRIPT = "transcript"
     STATUS = "status"
@@ -80,9 +85,9 @@ ERROR_AUDIO_GENERATION_FAILED = "Audio generation failed"
 # URL validation constants
 MIN_MEETING_URL_LENGTH = 20
 MAX_MEETING_URL_LENGTH = 100
-SUPPORTED_HTTP_PROTOCOLS = ('http://', 'https://')
-SUPPORTED_WS_PROTOCOLS = ('ws://', 'wss://')
-GOOGLE_MEET_DOMAIN = 'meet.google.com'
+SUPPORTED_HTTP_PROTOCOLS = ("http://", "https://")
+SUPPORTED_WS_PROTOCOLS = ("ws://", "wss://")
+GOOGLE_MEET_DOMAIN = "meet.google.com"
 
 # Message type constants
 MESSAGE_TYPE_PING = "ping"
@@ -105,4 +110,3 @@ BOT_STATE_JOINING = "joining"
 BOT_STATE_IN_MEETING = "in_meeting"
 BOT_STATE_LEAVING = "leaving"
 BOT_STATE_ERROR = "error"
-

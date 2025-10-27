@@ -29,25 +29,25 @@ jobs:
       steps:
         - name: Checkout the code
           uses: actions/checkout@v3
-        
+
         - name: Set up Python
           uses: actions/setup-python@v4
           with:
             python-version: '3.12'  # Match Dockerfile
-        
+
         - name: Install dependencies
           run: |
             python -m pip install --upgrade pip
             pip install pylint
             pip install umsgpack
             pip install pylint-fail-under
-        
+
         - name: Code review
           run: find . -name '*.py' -print -exec pylint {} \; || true
-        
+
         - name: Analyze code
           run: |
-            for file in */*.py; do 
+            for file in */*.py; do
               pylint "$file" --fail-under=0.0 || true
             done
 
@@ -65,7 +65,7 @@ jobs:
         run: |
           BRANCH_NAME=$(echo ${GITHUB_REF#refs/heads/})
           echo "BRANCH_NAME=${BRANCH_NAME}" >> $GITHUB_ENV
-          
+
           # Use different service names per branch or single service name
           if [ "$BRANCH_NAME" = "master" ] || [ "$BRANCH_NAME" = "prod" ]; then
             echo "SERVICE_NAME=master-hermes-backend" >> $GITHUB_ENV
@@ -84,7 +84,7 @@ jobs:
         shell: bash
         run: |
           echo "📋 Creating .env file from GitHub secrets..."
-          
+
           # Check if ENV_FILE secret exists
           if [ -z "${{ secrets.ENV_FILE }}" ]; then
             echo "❌ ENV_FILE secret not found or empty"
@@ -96,12 +96,12 @@ jobs:
             echo "4. Paste the base64 output as the value"
             exit 1
           fi
-          
+
           # Decode base64-encoded ENV_FILE secret
           # Strip whitespace/newlines and decode
           echo "${{ secrets.ENV_FILE }}" | tr -d '\n\r' | base64 --decode > .env 2>&1
           DECODE_STATUS=$?
-          
+
           if [ $DECODE_STATUS -ne 0 ]; then
             echo "❌ Failed to decode ENV_FILE secret (exit code: $DECODE_STATUS)"
             echo ""
@@ -115,18 +115,18 @@ jobs:
             echo "Make sure to use 'base64 -w 0' to avoid newlines!"
             exit 1
           fi
-          
+
           # Verify .env exists and has content
           if [ ! -f .env ]; then
             echo "❌ .env file was not created"
             exit 1
           fi
-          
+
           if [ ! -s .env ]; then
             echo "❌ .env file is empty"
             exit 1
           fi
-          
+
           echo "✅ .env file created successfully"
           echo "✅ File size: $(wc -c < .env) bytes"
           echo "✅ Number of lines: $(wc -l < .env)"
@@ -157,42 +157,42 @@ jobs:
       - name: Build and push image to Artifact Registry
         run: |
           echo "🔨 Building Docker image..."
-          
+
           IMAGE_NAME="${{ env.RUN_REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPO_NAME }}/${{ env.SERVICE_NAME }}"
           # Get first 8 characters of commit SHA
           BUILD_TAG="$(echo '${{ github.sha }}' | cut -c1-8)"
-          
+
           echo "Image: ${IMAGE_NAME}:${BUILD_TAG}"
           echo "Commit SHA: ${{ github.sha }}"
           echo "Build Tag: ${BUILD_TAG}"
           echo ""
-          
+
           # Build and push with commit SHA tag
           echo "Building with Cloud Build..."
           gcloud builds submit \
             --tag "${IMAGE_NAME}:${BUILD_TAG}" \
             --project=${{ env.PROJECT_ID }} \
             --timeout=20m
-          
+
           BUILD_STATUS=$?
           if [ $BUILD_STATUS -ne 0 ]; then
             echo "❌ Cloud Build failed with exit code: $BUILD_STATUS"
             exit 1
           fi
-          
+
           echo "✅ Image built: ${IMAGE_NAME}:${BUILD_TAG}"
-          
+
           # Tag the image with 'latest' as well
           echo "Tagging image as :latest..."
           gcloud artifacts docker tags add \
             "${IMAGE_NAME}:${BUILD_TAG}" \
             "${IMAGE_NAME}:latest" \
             --project=${{ env.PROJECT_ID }}
-          
+
           echo "✅ Image tagged: ${IMAGE_NAME}:latest"
           echo ""
           echo "✅ Docker image built and pushed successfully"
-          
+
           # Export for use in later steps
           echo "IMAGE_NAME=${IMAGE_NAME}" >> $GITHUB_ENV
           echo "BUILD_TAG=${BUILD_TAG}" >> $GITHUB_ENV
@@ -200,7 +200,7 @@ jobs:
       - name: Verify image exists in Artifact Registry
         run: |
           echo "🔍 Verifying image exists in Artifact Registry..."
-          
+
           # Check if image exists
           if gcloud artifacts docker images describe \
             "${{ env.IMAGE_NAME }}:${{ env.BUILD_TAG }}" \
@@ -216,13 +216,13 @@ jobs:
               --project=${{ env.PROJECT_ID }} || true
             exit 1
           fi
-          
+
           echo ""
 
       - name: Prepare environment variables for Cloud Run
         run: |
           echo "📋 Preparing environment variables YAML file..."
-          
+
           # Create YAML file with base env vars
           cat > env.yaml << 'EOF'
           PROJECT_ID: "${{ env.PROJECT_ID }}"
@@ -232,23 +232,23 @@ jobs:
           APP_NAME: "hermes-backend"
           SA_KEY_JSON: "${{ secrets.SA_KEY_JSON }}"
           EOF
-          
+
           # Parse .env and append to YAML (matches deploy.sh logic)
           while IFS='=' read -r key value; do
             # Skip comments and empty lines
             [[ "$key" =~ ^#.*$ ]] && continue
             [[ -z "$key" ]] && continue
-            
+
             # Skip keys that shouldn't be in Cloud Run
             case "$key" in
               GOOGLE_APPLICATION_CREDENTIALS|TTS_DEVICE|REDIS_URL|PORT)
                 continue
                 ;;
             esac
-            
+
             # Remove quotes from value
             value=$(echo "$value" | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")
-            
+
             # Add to environment variables YAML file
             # Use literal block style for prompts (multi-line text), quoted strings for everything else
             if [[ "$key" =~ _PROMPT$ ]] || [[ "$key" == "BASE_PROMPT" ]]; then
@@ -258,10 +258,10 @@ jobs:
               escaped_value=$(printf '%s' "$value" | sed 's/"/\\"/g')
               echo "${key}: \"${escaped_value}\"" >> env.yaml
             fi
-            
+
             echo "   ✓ ${key}"
           done < .env
-          
+
           echo "✅ Environment variables YAML file created"
           echo ""
           echo "📋 Environment variables being deployed:"
@@ -279,7 +279,7 @@ jobs:
       - name: Deploy to Cloud Run
         run: |
           echo "🚀 Deploying to Cloud Run..."
-          
+
           gcloud run deploy "${{ env.SERVICE_NAME }}" \
             --quiet \
             --region "${{ env.RUN_REGION }}" \
@@ -297,24 +297,24 @@ jobs:
             --allow-unauthenticated \
             --env-vars-file=env.yaml \
             --project=${{ env.PROJECT_ID }}
-          
+
           echo "✅ Deployment successful"
 
       - name: Configure webhook URLs
         run: |
           echo "🔧 Configuring webhook URLs..."
-          
+
           SERVICE_URL=$(gcloud run services describe "${{ env.SERVICE_NAME }}" \
             --platform managed \
             --region "${{ env.RUN_REGION }}" \
             --format 'value(status.url)' \
             --project=${{ env.PROJECT_ID }})
-          
+
           if [ -n "$SERVICE_URL" ]; then
             echo "Service URL: $SERVICE_URL"
-            
+
             WEBSOCKET_URL=$(echo "$SERVICE_URL" | sed 's/https:/wss:/')
-            
+
             # Check if WEBHOOK_BASE_URL is already set in .env
             if ! grep -q "^WEBHOOK_BASE_URL=" .env 2>/dev/null; then
               echo "Setting webhook URLs..."
@@ -334,34 +334,34 @@ jobs:
       - name: Verify deployment
         run: |
           echo "🔍 Verifying deployment..."
-          
+
           SERVICE_URL=$(gcloud run services describe "${{ env.SERVICE_NAME }}" \
             --platform managed \
             --region "${{ env.RUN_REGION }}" \
             --format 'value(status.url)' \
             --project=${{ env.PROJECT_ID }})
-          
+
           if [ -z "$SERVICE_URL" ]; then
             echo "❌ Could not retrieve service URL"
             exit 1
           fi
-          
+
           echo "✅ Service URL: $SERVICE_URL"
-          
+
           # Wait for service to be ready
           echo "Waiting for service to be ready..."
           sleep 10
-          
+
           # Test health endpoint
           echo "Testing /health endpoint..."
           HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${SERVICE_URL}/health" || echo "000")
-          
+
           if [ "$HTTP_CODE" = "200" ]; then
             echo "✅ Health check passed (HTTP $HTTP_CODE)"
           else
             echo "⚠️  Health check returned HTTP $HTTP_CODE"
             echo "Service may still be starting up"
-            
+
             # Show recent logs
             echo "Recent logs:"
             gcloud run services logs read "${{ env.SERVICE_NAME }}" \

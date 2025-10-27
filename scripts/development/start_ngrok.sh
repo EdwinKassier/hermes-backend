@@ -36,4 +36,3 @@ ngrok http $PORT --log=stdout
 
 # Note: ngrok will run in foreground
 # Press Ctrl+C to stop
-

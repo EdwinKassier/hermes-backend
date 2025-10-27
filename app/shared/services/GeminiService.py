@@ -1,14 +1,18 @@
+import logging
 import os
 import traceback
-from typing import Optional, List, Dict, Any
 from datetime import datetime
-import logging
+from typing import Any, Dict, List, Optional
 
 # Optional Google / Gemini / Langchain specific
 try:
     import google.generativeai as genai
-    from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
     from langchain_core.messages import HumanMessage
+    from langchain_google_genai import (
+        ChatGoogleGenerativeAI,
+        GoogleGenerativeAIEmbeddings,
+    )
+
     LANGCHAIN_AVAILABLE = True
 except ImportError:
     ChatGoogleGenerativeAI = None
@@ -20,20 +24,21 @@ except ImportError:
 try:
     from langchain_community.vectorstores import SupabaseVectorStore
     from supabase import create_client
+
     SUPABASE_AVAILABLE = True
 except ImportError:
     SupabaseVectorStore = None
     create_client = None
     SUPABASE_AVAILABLE = False
 
+from app.shared.utils.conversation_state import ConversationState, State
+
 # Import tools and services
 from app.shared.utils.toolhub import get_all_tools
-from app.shared.utils.conversation_state import State, ConversationState
 
 # Setup logging
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
 
@@ -57,7 +62,7 @@ class GeminiService:
         self,
         vertex_project: Optional[str] = None,
         vertex_location: Optional[str] = None,
-        conversation_db_path: str = "conversations.db"
+        conversation_db_path: str = "conversations.db",
     ):
         if not LANGCHAIN_AVAILABLE:
             raise ImportError(
@@ -83,44 +88,46 @@ class GeminiService:
 
         # Base prompts for different personas - load from markdown files
         self.base_prompts = self._load_agent_prompts()
-        logging.info("Loaded base prompts for agents: %s", list(self.base_prompts.keys()))
+        logging.info(
+            "Loaded base prompts for agents: %s", list(self.base_prompts.keys())
+        )
 
         # Initialize Gemini embeddings (1536 dimensions)
         try:
             # Configure the Gemini API for LLM and embeddings
             genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
-            
+
             # Create custom embeddings wrapper with explicit dimensionality
             # MUST use models/embedding-001 with 1536 dimensions to match Supabase embeddings
             _target_dimensionality = self.EMBEDDING_DIMENSIONS  # Store in closure
-            
+
             class CustomDimensionalityEmbeddings(GoogleGenerativeAIEmbeddings):
                 """Custom embeddings that enforce 1536 dimensions"""
-                
+
                 def embed_query(self, text: str) -> list[float]:
                     """Override to add output_dimensionality parameter"""
                     result = genai.embed_content(
                         model=self.model,
                         content=text,
                         task_type=self.task_type,
-                        output_dimensionality=_target_dimensionality
+                        output_dimensionality=_target_dimensionality,
                     )
-                    return result['embedding']
-                
+                    return result["embedding"]
+
                 def embed_documents(self, texts: list[str]) -> list[list[float]]:
                     """Override to add output_dimensionality parameter"""
                     return [self.embed_query(text) for text in texts]
-            
+
             self.embeddings_model = CustomDimensionalityEmbeddings(
                 model=self.EMBEDDING_MODEL_NAME,
                 google_api_key=os.environ["GOOGLE_API_KEY"],
-                task_type="retrieval_document"
+                task_type="retrieval_document",
             )
-            
+
             logging.info(
                 "Initialized Gemini API Embeddings with model: %s (%dD)",
                 self.EMBEDDING_MODEL_NAME,
-                self.EMBEDDING_DIMENSIONS
+                self.EMBEDDING_DIMENSIONS,
             )
         except Exception as e:
             logging.error("Failed to initialize Gemini API Embeddings: %s", e)
@@ -136,7 +143,9 @@ class GeminiService:
             self.vector_store = None
         else:
             try:
-                supabase_url = os.environ.get("SUPABASE_URL") or os.environ.get("SUPABASE_PROJECT_URL")
+                supabase_url = os.environ.get("SUPABASE_URL") or os.environ.get(
+                    "SUPABASE_PROJECT_URL"
+                )
                 supabase_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
                 if not supabase_url or not supabase_key:
                     raise ValueError(
@@ -146,7 +155,7 @@ class GeminiService:
                 self.vector_store = SupabaseVectorStore(
                     client=supabase_client,
                     embedding=self.embeddings_model,
-                    table_name="hermes_vectors"
+                    table_name="hermes_vectors",
                 )
                 logging.info("Initialized Supabase vector store using LangChain")
             except Exception as e:
@@ -157,13 +166,15 @@ class GeminiService:
         # Initialize conversation state
         self.conversation_state = ConversationState(db_path=conversation_db_path)
 
-        vector_store_status = "Supabase" if self.vector_store else "None (dependencies missing)"
+        vector_store_status = (
+            "Supabase" if self.vector_store else "None (dependencies missing)"
+        )
         logging.info(
             "GeminiService initialized. LLM: %s, Embeddings: %s (%dD), Vector Store: %s",
             self.MODEL_NAME,
             self.EMBEDDING_MODEL_NAME,
             self.EMBEDDING_DIMENSIONS,
-            vector_store_status
+            vector_store_status,
         )
 
     def _load_agent_prompts(self) -> Dict[str, str]:
@@ -172,72 +183,76 @@ class GeminiService:
         Returns a dictionary mapping agent names (lowercase) to their prompt content.
         """
         prompts = {}
-        
+
         # Get the project root directory (3 levels up from this file)
         current_dir = os.path.dirname(os.path.abspath(__file__))
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
         prompts_dir = os.path.join(project_root, "docs", "AgentPrompts")
-        
+
         if not os.path.exists(prompts_dir):
             logging.warning("Agent prompts directory not found: %s", prompts_dir)
             return prompts
-        
+
         # Load all .md files from the prompts directory
         try:
             for filename in os.listdir(prompts_dir):
                 if filename.endswith(".md"):
-                    agent_name = filename[:-3].lower()  # Remove .md extension and lowercase
+                    agent_name = filename[
+                        :-3
+                    ].lower()  # Remove .md extension and lowercase
                     filepath = os.path.join(prompts_dir, filename)
-                    
+
                     try:
-                        with open(filepath, 'r', encoding='utf-8') as f:
+                        with open(filepath, "r", encoding="utf-8") as f:
                             content = f.read().strip()
                             prompts[agent_name] = content
                             logging.info(
                                 "Loaded prompt for agent '%s' from %s (%d chars)",
-                                agent_name, filename, len(content)
+                                agent_name,
+                                filename,
+                                len(content),
                             )
                     except Exception as e:
                         logging.error("Failed to load prompt from %s: %s", filepath, e)
         except Exception as e:
             logging.error("Error reading prompts directory %s: %s", prompts_dir, e)
-        
+
         return prompts
 
     def _direct_similarity_search(self, query: str, k: int = 5, threshold: float = 0.7):
         """
         Direct Supabase vector similarity search using RPC.
         Bypasses broken LangChain wrapper.
-        
+
         Args:
             query: Search query
             k: Number of results
             threshold: Minimum similarity threshold (0-1)
-            
+
         Returns:
             List of (Document, score) tuples
         """
         try:
             # Generate embedding for query
             query_embedding = self.embeddings_model.embed_query(query)
-            
+
             # Call Supabase RPC function directly (note: _client with underscore)
             # The function signature is: match_documents(filter, match_count, query_embedding)
             response = self.vector_store._client.rpc(
-                'match_documents',
+                "match_documents",
                 {
-                    'query_embedding': query_embedding,
-                    'match_count': k * 2,  # Get more results to filter by threshold
-                    'filter': {}  # Empty filter for now
-                }
+                    "query_embedding": query_embedding,
+                    "match_count": k * 2,  # Get more results to filter by threshold
+                    "filter": {},  # Empty filter for now
+                },
             ).execute()
-            
+
             if not response.data:
                 logging.warning("No data returned from match_documents RPC")
                 return []
-            
+
             # Log all similarity scores before filtering
-            all_scores = [row.get('similarity', 0.0) for row in response.data]
+            all_scores = [row.get("similarity", 0.0) for row in response.data]
             if all_scores:
                 logging.info(
                     f"Raw similarity scores from DB: "
@@ -246,51 +261,55 @@ class GeminiService:
                     f"min={min(all_scores):.3f}, "
                     f"avg={sum(all_scores)/len(all_scores):.3f}"
                 )
-            
+
             # Convert to LangChain Document format and filter by threshold
             from langchain_core.documents import Document
+
             results = []
             for row in response.data:
-                similarity = row.get('similarity', 0.0)
-                
+                similarity = row.get("similarity", 0.0)
+
                 # Filter by threshold
                 if similarity >= threshold:
                     doc = Document(
-                        page_content=row.get('content', ''),
-                        metadata=row.get('metadata', {})
+                        page_content=row.get("content", ""),
+                        metadata=row.get("metadata", {}),
                     )
                     results.append((doc, similarity))
-            
-            logging.info(f"After threshold filter: {len(results)}/{len(response.data)} chunks passed (threshold={threshold})")
-            
+
+            logging.info(
+                f"After threshold filter: {len(results)}/{len(response.data)} chunks passed (threshold={threshold})"
+            )
+
             # Sort by similarity (descending) and limit to k
             results.sort(key=lambda x: x[1], reverse=True)
             return results[:k]
-            
+
         except Exception as e:
             logging.error(f"Direct similarity search failed: {e}")
             logging.error(traceback.format_exc())
             return []
 
-    def generate_gemini_response(self, prompt: str, persona: str = 'hermes') -> str:
-        base_prompt = self.base_prompts.get(persona, self.base_prompts['hermes'])
+    def generate_gemini_response(self, prompt: str, persona: str = "hermes") -> str:
+        base_prompt = self.base_prompts.get(persona, self.base_prompts["hermes"])
         prompt_prefix = f"{base_prompt}\n\n" if base_prompt else ""
         full_prompt = f"{prompt_prefix}User Input: {prompt}" if base_prompt else prompt
         try:
             message = self.model.invoke([HumanMessage(content=full_prompt)])
-            
+
             # Handle tool calls
-            if hasattr(message, 'tool_calls') and message.tool_calls:
+            if hasattr(message, "tool_calls") and message.tool_calls:
                 logging.info(f"Model requested {len(message.tool_calls)} tool call(s)")
                 tool_results = []
-                
+
                 for tool_call in message.tool_calls:
-                    tool_name = tool_call.get('name', 'unknown')
-                    tool_args = tool_call.get('args', {})
+                    tool_name = tool_call.get("name", "unknown")
+                    tool_args = tool_call.get("args", {})
                     logging.info(f"Executing tool: {tool_name} with args: {tool_args}")
-                    
+
                     # Find and execute the tool
                     from app.shared.utils.toolhub import get_tool_by_name
+
                     tool = get_tool_by_name(tool_name)
                     if tool:
                         try:
@@ -303,10 +322,10 @@ class GeminiService:
                             logging.error(error_msg)
                     else:
                         tool_results.append(f"Tool {tool_name} not found")
-                
+
                 # Return tool results formatted
                 return "\n".join(tool_results)
-            
+
             # Handle regular text response
             response = message.content.strip()
             if "error" in response.lower() or not response:
@@ -317,26 +336,31 @@ class GeminiService:
         except Exception as e:
             logging.error("Error generating response: %s", e)
             logging.error(traceback.format_exc())
-            return self.ERROR_MESSAGE + " Rate limiting or internal error. Try again in 30s."
+            return (
+                self.ERROR_MESSAGE
+                + " Rate limiting or internal error. Try again in 30s."
+            )
 
     def _format_conversation_history(self, messages: List[Dict[str, Any]]) -> str:
         formatted = []
         for msg in messages:
-            role = msg.get('role', 'unknown').capitalize()
-            content = msg.get('content', '').strip()
+            role = msg.get("role", "unknown").capitalize()
+            content = msg.get("content", "").strip()
             if content:
                 formatted.append(f"{role}: {content}")
         return "\n".join(formatted)
 
-    def _enrich_query_for_vector_search(self, user_query: str, conversation_history: str = "") -> str:
+    def _enrich_query_for_vector_search(
+        self, user_query: str, conversation_history: str = ""
+    ) -> str:
         """
         Enrich a user query using Gemini to make it more detailed and suitable for vector search.
         Expands vague queries with context, synonyms, and related terms.
-        
+
         Args:
             user_query: The original user query
             conversation_history: Optional conversation context
-            
+
         Returns:
             Enriched query string optimized for vector similarity search
         """
@@ -366,15 +390,13 @@ Enriched Query:"""
                 max_retries=2,
                 timeout=10,  # Shorter timeout for speed
             )
-            
-            message = base_model.invoke(
-                [HumanMessage(content=enrichment_prompt)]
-            )
+
+            message = base_model.invoke([HumanMessage(content=enrichment_prompt)])
             # Validate enrichment - check if it adds meaningful value
             enriched_query = message.content.strip()
-            
+
             return enriched_query
-            
+
         except Exception as e:
             logging.error(f"Error enriching query: {e}")
             logging.info("Falling back to original query")
@@ -384,8 +406,8 @@ Enriched Query:"""
         self,
         prompt: str,
         user_id: str,
-        persona: str = 'hermes',
-        min_chunk_length: int = 20
+        persona: str = "hermes",
+        min_chunk_length: int = 20,
     ) -> str:
         """
         Optimized RAG generation using Gemini embeddings and top-k.
@@ -393,24 +415,28 @@ Enriched Query:"""
 
         # Retrieve or initialize conversation state
         state = self.conversation_state.get_state(user_id)
-        if not state or 'conversation' not in state.data:
-            state = State(data={
-                'conversation': [],
-                'metadata': {
-                    'created_at': datetime.utcnow().isoformat(),
-                    'last_updated': datetime.utcnow().isoformat(),
-                    'message_count': 0
+        if not state or "conversation" not in state.data:
+            state = State(
+                data={
+                    "conversation": [],
+                    "metadata": {
+                        "created_at": datetime.utcnow().isoformat(),
+                        "last_updated": datetime.utcnow().isoformat(),
+                        "message_count": 0,
+                    },
                 }
-            })
+            )
 
         # Add user message
-        state.data['conversation'].append({
-            'role': 'user',
-            'content': prompt,
-            'timestamp': datetime.utcnow().isoformat()
-        })
-        state.data['metadata']['last_updated'] = datetime.utcnow().isoformat()
-        state.data['metadata']['message_count'] += 1
+        state.data["conversation"].append(
+            {
+                "role": "user",
+                "content": prompt,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+        )
+        state.data["metadata"]["last_updated"] = datetime.utcnow().isoformat()
+        state.data["metadata"]["message_count"] += 1
 
         # Vector store fallback
         if self.vector_store is None:
@@ -422,40 +448,46 @@ Enriched Query:"""
             # Add entity context to improve matching
             contextualized_query = f"Edwin Kassier {prompt}"
             logging.info(f"Searching vector store with query: '{contextualized_query}'")
-            
+
             # Use direct RPC call instead of broken LangChain wrapper
             relevant_chunks = self._direct_similarity_search(
                 query=contextualized_query,
                 k=self.RAG_TOP_K,
-                threshold=self.RAG_SIMILARITY_THRESHOLD
+                threshold=self.RAG_SIMILARITY_THRESHOLD,
             )
-            
+
             if not relevant_chunks:
                 logging.warning(
                     f"No chunks above similarity threshold {self.RAG_SIMILARITY_THRESHOLD}"
                 )
                 return self.generate_gemini_response(prompt, persona)
-            
+
             # Log similarity scores for debugging
             scores = [score for _, score in relevant_chunks]
             logging.info(
                 f"Retrieved {len(relevant_chunks)} high-quality chunks - "
                 f"Scores: min={min(scores):.3f}, max={max(scores):.3f}, avg={sum(scores)/len(scores):.3f}"
             )
-            
+
             # Log top chunks for debugging
             for idx, (doc, score) in enumerate(relevant_chunks[:3]):
-                preview = doc.page_content[:100].replace('\n', ' ')
-                logging.info(f"  Chunk {idx+1}: score={score:.3f}, preview='{preview}...'")
-            
+                preview = doc.page_content[:100].replace("\n", " ")
+                logging.info(
+                    f"  Chunk {idx+1}: score={score:.3f}, preview='{preview}...'"
+                )
+
             # Extract documents (already sorted by score)
             docs = [doc for doc, score in relevant_chunks]
-            
+
             # Filter by minimum length
-            docs = [doc for doc in docs if len(doc.page_content.strip()) >= min_chunk_length]
-            
+            docs = [
+                doc for doc in docs if len(doc.page_content.strip()) >= min_chunk_length
+            ]
+
             if not docs:
-                logging.info("No chunks passed length filter. Using standard generation.")
+                logging.info(
+                    "No chunks passed length filter. Using standard generation."
+                )
                 return self.generate_gemini_response(prompt, persona)
 
         except Exception as e:
@@ -466,13 +498,11 @@ Enriched Query:"""
 
         # Conversation history
         conversation_history = self._format_conversation_history(
-            state.data['conversation'][-10:]
+            state.data["conversation"][-10:]
         )
 
         # Base prompt
-        base_prompt = self.base_prompts.get(
-            persona, self.base_prompts['hermes']
-        )
+        base_prompt = self.base_prompts.get(persona, self.base_prompts["hermes"])
         prompt_prefix = f"{base_prompt}\n\n" if base_prompt else ""
 
         # Merge chunks
@@ -505,12 +535,14 @@ Enriched Query:"""
                 return self.ERROR_MESSAGE + " RAG: Check rate limits or context."
 
             # Add assistant response to conversation state
-            state.data['conversation'].append({
-                'role': 'assistant',
-                'content': response,
-                'timestamp': datetime.utcnow().isoformat()
-            })
-            state.data['metadata']['last_updated'] = datetime.utcnow().isoformat()
+            state.data["conversation"].append(
+                {
+                    "role": "assistant",
+                    "content": response,
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+            )
+            state.data["metadata"]["last_updated"] = datetime.utcnow().isoformat()
 
             # Save updated state
             self.conversation_state.save_state(user_id, state)

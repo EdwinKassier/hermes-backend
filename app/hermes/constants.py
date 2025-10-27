@@ -1,16 +1,19 @@
 """Hermes Domain Constants - Configuration and constant values."""
-from enum import Enum
 
+from enum import Enum
 
 # API Version
 API_VERSION = "v1"
 API_PREFIX = f"/api/{API_VERSION}/hermes"
 
+
 # Response Modes
 class ResponseModeType(str, Enum):
     """Response mode types."""
+
     TEXT = "text"
     TTS = "tts"
+
 
 # AI Model Configuration
 DEFAULT_AI_MODEL = "gemini-pro"

@@ -11,36 +11,36 @@ import os
 import shutil
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime
-from typing import Any, Dict, Generic, Optional, TypeVar, Iterator
 from dataclasses import asdict, is_dataclass
+from datetime import datetime
+from typing import Any, Dict, Generic, Iterator, Optional, TypeVar
 
 # Import LangChain message types
 try:
-    from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+    from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 except ImportError:
     # Fallback for when LangChain is not available
     class HumanMessage:
         def __init__(self, content: str):
             self.content = content
-    
+
     class AIMessage:
         def __init__(self, content: str):
             self.content = content
-    
+
     class SystemMessage:
         def __init__(self, content: str):
             self.content = content
 
+
 # Setup logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
 # Type variable for state type
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 class State(Generic[T]):
@@ -52,9 +52,7 @@ class State(Generic[T]):
     """
 
     def __init__(
-        self,
-        data: Optional[T] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        self, data: Optional[T] = None, metadata: Optional[Dict[str, Any]] = None
     ) -> None:
         """Initialize a new State instance.
 
@@ -64,9 +62,9 @@ class State(Generic[T]):
         """
         self.data = data or {}
         self.metadata = metadata or {
-            'version': '1.0',
-            'created_at': datetime.utcnow().isoformat(),
-            'updated_at': datetime.utcnow().isoformat()
+            "version": "1.0",
+            "created_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.utcnow().isoformat(),
         }
 
     def update(self, **updates: Any) -> None:
@@ -76,7 +74,7 @@ class State(Generic[T]):
             **updates: Key-value pairs to update in the state
         """
         self.data.update(updates)
-        self.metadata['updated_at'] = datetime.utcnow().isoformat()
+        self.metadata["updated_at"] = datetime.utcnow().isoformat()
 
     def get(self, key: str, default: Any = None) -> Any:
         """Get a value from the state with an optional default.
@@ -96,13 +94,10 @@ class State(Generic[T]):
         Returns:
             Dictionary representation of the state
         """
-        return {
-            'data': self.data,
-            'metadata': self.metadata
-        }
+        return {"data": self.data, "metadata": self.metadata}
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'State':
+    def from_dict(cls, data: Dict[str, Any]) -> "State":
         """Create a State instance from a dictionary.
 
         Args:
@@ -112,8 +107,8 @@ class State(Generic[T]):
             A new State instance
         """
         state = cls()
-        state.data = data.get('data', {})
-        state.metadata = data.get('metadata', {})
+        state.data = data.get("data", {})
+        state.metadata = data.get("metadata", {})
         return state
 
     @staticmethod
@@ -134,7 +129,7 @@ class State(Generic[T]):
             return [State._serialize(item) for item in obj]
         if isinstance(obj, datetime):
             return obj.isoformat()
-        if hasattr(obj, 'to_dict'):
+        if hasattr(obj, "to_dict"):
             return obj.to_dict()
         if is_dataclass(obj):
             return asdict(obj)
@@ -218,41 +213,41 @@ class ConversationState:
             # Add last_updated column if it doesn't exist
             try:
                 add_column_sql = """
-                    ALTER TABLE conversation_states 
-                    ADD COLUMN last_updated TIMESTAMP 
+                    ALTER TABLE conversation_states
+                    ADD COLUMN last_updated TIMESTAMP
                     DEFAULT CURRENT_TIMESTAMP
                 """
                 conn.execute(add_column_sql)
             except sqlite3.OperationalError:
                 # Column already exists
                 pass
-    
+
     @staticmethod
     def validate_state(state: State) -> bool:
         """Validate the structure and content of a conversation state.
-        
+
         Args:
             state: The state object to validate
-            
+
         Returns:
             bool: True if the state is valid, False otherwise
         """
         if not isinstance(state, State):
             logger.error("Invalid state: not a State instance")
             return False
-            
+
         if not isinstance(state.data, dict):
             logger.error("State data must be a dictionary")
             return False
-            
+
         return True
-    
+
     def get_state(self, user_id: str) -> State:
         """Retrieve the conversation state for a user.
-        
+
         Args:
             user_id: The ID of the user
-            
+
         Returns:
             State: The user's conversation state
         """
@@ -260,42 +255,36 @@ class ConversationState:
             with self._get_db_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "SELECT state FROM conversation_states WHERE user_id=?",
-                    (user_id,)
+                    "SELECT state FROM conversation_states WHERE user_id=?", (user_id,)
                 )
                 result = cursor.fetchone()
 
                 if not result:
                     return State()
-                    
-                state_data = json.loads(result['state'])
+
+                state_data = json.loads(result["state"])
                 state = State.from_dict(state_data)
-                
+
                 if not self.validate_state(state):
                     logger.warning(
-                        "Invalid state detected for user %s, "
-                        "resetting to default",
-                        user_id
+                        "Invalid state detected for user %s, " "resetting to default",
+                        user_id,
                     )
                     return State()
-                
+
                 return state
-                
+
         except (sqlite3.Error, json.JSONDecodeError) as e:
-            logger.error(
-                "Error retrieving state for user %s: %s",
-                user_id,
-                str(e)
-            )
+            logger.error("Error retrieving state for user %s: %s", user_id, str(e))
             return State()
-    
+
     def save_state(self, user_id: str, state: State) -> None:
         """Save the conversation state for a user.
-        
+
         Args:
             user_id: The ID of the user
             state: The state object to save
-            
+
         Raises:
             ValueError: If the state is invalid
             sqlite3.Error: If there's an error saving to the database
@@ -305,29 +294,30 @@ class ConversationState:
 
         try:
             state_dict = state.to_dict()
-            
+
             with self._get_db_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT OR REPLACE INTO conversation_states 
+                cursor.execute(
+                    """
+                    INSERT OR REPLACE INTO conversation_states
                     (user_id, state, last_updated)
                     VALUES (?, ?, CURRENT_TIMESTAMP)
-                """, (user_id, json.dumps(state_dict)))
-                
+                """,
+                    (user_id, json.dumps(state_dict)),
+                )
+
         except (sqlite3.Error, TypeError) as e:
             logger.error(
-                "Error saving conversation state for user %s: %s",
-                user_id,
-                str(e)
+                "Error saving conversation state for user %s: %s", user_id, str(e)
             )
             raise
-    
+
     def clear_conversation(self, user_id: str) -> None:
         """Clear the conversation state for a user.
-        
+
         Args:
             user_id: The ID of the user
-            
+
         Raises:
             sqlite3.Error: If there's an error clearing the state
         """
@@ -335,26 +325,23 @@ class ConversationState:
             with self._get_db_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "DELETE FROM conversation_states WHERE user_id=?",
-                    (user_id,)
+                    "DELETE FROM conversation_states WHERE user_id=?", (user_id,)
                 )
             self.cleanup_resources(user_id)
             logger.info("Conversation state cleared for user: %s", user_id)
-            
+
         except sqlite3.Error as e:
             logger.error(
-                "Error clearing conversation state for user %s: %s",
-                user_id,
-                str(e)
+                "Error clearing conversation state for user %s: %s", user_id, str(e)
             )
             raise
-    
+
     def cleanup_resources(self, user_id: str) -> None:
         """Clean up temporary files and resources for a user.
-        
+
         Args:
             user_id: The ID of the user
-            
+
         Note:
             This method logs errors but doesn't raise exceptions to prevent
             cleanup failures from affecting the main application flow.
@@ -364,53 +351,49 @@ class ConversationState:
         try:
             if os.path.exists(temp_dir):
                 shutil.rmtree(temp_dir, ignore_errors=True)
-                
+
             # Reset user state
             self.save_state(user_id, State())
-                
+
         except (OSError, sqlite3.Error) as e:
-            logger.error(
-                "Error cleaning up resources for user %s: %s",
-                user_id,
-                str(e)
-            )
-    
+            logger.error("Error cleaning up resources for user %s: %s", user_id, str(e))
+
     def _cleanup_old_sessions(self, max_age_hours: int = 24) -> None:
         """Clean up old conversation sessions.
-        
+
         Args:
             max_age_hours: Maximum age in hours before a session is considered old
         """
         try:
             with self._get_db_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
+                cursor.execute(
+                    """
                     DELETE FROM conversation_states
                     WHERE datetime(last_updated) < datetime('now', ?)
-                """, (f'-{max_age_hours} hours',))
-                
+                """,
+                    (f"-{max_age_hours} hours",),
+                )
+
                 deleted_count = cursor.rowcount
                 if deleted_count > 0:
                     logger.info(
                         "Cleaned up %d old sessions (older than %d hours)",
                         deleted_count,
-                        max_age_hours
+                        max_age_hours,
                     )
-                    
+
         except sqlite3.Error as e:
-            logger.error(
-                "Error cleaning up old sessions: %s",
-                str(e)
-            )
-    
+            logger.error("Error cleaning up old sessions: %s", str(e))
+
     @staticmethod
     def _serialize_message(message) -> dict:
         """
         Serialize a message object to a dictionary.
-        
+
         Args:
             message: The message to serialize (HumanMessage, AIMessage, or SystemMessage)
-            
+
         Returns:
             dict: The serialized message
         """
@@ -421,19 +404,23 @@ class ConversationState:
         elif isinstance(message, AIMessage):
             return {"type": "ai", "content": message.content}
         return message
-    
+
     @staticmethod
     def _deserialize_message(message_data: dict):
         """
         Deserialize a message dictionary back to a message object.
-        
+
         Args:
             message_data: The serialized message data
-            
+
         Returns:
             The deserialized message object
         """
-        if isinstance(message_data, dict) and "type" in message_data and "content" in message_data:
+        if (
+            isinstance(message_data, dict)
+            and "type" in message_data
+            and "content" in message_data
+        ):
             if message_data["type"] == "human":
                 return HumanMessage(content=message_data["content"])
             elif message_data["type"] == "system":

@@ -41,5 +41,3 @@ class BaseTTSProvider(ABC):
     def close(self) -> None:
         """Release any provider resources. Default is a no-op."""
         return
-
-

@@ -1,22 +1,24 @@
 """Hermes Business Logic Services - Orchestrates domain operations."""
-from typing import Optional
+
 import logging
 import uuid
+from typing import Optional
 
-from .models import (
-    ProcessRequestResult,
-    GeminiResponse,
-    UserIdentity,
-    ResponseMode,
-    ConversationContext
-)
+from app.shared.utils.service_loader import get_gemini_service, get_tts_service
+
 from .exceptions import (
+    AIServiceError,
     HermesServiceError,
     InvalidRequestError,
-    AIServiceError,
-    TTSServiceError
+    TTSServiceError,
 )
-from app.shared.utils.service_loader import get_gemini_service, get_tts_service
+from .models import (
+    ConversationContext,
+    GeminiResponse,
+    ProcessRequestResult,
+    ResponseMode,
+    UserIdentity,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -49,20 +51,20 @@ class HermesService:
         text: str,
         user_identity: UserIdentity,
         response_mode: ResponseMode = ResponseMode.TEXT,
-        persona: str = 'hermes'
+        persona: str = "hermes",
     ) -> ProcessRequestResult:
         """
         Process a user request through the Hermes AI pipeline.
-        
+
         Args:
             text: User's input text
             user_identity: User identity information
             response_mode: How to return the response (text or TTS)
             persona: Which AI persona to use ('hermes' or 'prisma')
-            
+
         Returns:
             ProcessRequestResult with the AI response
-            
+
         Raises:
             InvalidRequestError: If the request is invalid
             AIServiceError: If AI generation fails
@@ -75,7 +77,9 @@ class HermesService:
             logger.info(f"Processing request for user {user_identity.user_id}")
 
             # Generate AI response
-            gemini_response = self._generate_ai_response(text, user_identity.user_id, persona)
+            gemini_response = self._generate_ai_response(
+                text, user_identity.user_id, persona
+            )
 
             # Generate TTS if requested
             audio_url = None
@@ -93,11 +97,13 @@ class HermesService:
                 metadata={
                     "model": gemini_response.model_used,
                     "prompt_length": len(text),
-                    "response_length": len(gemini_response.content)
-                }
+                    "response_length": len(gemini_response.content),
+                },
             )
 
-            logger.info(f"Request processed successfully for user {user_identity.user_id}")
+            logger.info(
+                f"Request processed successfully for user {user_identity.user_id}"
+            )
             return result
 
         except InvalidRequestError:
@@ -114,20 +120,20 @@ class HermesService:
         message: str,
         user_identity: UserIdentity,
         include_context: bool = True,
-        persona: str = 'hermes'
+        persona: str = "hermes",
     ) -> GeminiResponse:
         """
         Handle a chat message with conversation context.
-        
+
         Args:
             message: User's chat message
             user_identity: User identity information
             include_context: Whether to include conversation history
             persona: Which AI persona to use ('hermes' or 'prisma')
-            
+
         Returns:
             GeminiResponse with the AI reply
-            
+
         Raises:
             InvalidRequestError: If the message is invalid
             AIServiceError: If AI generation fails
@@ -143,7 +149,7 @@ class HermesService:
             if include_context:
                 context = self._get_conversation_context(user_id)
                 context.add_message("user", message)
-            
+
             # Generate AI response
             response = self._generate_ai_response(message, user_id, persona)
 
@@ -161,26 +167,26 @@ class HermesService:
             logger.error(f"Error processing chat: {e}")
             raise HermesServiceError(f"Failed to process chat: {str(e)}")
 
-    def _generate_ai_response(self, prompt: str, user_id: str, persona: str = 'hermes') -> GeminiResponse:
+    def _generate_ai_response(
+        self, prompt: str, user_id: str, persona: str = "hermes"
+    ) -> GeminiResponse:
         """
         Generate AI response using Gemini.
-        
+
         Args:
             prompt: User's prompt
             user_id: User identifier
             persona: Which AI persona to use ('hermes' or 'prisma')
-            
+
         Returns:
             GeminiResponse with generated content
-            
+
         Raises:
             AIServiceError: If AI generation fails
         """
         try:
             result = self.gemini_service.generate_gemini_response_with_rag(
-                prompt=prompt,
-                user_id=user_id,
-                persona=persona
+                prompt=prompt, user_id=user_id, persona=persona
             )
 
             return GeminiResponse(
@@ -188,7 +194,7 @@ class HermesService:
                 user_id=user_id,
                 prompt=prompt,
                 model_used="gemini-pro",
-                metadata={}
+                metadata={},
             )
 
         except (ValueError, TypeError, AttributeError, KeyError) as e:
@@ -198,14 +204,14 @@ class HermesService:
     def generate_tts(self, text: str) -> tuple[str | None, str]:
         """
         Generate Text-to-Speech audio (public method).
-        
+
         Args:
             text: Text to synthesize
-            
+
         Returns:
             Tuple of (cloud_url, tts_provider)
             Note: cloud_url may be None if cloud storage is not configured
-            
+
         Raises:
             TTSServiceError: If TTS generation fails
         """
@@ -213,19 +219,19 @@ class HermesService:
             tts_result = self.tts_service.generate_audio(
                 text_input=text,
                 upload_to_cloud=True,
-                cloud_destination_path=f"hermes_tts/{uuid.uuid4().hex}.mp3"
+                cloud_destination_path=f"hermes_tts/{uuid.uuid4().hex}.mp3",
             )
-            
+
             # Validate result is a dict
             if not isinstance(tts_result, dict):
                 raise TTSServiceError(f"Invalid TTS result type: {type(tts_result)}")
-            
+
             tts_provider = self.tts_service.tts_provider
-            
+
             # Use .get() to safely access cloud_url which may not be present
             # when cloud storage is not configured or upload fails
-            cloud_url = tts_result.get('cloud_url')
-            
+            cloud_url = tts_result.get("cloud_url")
+
             return cloud_url, tts_provider
 
         except (ValueError, TypeError, KeyError, AttributeError) as e:
@@ -238,7 +244,9 @@ class HermesService:
             self._conversation_contexts[user_id] = ConversationContext(user_id=user_id)
         return self._conversation_contexts[user_id]
 
-    def _save_conversation_context(self, user_id: str, context: ConversationContext) -> None:
+    def _save_conversation_context(
+        self, user_id: str, context: ConversationContext
+    ) -> None:
         """Save conversation context."""
         self._conversation_contexts[user_id] = context
 
@@ -259,4 +267,3 @@ def get_hermes_service() -> HermesService:
     if _hermes_service is None:
         _hermes_service = HermesService()
     return _hermes_service
-

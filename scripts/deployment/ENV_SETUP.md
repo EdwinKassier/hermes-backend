@@ -65,7 +65,7 @@ TTS_DEVICE=cpu
 
 ## Security Notes
 
-⚠️ **IMPORTANT**: 
+⚠️ **IMPORTANT**:
 
 1. **Never commit `.env` to git** - It contains sensitive API keys
 2. **`.dockerignore` excludes `.env`** - Secrets are NOT baked into the image
@@ -143,4 +143,3 @@ gcloud run services update master-hermes-backend \
 2. Update `deploy.sh` to use `--set-secrets` instead of `--set-env-vars`
 
 3. Remove sensitive values from `.env` after migration
-

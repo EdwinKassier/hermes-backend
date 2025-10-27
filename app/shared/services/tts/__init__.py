@@ -14,7 +14,7 @@ This module contains:
 Usage:
     # Standard import (recommended)
     from app.shared.services.TTSService import TTSService
-    
+
     # Or via factory function
     from app.shared.utils.service_loader import get_tts_service
     tts = get_tts_service()
@@ -25,5 +25,5 @@ Usage:
 from .base_provider import BaseTTSProvider
 
 __all__ = [
-    'BaseTTSProvider',
+    "BaseTTSProvider",
 ]

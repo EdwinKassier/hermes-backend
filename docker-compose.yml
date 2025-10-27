@@ -17,24 +17,24 @@ services:
     container_name: hermes-backend
     ports:
       - "${PORT:-8080}:8080"
-    
+
     # Load environment variables from .env file
     # Note: Add your real API keys to .env or create a .env.production file
     env_file:
       - .env
       - .env.local
-    
+
     # Override specific environment variables for Docker context
     environment:
       - PORT=8080
       # For local development, use external Redis service
       # In Cloud Run, container uses internal Redis (no REDIS_URL needed)
       - REDIS_URL=redis://redis:6379/0
-    
+
     # Volumes - commented out for production, uncomment for development
     # volumes:
     #   - .:/app
-    
+
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
@@ -42,7 +42,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-    
+
     # Note: External Redis used for local development only
     # In Cloud Run, container runs Redis internally
     depends_on:
@@ -58,7 +58,7 @@ services:
     volumes:
       - redis-data:/data
     command: >
-      redis-server 
+      redis-server
       --appendonly yes
       --maxmemory 256mb
       --maxmemory-policy allkeys-lru

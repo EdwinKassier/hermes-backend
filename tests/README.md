@@ -142,8 +142,8 @@ pytest --durations=10
 
 ### Unit Tests (`tests/unit/`)
 
-**Purpose**: Test individual components in isolation  
-**Speed**: Fast (<1s per test)  
+**Purpose**: Test individual components in isolation
+**Speed**: Fast (<1s per test)
 **Dependencies**: None (all mocked)
 
 **Coverage**:
@@ -160,8 +160,8 @@ pytest tests/unit/hermes/test_models.py -v
 
 ### Integration Tests (`tests/integration/`)
 
-**Purpose**: Test interactions with real external services  
-**Speed**: Moderate to slow (2-10s per test)  
+**Purpose**: Test interactions with real external services
+**Speed**: Moderate to slow (2-10s per test)
 **Dependencies**: Requires environment variables
 
 **⭐ Critical Tests**:
@@ -216,8 +216,8 @@ pytest tests/integration/ --run-integration -v -m "not slow"
 
 ### Performance Tests (`tests/performance/`)
 
-**Purpose**: Benchmark performance and scalability  
-**Speed**: Slow (10-60s per test)  
+**Purpose**: Benchmark performance and scalability
+**Speed**: Slow (10-60s per test)
 **Dependencies**: Requires real services
 
 **Benchmarks**:
@@ -439,13 +439,13 @@ pytest --pdb --pdbcls=IPython.terminal.debugger:Pdb
 
 ### Common Issues
 
-**Issue**: `ModuleNotFoundError: No module named 'app'`  
+**Issue**: `ModuleNotFoundError: No module named 'app'`
 **Solution**: Install package in editable mode: `pip install -e .`
 
-**Issue**: Integration tests skipped  
+**Issue**: Integration tests skipped
 **Solution**: Use `--run-integration` flag and set environment variables
 
-**Issue**: "Vector store not initialized"  
+**Issue**: "Vector store not initialized"
 **Solution**: Check `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are set
 
 ## 📈 Performance Benchmarks
@@ -505,7 +505,6 @@ For issues or questions:
 
 ---
 
-**Last Updated**: 2025-10-26  
-**Test Coverage**: 70%+ (target)  
+**Last Updated**: 2025-10-26
+**Test Coverage**: 70%+ (target)
 **Test Count**: 100+ tests across all categories
-

@@ -8,32 +8,32 @@ Usage:
     python scripts/get_ngrok_url.py --env        # Print export statements
 """
 
+import argparse
 import json
 import sys
-import argparse
-from urllib.request import urlopen
 from urllib.error import URLError
+from urllib.request import urlopen
 
 
 def get_ngrok_url():
     """Get ngrok URL from local API."""
     try:
-        response = urlopen('http://localhost:4040/api/tunnels')
+        response = urlopen("http://localhost:4040/api/tunnels")
         data = json.loads(response.read())
-        
-        if not data['tunnels']:
+
+        if not data["tunnels"]:
             print("Error: No active ngrok tunnels", file=sys.stderr)
             return None
-        
-        https_url = data['tunnels'][0]['public_url']
-        wss_url = https_url.replace('https://', 'wss://')
-        
-        return {
-            'webhook': https_url,
-            'websocket': wss_url
-        }
+
+        https_url = data["tunnels"][0]["public_url"]
+        wss_url = https_url.replace("https://", "wss://")
+
+        return {"webhook": https_url, "websocket": wss_url}
     except URLError:
-        print("Error: ngrok is not running (http://localhost:4040 not accessible)", file=sys.stderr)
+        print(
+            "Error: ngrok is not running (http://localhost:4040 not accessible)",
+            file=sys.stderr,
+        )
         print("Start ngrok: make ngrok", file=sys.stderr)
         return None
     except Exception as e:
@@ -49,10 +49,10 @@ def update_env_file(urls):
 WEBHOOK_BASE_URL={urls['webhook']}
 WEBSOCKET_BASE_URL={urls['websocket']}
 """
-    
-    with open('.env.local', 'w') as f:
+
+    with open(".env.local", "w") as f:
         f.write(content)
-    
+
     print(f"✅ Updated .env.local with ngrok URLs")
 
 
@@ -63,20 +63,19 @@ def print_export_statements(urls):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Get ngrok URL')
-    parser.add_argument('--update', action='store_true',
-                        help='Update .env.local file')
-    parser.add_argument('--env', action='store_true',
-                        help='Print export statements for shell')
-    parser.add_argument('--json', action='store_true',
-                        help='Output as JSON')
-    
+    parser = argparse.ArgumentParser(description="Get ngrok URL")
+    parser.add_argument("--update", action="store_true", help="Update .env.local file")
+    parser.add_argument(
+        "--env", action="store_true", help="Print export statements for shell"
+    )
+    parser.add_argument("--json", action="store_true", help="Output as JSON")
+
     args = parser.parse_args()
-    
+
     urls = get_ngrok_url()
     if not urls:
         sys.exit(1)
-    
+
     if args.update:
         update_env_file(urls)
     elif args.env:
@@ -88,6 +87,5 @@ def main():
         print(f"WebSocket URL: {urls['websocket']}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
-

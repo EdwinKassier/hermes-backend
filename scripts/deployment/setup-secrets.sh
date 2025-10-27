@@ -37,9 +37,9 @@ create_or_update_secret() {
     local SECRET_NAME=$1
     local SECRET_DESCRIPTION=$2
     local SECRET_VALUE=$3
-    
+
     echo "🔑 Processing: $SECRET_NAME"
-    
+
     # Check if secret already exists
     if gcloud secrets describe "$SECRET_NAME" --project="$PROJECT_ID" &>/dev/null; then
         echo "   Secret exists. Updating to new version..."
@@ -63,7 +63,7 @@ prompt_for_secret() {
     local SECRET_NAME=$1
     local SECRET_DESCRIPTION=$2
     local ENV_VAR_NAME=$3
-    
+
     # Check if already set in environment
     if [ -n "${!ENV_VAR_NAME}" ]; then
         echo "🔍 Found $ENV_VAR_NAME in environment"
@@ -74,17 +74,17 @@ prompt_for_secret() {
             return
         fi
     fi
-    
+
     echo "📝 Enter value for: $SECRET_DESCRIPTION"
     read -s SECRET_VALUE
     echo ""
-    
+
     if [ -z "$SECRET_VALUE" ]; then
         echo "⏭️  Skipping (empty value)"
         echo ""
         return
     fi
-    
+
     create_or_update_secret "$SECRET_NAME" "$SECRET_DESCRIPTION" "$SECRET_VALUE"
 }
 
@@ -145,5 +145,3 @@ echo "   - Secrets are encrypted at rest in Secret Manager"
 echo "   - Never commit secrets to git"
 echo "   - Rotate secrets regularly"
 echo ""
-
-

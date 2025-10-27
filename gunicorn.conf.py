@@ -1,5 +1,5 @@
-import os
 import multiprocessing
+import os
 
 # Server socket settings
 bind = "0.0.0.0:8080"
@@ -10,9 +10,9 @@ backlog = 2048
 # This prevents socket conflicts and ensures reliable HTTP response handling
 
 # Determine provider for optimal worker configuration
-TTS_PROVIDER = os.getenv('TTS_PROVIDER', 'elevenlabs').lower()
+TTS_PROVIDER = os.getenv("TTS_PROVIDER", "elevenlabs").lower()
 
-if TTS_PROVIDER == 'chatterbox':
+if TTS_PROVIDER == "chatterbox":
     # Chatterbox: CPU-bound, high memory, NOT thread-safe
     # Use single worker to prevent:
     # - Model state corruption (race conditions)
@@ -28,10 +28,14 @@ else:
     # Use multiple workers for true parallelism and fault isolation
     cpu_count = multiprocessing.cpu_count()
     default_workers = min(cpu_count * 2, 8)  # 2x CPU cores, max 8
-    workers = int(os.getenv('GUNICORN_WORKERS', default_workers))
+    workers = int(os.getenv("GUNICORN_WORKERS", default_workers))
     worker_connections = 1000
-    print(f"✅ {TTS_PROVIDER.title()} mode: {workers} workers × {worker_connections} connections")
-    print(f"   Theoretical capacity: {workers * worker_connections} concurrent connections")
+    print(
+        f"✅ {TTS_PROVIDER.title()} mode: {workers} workers × {worker_connections} connections"
+    )
+    print(
+        f"   Theoretical capacity: {workers * worker_connections} concurrent connections"
+    )
     print(f"   Expected throughput: ~{workers * 100} req/s")
 
 # Use sync worker for reliable HTTP handling (WebSockets handled by separate server)
@@ -73,20 +77,26 @@ max_requests_jitter = 1000
 graceful_timeout = 30
 reload_extra_files = []
 
+
 def post_fork(server, worker):
     server.log.info("Worker spawned (pid: %s)", worker.pid)
+
 
 def pre_fork(server, worker):
     pass
 
+
 def pre_exec(server):
     server.log.info("Forked child, re-executing.")
+
 
 def when_ready(server):
     server.log.info("Server is ready. Spawning workers")
 
+
 def worker_int(worker):
     worker.log.info("worker received INT or QUIT signal")
 
+
 def worker_abort(worker):
-    worker.log.info("worker received SIGABRT signal") 
+    worker.log.info("worker received SIGABRT signal")

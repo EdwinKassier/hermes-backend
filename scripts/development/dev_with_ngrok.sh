@@ -192,4 +192,3 @@ echo ""
 
 # Wait for server process
 wait $SERVER_PID
-

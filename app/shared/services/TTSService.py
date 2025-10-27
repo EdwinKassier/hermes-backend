@@ -18,21 +18,21 @@ import logging
 from typing import Any, Dict, Optional
 
 from .tts.base_provider import BaseTTSProvider
+from .tts.providers.chatterbox_provider import (
+    DEFAULT_AUDIO_PROMPT,
+    DEFAULT_CFGW,
+    DEFAULT_EXAGGERATION,
+    DEFAULT_SEED,
+    DEFAULT_TEMPERATURE,
+    ChatterboxTTSProvider,
+)
 from .tts.providers.elevenlabs_provider import (
-    ElevenLabsTTSProvider,
-    DEFAULT_VOICE_ID,
     DEFAULT_MODEL_ID,
-    DEFAULT_OUTPUT_FORMAT
+    DEFAULT_OUTPUT_FORMAT,
+    DEFAULT_VOICE_ID,
+    ElevenLabsTTSProvider,
 )
 from .tts.providers.google_provider import GoogleTTSProvider
-from .tts.providers.chatterbox_provider import (
-    ChatterboxTTSProvider,
-    DEFAULT_AUDIO_PROMPT,
-    DEFAULT_EXAGGERATION,
-    DEFAULT_TEMPERATURE,
-    DEFAULT_SEED,
-    DEFAULT_CFGW
-)
 
 logger = logging.getLogger(__name__)
 
@@ -45,32 +45,32 @@ PROVIDER_ELEVENLABS = "elevenlabs"
 class TTSService:
     """
     Text-to-Speech service facade providing a unified interface across providers.
-    
+
     This service acts as a factory and facade, delegating actual TTS operations
     to provider-specific implementations.
-    
+
     Supported providers:
     - elevenlabs: Lowest latency (~75ms), default
     - google: Google Cloud TTS
     - chatterbox: ML-based voice cloning
-    
+
     Usage:
         # Via factory function (recommended)
         from app.shared.utils.service_loader import get_tts_service
         tts = get_tts_service()
-        
+
         # Direct instantiation
         tts = TTSService(tts_provider="elevenlabs", elevenlabs_api_key="...")
-        
+
         # Generate audio
         result = tts.generate_audio("Hello world!")
         # Returns: {local_path: str|None, sample_rate: int, cloud_url: str|None}
-    
+
     Thread Safety:
         - ElevenLabs & Google providers: Thread-safe
         - Chatterbox provider: NOT thread-safe (use single worker!)
     """
-    
+
     def __init__(
         self,
         tts_provider: str = PROVIDER_ELEVENLABS,
@@ -81,77 +81,88 @@ class TTSService:
     ) -> None:
         """
         Initialize TTSService with specified provider.
-        
+
         Args:
             tts_provider: Provider to use ('elevenlabs', 'google', 'chatterbox')
             device: Device for Chatterbox ('cuda', 'cpu', 'mps')
             cloud_storage_config: Config dict for CloudStorageService
             google_tts_credentials_path: Path to Google credentials JSON
             elevenlabs_api_key: ElevenLabs API key
-            
+
         Raises:
             ValueError: If provider is unsupported
             ImportError: If provider dependencies not installed
         """
         self._provider_name = tts_provider.lower()
         logger.info(f"Initializing TTSService with provider: {self._provider_name}")
-        
+
         # Initialize cloud storage if configured
         cloud_storage_service = None
         if cloud_storage_config:
             try:
                 from .CloudStorageService import CloudStorageService
+
                 cloud_storage_service = CloudStorageService(**cloud_storage_config)
                 logger.info("CloudStorageService initialized")
             except Exception as e:
                 logger.warning(f"Failed to initialize CloudStorageService: {e}")
-        
+
         # Initialize provider
         if self._provider_name == PROVIDER_ELEVENLABS:
             self._provider: BaseTTSProvider = ElevenLabsTTSProvider(
-                api_key=elevenlabs_api_key,
-                cloud_storage_service=cloud_storage_service
+                api_key=elevenlabs_api_key, cloud_storage_service=cloud_storage_service
             )
             # Expose provider attributes for backward compatibility
-            self.elevenlabs_client = self._provider.client if hasattr(self._provider, 'client') else None
+            self.elevenlabs_client = (
+                self._provider.client if hasattr(self._provider, "client") else None
+            )
             self.tts_model = None
             self.sample_rate = None
             self.device = None
-            
+
         elif self._provider_name == PROVIDER_GOOGLE:
             self._provider: BaseTTSProvider = GoogleTTSProvider(
                 credentials_path=google_tts_credentials_path,
-                cloud_storage_service=cloud_storage_service
+                cloud_storage_service=cloud_storage_service,
             )
             # Expose provider attributes for backward compatibility
-            self.google_tts_client = self._provider.client if hasattr(self._provider, 'client') else None
+            self.google_tts_client = (
+                self._provider.client if hasattr(self._provider, "client") else None
+            )
             self.tts_model = None
             self.sample_rate = None
             self.device = None
-            
+
         elif self._provider_name == PROVIDER_CHATTERBOX:
             self._provider: BaseTTSProvider = ChatterboxTTSProvider(
-                device=device,
-                cloud_storage_service=cloud_storage_service
+                device=device, cloud_storage_service=cloud_storage_service
             )
             # Expose provider attributes for backward compatibility
-            self.tts_model = self._provider.model if hasattr(self._provider, 'model') else None
-            self.sample_rate = self._provider.sample_rate if hasattr(self._provider, 'sample_rate') else None
-            self.device = self._provider.device if hasattr(self._provider, 'device') else None
-            
+            self.tts_model = (
+                self._provider.model if hasattr(self._provider, "model") else None
+            )
+            self.sample_rate = (
+                self._provider.sample_rate
+                if hasattr(self._provider, "sample_rate")
+                else None
+            )
+            self.device = (
+                self._provider.device if hasattr(self._provider, "device") else None
+            )
+
         else:
             raise ValueError(
                 f"Unsupported TTS provider: {self._provider_name}. "
                 f"Choose from: {PROVIDER_ELEVENLABS}, {PROVIDER_GOOGLE}, {PROVIDER_CHATTERBOX}"
             )
-        
+
         logger.info(f"TTSService initialized with {self._provider_name} provider")
-    
+
     @property
     def tts_provider(self) -> str:
         """Get the current TTS provider name (read-only)."""
         return self._provider_name
-    
+
     def generate_audio(
         self,
         text_input: str,
@@ -179,14 +190,14 @@ class TTSService:
     ) -> Dict[str, Any]:
         """
         Generate TTS audio using the configured provider.
-        
+
         Args:
             text_input: Text to synthesize
             output_filepath: Optional local path for audio file
             upload_to_cloud: Whether to upload to cloud storage
             cloud_storage_service_override: Override cloud storage service
             cloud_destination_path: Cloud storage destination path
-            
+
             # Provider-specific parameters (ignored if not applicable)
             audio_prompt_path_input: Chatterbox audio prompt path
             exaggeration_input: Chatterbox exaggeration (0.0-1.0)
@@ -201,7 +212,7 @@ class TTSService:
             elevenlabs_voice_settings: ElevenLabs voice settings
             elevenlabs_optimize_streaming_latency: ElevenLabs latency optimization
             elevenlabs_language_code: ElevenLabs language code
-            
+
         Returns:
             Dict with keys:
                 - local_path: str | None (path to local file)
@@ -221,7 +232,7 @@ class TTSService:
                 logger.warning(
                     "[Chatterbox TTS] Google-specific parameters ignored for chatterbox provider"
                 )
-            
+
             return self._provider.generate_audio(
                 text=text_input,
                 output_filepath=output_filepath,
@@ -234,17 +245,20 @@ class TTSService:
                 seed=seed_num_input,
                 cfg_weight=cfgw_input,
             )
-        
+
         elif self._provider_name == PROVIDER_GOOGLE:
             # Warn if non-Google params provided
             if self._has_non_default_chatterbox_params(
-                audio_prompt_path_input, exaggeration_input, temperature_input,
-                seed_num_input, cfgw_input
+                audio_prompt_path_input,
+                exaggeration_input,
+                temperature_input,
+                seed_num_input,
+                cfgw_input,
             ):
                 logger.warning(
                     "[Google TTS] Chatterbox-specific parameters ignored for google provider"
                 )
-            
+
             return self._provider.generate_audio(
                 text=text_input,
                 output_filepath=output_filepath,
@@ -254,12 +268,15 @@ class TTSService:
                 voice_params=google_voice_params,
                 audio_config_params=google_audio_config,
             )
-        
+
         elif self._provider_name == PROVIDER_ELEVENLABS:
             # Warn if non-ElevenLabs params provided
             if self._has_non_default_chatterbox_params(
-                audio_prompt_path_input, exaggeration_input, temperature_input,
-                seed_num_input, cfgw_input
+                audio_prompt_path_input,
+                exaggeration_input,
+                temperature_input,
+                seed_num_input,
+                cfgw_input,
             ):
                 logger.warning(
                     "[ElevenLabs TTS] Chatterbox-specific parameters ignored for elevenlabs provider"
@@ -268,7 +285,7 @@ class TTSService:
                 logger.warning(
                     "[ElevenLabs TTS] Google-specific parameters ignored for elevenlabs provider"
                 )
-            
+
             return self._provider.generate_audio(
                 text=text_input,
                 output_filepath=output_filepath,
@@ -282,54 +299,56 @@ class TTSService:
                 optimize_streaming_latency=elevenlabs_optimize_streaming_latency,
                 language_code=elevenlabs_language_code,
             )
-        
+
         else:
             raise RuntimeError(f"Unsupported provider: {self._provider_name}")
-    
+
     @staticmethod
     def _has_non_default_chatterbox_params(
         audio_prompt_path_input: str,
         exaggeration_input: float,
         temperature_input: float,
         seed_num_input: int,
-        cfgw_input: float
+        cfgw_input: float,
     ) -> bool:
         """Check if non-default Chatterbox parameters were provided."""
-        return any([
-            audio_prompt_path_input != DEFAULT_AUDIO_PROMPT,
-            exaggeration_input != DEFAULT_EXAGGERATION,
-            temperature_input != DEFAULT_TEMPERATURE,
-            seed_num_input != DEFAULT_SEED,
-            cfgw_input != DEFAULT_CFGW,
-        ])
-    
+        return any(
+            [
+                audio_prompt_path_input != DEFAULT_AUDIO_PROMPT,
+                exaggeration_input != DEFAULT_EXAGGERATION,
+                temperature_input != DEFAULT_TEMPERATURE,
+                seed_num_input != DEFAULT_SEED,
+                cfgw_input != DEFAULT_CFGW,
+            ]
+        )
+
     def close(self) -> None:
         """
         Clean up provider resources.
-        
+
         Call this when done with the service to free memory,
         especially important for Chatterbox which loads large models.
         """
         self._provider.close()
         logger.info(f"TTSService ({self._provider_name}) closed")
-    
-    def __enter__(self) -> 'TTSService':
+
+    def __enter__(self) -> "TTSService":
         """Context manager entry."""
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
         """Context manager exit."""
         self.close()
         return False
-    
+
     def __repr__(self) -> str:
         """String representation for debugging."""
         return f"TTSService(provider={self._provider_name!r})"
 
 
 __all__ = [
-    'TTSService',
-    'PROVIDER_CHATTERBOX',
-    'PROVIDER_GOOGLE',
-    'PROVIDER_ELEVENLABS',
+    "TTSService",
+    "PROVIDER_CHATTERBOX",
+    "PROVIDER_GOOGLE",
+    "PROVIDER_ELEVENLABS",
 ]

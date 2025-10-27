@@ -16,5 +16,4 @@ Architecture:
 
 from .routes import prism_bp
 
-__all__ = ['prism_bp']
-
+__all__ = ["prism_bp"]

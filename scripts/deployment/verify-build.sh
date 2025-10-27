@@ -91,5 +91,3 @@ echo "📋 Next steps:"
 echo "   1. Deploy to Cloud Run: ./scripts/deployment/deploy.sh"
 echo "   2. Monitor logs: gcloud run logs tail master-hermes-backend --region=us-central1"
 echo ""
-
-

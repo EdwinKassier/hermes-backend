@@ -3,80 +3,85 @@ Prism Domain Schemas - Request/response validation using Pydantic
 
 Following patterns from hermes/schemas.py for consistency.
 """
-from pydantic import BaseModel, Field, field_validator, field_serializer, ConfigDict
-from typing import Optional
-from datetime import datetime
+
 import re
+from datetime import datetime
+from typing import Optional
+
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 
 
 class StartSessionRequest(BaseModel):
     """Request to start a new Prism session with a Google Meet URL."""
+
     meeting_url: str = Field(
-        ...,
-        description="Google Meet URL (https://meet.google.com/xxx-xxxx-xxx)"
+        ..., description="Google Meet URL (https://meet.google.com/xxx-xxxx-xxx)"
     )
 
-    @field_validator('meeting_url')
+    @field_validator("meeting_url")
     @classmethod
     def validate_meeting_url(cls, v):
         """Validate Google Meet URL format."""
         # Check it's a meet.google.com URL
-        if not v.startswith('https://meet.google.com/'):
+        if not v.startswith("https://meet.google.com/"):
             raise ValueError(
-                'URL must be a Google Meet link (https://meet.google.com/...)'
+                "URL must be a Google Meet link (https://meet.google.com/...)"
             )
-        
+
         # Extract meeting code (everything after last /)
-        meeting_code = v.split('/')[-1]
-        
+        meeting_code = v.split("/")[-1]
+
         # Validate meeting code: alphanumeric and hyphens only
         # Google Meet codes are typically 3 segments separated by hyphens
-        if not re.match(r'^[a-z0-9-]+$', meeting_code):
+        if not re.match(r"^[a-z0-9-]+$", meeting_code):
             raise ValueError(
-                'Meeting code contains invalid characters. '
-                'Expected format: https://meet.google.com/xxx-xxxx-xxx'
+                "Meeting code contains invalid characters. "
+                "Expected format: https://meet.google.com/xxx-xxxx-xxx"
             )
-        
+
         # Minimum reasonable length check
         if len(meeting_code) < 7:
-            raise ValueError('Meeting code too short')
-        
+            raise ValueError("Meeting code too short")
+
         return v
 
 
 class SessionStatusResponse(BaseModel):
     """Response with current session status (sent via user WebSocket)."""
+
     session_id: str
     status: str
     bot_state: Optional[str] = None
     bot_id: Optional[str] = None
     message: str
     timestamp: datetime = Field(default_factory=datetime.utcnow)
-    
-    @field_serializer('timestamp')
+
+    @field_serializer("timestamp")
     def serialize_timestamp(self, value: datetime) -> str:
         return value.isoformat()
 
 
 class TranscriptMessage(BaseModel):
     """Transcript message from meeting (sent via user WebSocket)."""
+
     speaker: str
     text: str
     timestamp: datetime
     is_final: bool = True
-    
-    @field_serializer('timestamp')
+
+    @field_serializer("timestamp")
     def serialize_timestamp(self, value: datetime) -> str:
         return value.isoformat()
 
 
 class BotAudioMessage(BaseModel):
     """WebSocket message format for bot audio connection."""
+
     type: str  # "audio_chunk", "transcript", "status", "error", "ping", "pong"
     data: Optional[dict] = None
     timestamp: datetime = Field(default_factory=datetime.utcnow)
-    
-    @field_serializer('timestamp')
+
+    @field_serializer("timestamp")
     def serialize_timestamp(self, value: datetime) -> str:
         return value.isoformat()
 
@@ -84,47 +89,49 @@ class BotAudioMessage(BaseModel):
 class AttendeeWebhookPayload(BaseModel):
     """
     Webhook payload from Attendee API.
-    
+
     Based on documentation examples:
     - bot.state_change: {"bot_id": "...", "state": "in_meeting"}
     - transcript.update: {"bot_id": "...", "transcript": {...}}
     """
+
     idempotency_key: str
     trigger: str
     bot_id: str
     bot_metadata: Optional[dict] = None
     data: dict
     timestamp: Optional[datetime] = None
-    
-    model_config = ConfigDict(extra='allow')
-        
-    @field_validator('bot_id')
+
+    model_config = ConfigDict(extra="allow")
+
+    @field_validator("bot_id")
     @classmethod
     def validate_bot_id(cls, v: str) -> str:
         if not v or not isinstance(v, str):
-            raise ValueError('bot_id must be a non-empty string')
+            raise ValueError("bot_id must be a non-empty string")
         if len(v) < 3:
-            raise ValueError('bot_id must be at least 3 characters long')
+            raise ValueError("bot_id must be at least 3 characters long")
         return v
-    
-    @field_validator('data')
+
+    @field_validator("data")
     @classmethod
     def validate_data(cls, v: dict) -> dict:
         if not isinstance(v, dict):
-            raise ValueError('data must be a dictionary')
+            raise ValueError("data must be a dictionary")
         return v
-    
-    @field_validator('trigger')
+
+    @field_validator("trigger")
     @classmethod
     def validate_trigger(cls, v: str) -> str:
-        valid_triggers = ['bot.state_change', 'transcript.update', 'bot.error']
+        valid_triggers = ["bot.state_change", "transcript.update", "bot.error"]
         if v not in valid_triggers:
-            raise ValueError(f'trigger must be one of: {valid_triggers}')
+            raise ValueError(f"trigger must be one of: {valid_triggers}")
         return v
 
 
 class BotStateChangeData(BaseModel):
     """Data for bot.state_change webhook."""
+
     new_state: str  # "idle", "joining", "in_meeting", "leaving", "error", "ended"
     old_state: Optional[str] = None
     error_message: Optional[str] = None
@@ -133,7 +140,7 @@ class BotStateChangeData(BaseModel):
 class TranscriptUpdateData(BaseModel):
     """
     Data for transcript.update webhook from Attendee API.
-    
+
     Actual format from Attendee:
     {
         "speaker_name": "John Doe",
@@ -145,6 +152,7 @@ class TranscriptUpdateData(BaseModel):
         "transcription": {"transcript": "Hello everyone"}
     }
     """
+
     speaker_name: str
     speaker_uuid: str
     speaker_user_uuid: Optional[str] = None
@@ -152,47 +160,47 @@ class TranscriptUpdateData(BaseModel):
     timestamp_ms: int
     duration_ms: int
     transcription: dict  # Contains {"transcript": "text here"}
-    
-    @field_validator('speaker_name')
+
+    @field_validator("speaker_name")
     @classmethod
     def validate_speaker_name(cls, v: str) -> str:
         if not v or not isinstance(v, str):
-            raise ValueError('speaker_name must be a non-empty string')
+            raise ValueError("speaker_name must be a non-empty string")
         return v
-    
-    @field_validator('timestamp_ms')
+
+    @field_validator("timestamp_ms")
     @classmethod
     def validate_timestamp_ms(cls, v: int) -> int:
         if not isinstance(v, int) or v <= 0:
-            raise ValueError('timestamp_ms must be a positive integer')
+            raise ValueError("timestamp_ms must be a positive integer")
         return v
-    
-    @field_validator('duration_ms')
+
+    @field_validator("duration_ms")
     @classmethod
     def validate_duration_ms(cls, v: int) -> int:
         if not isinstance(v, int) or v < 0:
-            raise ValueError('duration_ms must be a non-negative integer')
+            raise ValueError("duration_ms must be a non-negative integer")
         return v
-    
-    @field_validator('transcription')
+
+    @field_validator("transcription")
     @classmethod
     def validate_transcription(cls, v: dict) -> dict:
         if not isinstance(v, dict):
-            raise ValueError('transcription must be a dictionary')
-        if 'transcript' not in v:
+            raise ValueError("transcription must be a dictionary")
+        if "transcript" not in v:
             raise ValueError('transcription must contain a "transcript" field')
         return v
-    
+
     @property
     def speaker(self) -> str:
         """Get speaker name (for backward compatibility)."""
         return self.speaker_name
-    
+
     @property
     def text(self) -> str:
         """Extract transcript text."""
         return self.transcription.get("transcript", "")
-    
+
     @property
     def is_final(self) -> bool:
         """Assume all transcripts from Attendee are final."""
@@ -201,6 +209,7 @@ class TranscriptUpdateData(BaseModel):
 
 class CreateBotRequest(BaseModel):
     """Request body for Attendee API POST /bots."""
+
     meeting_url: str
     bot_name: str = "Prism Voice Agent"
     transcription_settings: dict
@@ -210,6 +219,7 @@ class CreateBotRequest(BaseModel):
 
 class CreateBotResponse(BaseModel):
     """Response from Attendee API POST /bots."""
+
     bot_id: str
     status: str
     meeting_url: str
@@ -218,12 +228,12 @@ class CreateBotResponse(BaseModel):
 
 class ErrorResponse(BaseModel):
     """Standard error response format."""
+
     error: str
     message: str
     status_code: int
     timestamp: datetime = Field(default_factory=datetime.utcnow)
-    
-    @field_serializer('timestamp')
+
+    @field_serializer("timestamp")
     def serialize_timestamp(self, value: datetime) -> str:
         return value.isoformat()
-

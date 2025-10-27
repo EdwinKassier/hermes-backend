@@ -63,7 +63,7 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
 else
     # Linux - use -w 0 to prevent line wrapping
     BASE64_OUTPUT=$(cat .env | base64 -w 0)
-    
+
     # Try to copy to clipboard if xclip is available
     if command -v xclip &> /dev/null; then
         echo "$BASE64_OUTPUT" | xclip -selection clipboard
@@ -75,7 +75,7 @@ else
         echo ""
         echo "(Install xclip to auto-copy: sudo apt-get install xclip)"
     fi
-    
+
     echo ""
     echo "Next steps:"
     echo "1. Go to: https://github.com/YOUR_USERNAME/YOUR_REPO/settings/secrets/actions"
@@ -114,4 +114,3 @@ echo ""
 echo "=================================================="
 echo "✅ ENV_FILE secret is ready to use in GitHub!"
 echo "=================================================="
-

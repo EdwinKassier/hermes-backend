@@ -104,4 +104,3 @@ echo "   4. Read the guide:        cat tests/README.md"
 echo ""
 echo "📖 Full documentation: tests/README.md"
 echo "=================================================="
-

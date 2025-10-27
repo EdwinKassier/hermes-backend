@@ -236,4 +236,3 @@ gcloud run services update-traffic master-hermes-backend \
   --to-revisions=PREVIOUS_REVISION=100 \
   --region=us-central1
 ```
-

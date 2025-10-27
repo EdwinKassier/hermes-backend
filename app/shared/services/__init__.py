@@ -5,15 +5,16 @@ This package contains various service implementations that provide business logi
 and integration with external systems.
 """
 
-# Import services to make them available when importing from app.services
-from .IdentityService import IdentityService
 from .CloudStorageService import CloudStorageService
 from .GeminiService import GeminiService
+
+# Import services to make them available when importing from app.services
+from .IdentityService import IdentityService
 from .TTSService import TTSService
 
 __all__ = [
-    'IdentityService',
-    'CloudStorageService',
-    'GeminiService',
-    'TTSService',
+    "IdentityService",
+    "CloudStorageService",
+    "GeminiService",
+    "TTSService",
 ]

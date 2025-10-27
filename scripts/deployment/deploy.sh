@@ -114,31 +114,31 @@ TRAFFIC_PERCENTAGE="${TRAFFIC_PERCENTAGE:-100}"
 
 check_requirements() {
     echo "🔍 Checking requirements..."
-    
+
     # Check gcloud
     if ! command -v gcloud &> /dev/null; then
         echo "❌ ERROR: gcloud CLI not found. Install Google Cloud SDK."
         exit 1
     fi
-    
+
     # Check docker
     if ! command -v docker &> /dev/null; then
         echo "❌ ERROR: Docker not found. Install Docker."
         exit 1
     fi
-    
+
     # Check Docker daemon
     if ! docker info > /dev/null 2>&1; then
         echo "❌ ERROR: Docker daemon not running. Start Docker."
         exit 1
     fi
-    
+
     # Check buildx
     if ! docker buildx version &> /dev/null; then
         echo "⚠️  Creating Docker buildx builder..."
         docker buildx create --use --name hermes-builder --driver docker-container
     fi
-    
+
     echo "✅ All requirements met"
 }
 
@@ -147,19 +147,19 @@ run_diagnostics() {
     echo "=================================================="
     echo "  Running Diagnostics"
     echo "=================================================="
-    
+
     # Check .dockerignore
     if [ -f ".dockerignore" ]; then
         echo "✅ .dockerignore exists ($(wc -l < .dockerignore) lines)"
     else
         echo "⚠️  WARNING: .dockerignore missing - large build context!"
     fi
-    
+
     # Check Docker disk usage
     echo ""
     echo "📊 Docker disk usage:"
     docker system df
-    
+
     # Warn if lots of reclaimable space
     RECLAIMABLE=$(docker system df | grep "Images" | awk '{print $4}' | tr -d '()%')
     if [ -n "$RECLAIMABLE" ] && [ "$RECLAIMABLE" -gt 50 ]; then
@@ -167,17 +167,17 @@ run_diagnostics() {
         echo "⚠️  WARNING: ${RECLAIMABLE}% of Docker images are unused"
         echo "   Consider running: docker system prune -a"
     fi
-    
+
     # Check authentication
     echo ""
     echo "🔐 Authentication:"
     CURRENT_ACCOUNT=$(gcloud config get-value account 2>/dev/null)
     CURRENT_PROJECT=$(gcloud config get-value project 2>/dev/null)
-    
+
     if [ -n "$CURRENT_ACCOUNT" ]; then
         echo "✅ Logged in as: $CURRENT_ACCOUNT"
         echo "✅ Project: $CURRENT_PROJECT"
-        
+
         if grep -q "${REGION}-docker.pkg.dev" ~/.docker/config.json 2>/dev/null; then
             echo "✅ Docker authenticated with Artifact Registry"
         else
@@ -188,7 +188,7 @@ run_diagnostics() {
         echo "❌ ERROR: Not logged in to gcloud"
         exit 1
     fi
-    
+
     echo ""
 }
 
@@ -197,19 +197,19 @@ run_verification() {
     echo "=================================================="
     echo "  Verifying Local Build"
     echo "=================================================="
-    
+
     echo "🔨 Building test image..."
     docker build \
         -t hermes-backend:verify \
         -f Dockerfile \
         . > /dev/null 2>&1
-    
+
     if [ $? -ne 0 ]; then
         echo "❌ Test build failed"
         exit 1
     fi
     echo "✅ Test build succeeded"
-    
+
     echo "🔍 Verifying gunicorn..."
     if docker run --rm hermes-backend:verify which gunicorn > /dev/null 2>&1; then
         echo "✅ gunicorn installed"
@@ -217,11 +217,11 @@ run_verification() {
         echo "❌ ERROR: gunicorn not found"
         exit 1
     fi
-    
+
     echo "🔍 Verifying application startup..."
     CONTAINER_ID=$(docker run -d --rm -e PORT=8080 hermes-backend:verify)
     sleep 3
-    
+
     if docker ps | grep -q "$CONTAINER_ID"; then
         echo "✅ Application starts successfully"
         docker stop "$CONTAINER_ID" >/dev/null 2>&1 || true
@@ -230,7 +230,7 @@ run_verification() {
         docker logs "$CONTAINER_ID" 2>&1 | tail -10
         exit 1
     fi
-    
+
     echo "🔍 Verifying agent prompts..."
     if docker run --rm hermes-backend:verify ls /app/docs/AgentPrompts/HERMES.md > /dev/null 2>&1; then
         echo "✅ HERMES agent prompt included"
@@ -239,13 +239,13 @@ run_verification() {
         echo "   Check that docs/AgentPrompts/ is not excluded in .dockerignore"
         exit 1
     fi
-    
+
     if docker run --rm hermes-backend:verify ls /app/docs/AgentPrompts/PRISM.md > /dev/null 2>&1; then
         echo "✅ PRISM agent prompt included"
     else
         echo "⚠️  WARNING: PRISM agent prompt missing"
     fi
-    
+
     echo "🔍 Verifying tools load..."
     TOOL_OUTPUT=$(docker run --rm \
         -e GOOGLE_API_KEY=test \
@@ -253,7 +253,7 @@ run_verification() {
         -e GOOGLE_PROJECT_LOCATION=us-east1 \
         hermes-backend:verify \
         python3 -c "from app.shared.utils.toolhub import get_all_tools; print(len(get_all_tools()))" 2>&1 | tail -1)
-    
+
     if echo "$TOOL_OUTPUT" | grep -qE "^[1-9][0-9]*$"; then
         echo "✅ $TOOL_OUTPUT tool(s) loaded"
     else
@@ -261,7 +261,7 @@ run_verification() {
         echo "$TOOL_OUTPUT"
         exit 1
     fi
-    
+
     echo ""
 }
 
@@ -427,13 +427,13 @@ EOF
 # Load additional environment variables from .env file if it exists
 if [ -f ".env" ]; then
     echo "📋 Loading environment variables from .env file..."
-    
+
     # Read .env and add vars to YAML file
     while IFS='=' read -r key value; do
         # Skip comments and empty lines
         [[ "$key" =~ ^#.*$ ]] && continue
         [[ -z "$key" ]] && continue
-        
+
         # Skip keys that shouldn't be in Cloud Run
         case "$key" in
             GOOGLE_APPLICATION_CREDENTIALS|TTS_DEVICE|REDIS_URL|PORT)
@@ -441,10 +441,10 @@ if [ -f ".env" ]; then
                 continue
                 ;;
         esac
-        
+
         # Remove quotes from value
         value=$(echo "$value" | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")
-        
+
         # Add to environment variables YAML file
         # Use literal block style for prompts (multi-line text), quoted strings for everything else
         if [[ "$key" =~ _PROMPT$ ]] || [[ "$key" == "BASE_PROMPT" ]]; then
@@ -456,10 +456,10 @@ if [ -f ".env" ]; then
             escaped_value=$(printf '%s' "$value" | sed 's/"/\\"/g')
             echo "${key}: \"${escaped_value}\"" >> "$ENV_FILE"
         fi
-        
+
         echo "   ✓ ${key}"
     done < ".env"
-    
+
     echo "✅ Environment variables loaded from .env"
 else
     echo "⚠️  No .env file found - using default environment variables only"
@@ -533,15 +533,15 @@ if [ -z "$SERVICE_URL" ]; then
     echo "⚠️  Could not retrieve service URL"
 else
     echo "✅ Service URL: $SERVICE_URL"
-    
+
     # Update webhook/websocket URLs ONLY if not already set in .env
     WEBHOOK_URL="${SERVICE_URL}"
     WEBSOCKET_URL=$(echo "$SERVICE_URL" | sed 's/https:/wss:/')
-    
+
     # Check if these were already set via .env
     WEBHOOK_SET=$(grep -E "^WEBHOOK_BASE_URL=" .env 2>/dev/null || echo "")
     WEBSOCKET_SET=$(grep -E "^WEBSOCKET_BASE_URL=" .env 2>/dev/null || echo "")
-    
+
     if [ -z "$WEBHOOK_SET" ] || [ -z "$WEBSOCKET_SET" ]; then
         echo "🔧 Setting webhook/websocket URLs..."
         gcloud run services update "${SERVICE_NAME}" \
@@ -552,13 +552,13 @@ else
     else
         echo "✅ Webhook URLs already set via .env file"
     fi
-    
+
     # Test health endpoint
     echo ""
     echo "Testing /health endpoint..."
     sleep 2
     HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${SERVICE_URL}/health" 2>/dev/null || echo "000")
-    
+
     if [ "$HTTP_CODE" = "200" ]; then
         echo "✅ Health check passed (HTTP $HTTP_CODE)"
     else
@@ -594,4 +594,3 @@ if [ "$TRAFFIC_PERCENTAGE" -ne 100 ]; then
     echo "   Route 100%: gcloud run services update-traffic ${SERVICE_NAME} --to-latest --region=${REGION}"
     echo ""
 fi
-

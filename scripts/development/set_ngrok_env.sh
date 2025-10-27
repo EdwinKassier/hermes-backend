@@ -32,4 +32,3 @@ echo "   WEBSOCKET_BASE_URL=$WEBSOCKET_BASE_URL"
 echo ""
 echo "You can now start your server:"
 echo "   python run.py"
-

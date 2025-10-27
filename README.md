@@ -102,4 +102,3 @@ I have used GCP for the example, but have chosen the components to be as simplis
 This architecture would use github actions as its CI/CD pipeline using the included push.yml file, but could be updated to use something else within the CI/CD ecosystem like Jenkins
 
 ![Alt text](DudeWheresMyLambo.Architecture.png?raw=true "Title")
-

@@ -2,8 +2,10 @@
 Custom assertion helpers for tests.
 Provides domain-specific assertion utilities.
 """
-from typing import List, Dict, Any
-from app.prism.constants import SessionStatus, BotState
+
+from typing import Any, Dict, List
+
+from app.prism.constants import BotState, SessionStatus
 
 
 def assert_similarity_score_valid(score: float):
@@ -15,10 +17,12 @@ def assert_similarity_score_valid(score: float):
 def assert_embedding_vector_valid(embedding: List[float], expected_dim: int = 1536):
     """Assert that embedding vector is valid"""
     assert isinstance(embedding, list), "Embedding must be a list"
-    assert len(embedding) == expected_dim, \
-        f"Expected {expected_dim} dimensions, got {len(embedding)}"
-    assert all(isinstance(x, (int, float)) for x in embedding), \
-        "All embedding values must be numeric"
+    assert (
+        len(embedding) == expected_dim
+    ), f"Expected {expected_dim} dimensions, got {len(embedding)}"
+    assert all(
+        isinstance(x, (int, float)) for x in embedding
+    ), "All embedding values must be numeric"
 
 
 def assert_session_state_valid(session):
@@ -27,21 +31,24 @@ def assert_session_state_valid(session):
     assert session.user_id is not None, "Session must have user_id"
     assert session.status in SessionStatus, "Session must have valid status"
     assert session.bot_state in BotState, "Session must have valid bot_state"
-    
+
     # Validate state consistency
     if session.status == SessionStatus.ACTIVE:
-        assert session.bot_state == BotState.IN_MEETING, \
-            "Active session must have bot in meeting"
-    
+        assert (
+            session.bot_state == BotState.IN_MEETING
+        ), "Active session must have bot in meeting"
+
     if session.bot_id is not None:
-        assert session.status != SessionStatus.CREATED, \
-            "Session with bot_id cannot be in CREATED state"
+        assert (
+            session.status != SessionStatus.CREATED
+        ), "Session with bot_id cannot be in CREATED state"
 
 
 def assert_response_time_acceptable(duration: float, max_duration: float):
     """Assert that operation completed within acceptable time"""
-    assert duration <= max_duration, \
-        f"Operation took {duration:.2f}s, expected < {max_duration}s"
+    assert (
+        duration <= max_duration
+    ), f"Operation took {duration:.2f}s, expected < {max_duration}s"
 
 
 def assert_transcript_valid(transcript):
@@ -64,8 +71,8 @@ def assert_audio_chunk_valid(chunk):
 def assert_json_serializable(obj: Any):
     """Assert that object is JSON serializable"""
     import json
+
     try:
         json.dumps(obj)
     except (TypeError, ValueError) as e:
         raise AssertionError(f"Object is not JSON serializable: {e}")
-

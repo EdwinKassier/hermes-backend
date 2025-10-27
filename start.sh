@@ -30,4 +30,3 @@ fi
 # Start Gunicorn
 echo "🦄 Starting Gunicorn..."
 exec gunicorn -c gunicorn.conf.py "app:create_app()"
-
