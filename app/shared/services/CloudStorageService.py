@@ -56,12 +56,33 @@ class CloudStorageService:
                 self.client = storage.Client(credentials=credentials)
                 logger.info(f"GCS client initialized using credentials from: {credentials_path}")
             else:
-                # Use default credentials (GOOGLE_APPLICATION_CREDENTIALS env var, Cloud Run service account, etc.)
-                self.client = storage.Client()
-                if os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
-                    logger.info(f"GCS client initialized using GOOGLE_APPLICATION_CREDENTIALS: {os.getenv('GOOGLE_APPLICATION_CREDENTIALS')}")
+                # Try to use the service account key from CI/CD pipeline
+                sa_key_json = os.getenv("SA_KEY_JSON")
+                if sa_key_json:
+                    try:
+                        import json
+                        import tempfile
+                        # Parse the JSON and create a temporary file
+                        sa_key_data = json.loads(sa_key_json)
+                        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_file:
+                            json.dump(sa_key_data, temp_file)
+                            temp_file.flush()
+                            credentials = service_account.Credentials.from_service_account_file(temp_file.name)
+                            self.client = storage.Client(credentials=credentials)
+                            logger.info("GCS client initialized using SA_KEY_JSON from CI/CD pipeline")
+                            # Clean up temp file
+                            os.unlink(temp_file.name)
+                    except Exception as e:
+                        logger.warning(f"Failed to use SA_KEY_JSON, falling back to default credentials: {e}")
+                        self.client = storage.Client()
+                        logger.info("GCS client initialized using default credentials")
                 else:
-                    logger.info("GCS client initialized using Cloud Run service account or default credentials")
+                    # Use default credentials (GOOGLE_APPLICATION_CREDENTIALS env var, Cloud Run service account, etc.)
+                    self.client = storage.Client()
+                    if os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+                        logger.info(f"GCS client initialized using GOOGLE_APPLICATION_CREDENTIALS: {os.getenv('GOOGLE_APPLICATION_CREDENTIALS')}")
+                    else:
+                        logger.info("GCS client initialized using Cloud Run service account or default credentials")
 
             # Create bucket reference without checking existence
             self.bucket = self.client.bucket(bucket_name)
@@ -144,13 +165,18 @@ class CloudStorageService:
             raise FileNotFoundError(f"Blob '{blob_name}' not found in bucket '{self.bucket_name}'. Cannot generate signed URL.")
 
         try:
-            # For Cloud Run, we'll use a public URL instead of signed URL
-            # since the default service account doesn't have a private key
-            public_url = f"https://storage.googleapis.com/{self.bucket_name}/{blob_name}"
-            logger.info(f"Generated public URL for '{blob_name}': {public_url}")
-            return public_url
+            # generate_signed_url expects a datetime object for expiration (absolute time)
+            expiration_time = datetime.now() + timedelta(seconds=expiration_seconds)
+
+            signed_url = blob.generate_signed_url(
+                version="v4",
+                expiration=expiration_time,
+                method="GET"  # Specifies that this URL is for downloading (GET request)
+            )
+            logger.info(f"Generated signed URL for '{blob_name}', valid for {expiration_seconds} seconds.")
+            return signed_url
         except Exception as e:
-            logger.error(f"Failed to generate URL for '{blob_name}': {e}")
+            logger.error(f"Failed to generate signed URL for '{blob_name}': {e}")
             raise
 
     def upload_and_get_signed_url(
