@@ -134,5 +134,5 @@ test = [
 ]
 
 [tool.setuptools]
-packages = ["app", "log", "data"]
+packages = ["app", "data"]
 zip-safe = false
