@@ -355,6 +355,9 @@ class TestTranscriptProcessing:
         
         prism_service.session_store.get_session.return_value = mock_session
         
+        # Mock Gemini to return a proper string response
+        prism_service.gemini_service.generate_gemini_response.return_value = "I can help you with that question."
+        
         with patch.object(prism_service, '_should_respond', return_value=True):
             prism_service.handle_transcript(
                 session_id="sess_123",
