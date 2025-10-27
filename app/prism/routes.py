@@ -607,43 +607,16 @@ def handle_internal_error(error):
 
 
 # ==============================================================================
-# HTTP: INTERRUPT RESPONSE ENDPOINT
+# INTERRUPT LOGIC IS NOW BUILT INTO CORE SYSTEM
 # ==============================================================================
-
-@prism_bp.route('/interrupt', methods=['POST'])
-def interrupt_response():
-    """
-    Interrupt any ongoing response generation for a session.
-    
-    POST /api/v1/prism/interrupt
-    {
-        "session_id": "session_123"
-    }
-    """
-    prism_service = get_prism_service()
-    
-    try:
-        data = request.get_json()
-        if not data or 'session_id' not in data:
-            return _send_error_response("session_id required", 400, "InvalidRequest")
-        
-        session_id = data['session_id']
-        success = prism_service.interrupt_response(session_id)
-        
-        if success:
-            return jsonify({
-                "status": "interrupted",
-                "message": f"Response generation interrupted for session {session_id}",
-                "session_id": session_id
-            }), 200
-        else:
-            return jsonify({
-                "status": "no_response",
-                "message": f"No response being generated for session {session_id}",
-                "session_id": session_id
-            }), 200
-            
-    except Exception as e:
-        logger.error(f"Failed to interrupt response: {str(e)}", exc_info=True)
-        return _send_error_response(f"Failed to interrupt response: {str(e)}", 500, "InternalError")
+# 
+# The interrupt functionality is automatically handled when new transcripts
+# arrive while a response is being generated. This provides a more natural
+# conversation flow where the system gracefully handles interruptions.
+#
+# Key behavior:
+# - When user speaks while system is generating a response
+# - Previous response is automatically interrupted
+# - New transcript is processed for potential response
+# - No manual interrupt endpoints needed
 

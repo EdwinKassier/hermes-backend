@@ -597,10 +597,19 @@ Keep it conversational and warm. This will be spoken aloud, so make it sound nat
             logger.debug("⏭️ Heuristic filter: skipping obvious non-response")
             return
         
-        # Check if already generating a response (prevent concurrent generation)
+        # Check if already generating a response
         if session.is_generating_response:
-            logger.warning(f"⏸️ Already generating response for session {session_id}, skipping")
-            return
+            logger.info(f"🛑 New transcript received while generating response - interrupting previous response")
+            
+            # Interrupt the ongoing response generation
+            with self.interrupt_lock:
+                self.interrupt_flags[session.session_id] = True
+            
+            # Clear the generation flag to allow new response
+            session.is_generating_response = False
+            self.session_store.save_session(session)
+            
+            logger.info(f"✅ Previous response interrupted, processing new transcript")
         
         # Always consult Gemini to decide if we should respond
         # No threshold - Gemini decides on every message
@@ -844,38 +853,6 @@ ANSWER: YES or NO"""
             self.session_store.save_session(session)
             logger.info(f"🏁 Response generation completed for session {session.session_id}")
     
-    def interrupt_response(self, session_id: str) -> bool:
-        """
-        Interrupt any ongoing response generation for a session.
-        
-        Args:
-            session_id: Session ID to interrupt
-            
-        Returns:
-            bool: True if interruption was successful, False if no response was being generated
-        """
-        try:
-            session = self.get_session(session_id)
-            if session.is_generating_response:
-                # Set interrupt flag (thread-safe)
-                with self.interrupt_lock:
-                    self.interrupt_flags[session_id] = True
-                
-                # Also clear the generation flag
-                session.is_generating_response = False
-                self.session_store.save_session(session)
-                
-                logger.info(f"🛑 Interrupt flag set for session {session_id}")
-                return True
-            else:
-                logger.info(f"No response being generated for session {session_id}")
-                return False
-        except SessionNotFoundError:
-            logger.warning(f"Session {session_id} not found for interruption")
-            return False
-        except Exception as e:
-            logger.error(f"Failed to interrupt response for session {session_id}: {str(e)}")
-            return False
     
     def _should_interrupt(self, session_id: str) -> bool:
         """
