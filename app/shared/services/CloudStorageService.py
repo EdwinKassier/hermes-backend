@@ -144,18 +144,13 @@ class CloudStorageService:
             raise FileNotFoundError(f"Blob '{blob_name}' not found in bucket '{self.bucket_name}'. Cannot generate signed URL.")
 
         try:
-            # generate_signed_url expects a datetime object for expiration (absolute time)
-            expiration_time = datetime.now() + timedelta(seconds=expiration_seconds)
-
-            signed_url = blob.generate_signed_url(
-                version="v4",
-                expiration=expiration_time,
-                method="GET"  # Specifies that this URL is for downloading (GET request)
-            )
-            logger.info(f"Generated signed URL for '{blob_name}', valid for {expiration_seconds} seconds.")
-            return signed_url
+            # For Cloud Run, we'll use a public URL instead of signed URL
+            # since the default service account doesn't have a private key
+            public_url = f"https://storage.googleapis.com/{self.bucket_name}/{blob_name}"
+            logger.info(f"Generated public URL for '{blob_name}': {public_url}")
+            return public_url
         except Exception as e:
-            logger.error(f"Failed to generate signed URL for '{blob_name}': {e}")
+            logger.error(f"Failed to generate URL for '{blob_name}': {e}")
             raise
 
     def upload_and_get_signed_url(
