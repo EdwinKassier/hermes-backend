@@ -62,8 +62,19 @@ class CloudStorageService:
                     try:
                         import json
                         import tempfile
-                        # Parse the JSON and create a temporary file
-                        sa_key_data = json.loads(sa_key_json)
+                        import base64
+                        
+                        # Handle base64 encoded SA_KEY_JSON (from Cloud Run)
+                        try:
+                            decoded_json = base64.b64decode(sa_key_json).decode('utf-8')
+                            sa_key_data = json.loads(decoded_json)
+                            logger.info("Successfully decoded base64 SA_KEY_JSON")
+                        except (base64.binascii.Error, UnicodeDecodeError, json.JSONDecodeError):
+                            # If base64 decode fails, try parsing as raw JSON
+                            sa_key_data = json.loads(sa_key_json)
+                            logger.info("Successfully parsed raw SA_KEY_JSON")
+                        
+                        # Create a temporary file with the service account key
                         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_file:
                             json.dump(sa_key_data, temp_file)
                             temp_file.flush()
