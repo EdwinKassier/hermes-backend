@@ -182,7 +182,8 @@ class ElevenLabsTTSProvider(BaseTTSProvider):
             cloud_service = cloud_storage_service_override or self.cloud_storage_service
             if cloud_service:
                 try:
-                    cloud_url = cloud_service.upload_file(
+                    # Use upload_and_get_signed_url to get the actual URL
+                    cloud_url = cloud_service.upload_and_get_signed_url(
                         local_file_path=local_path,
                         destination_blob_name=cloud_destination_path
                     )

@@ -185,7 +185,7 @@ class TestElevenLabsTTS:
         output_path = os.path.join(temp_audio_dir, "elevenlabs_test.wav")
         
         result = elevenlabs_service.generate_audio(
-            text=text,
+            text_input=text,
             output_filepath=output_path,
             upload_to_cloud=False
         )
@@ -216,7 +216,7 @@ class TestElevenLabsTTS:
         for i, text in enumerate(texts):
             output_path = os.path.join(temp_audio_dir, f"elevenlabs_multi_{i}.wav")
             result = elevenlabs_service.generate_audio(
-                text=text,
+                text_input=text,
                 output_filepath=output_path,
                 upload_to_cloud=False
             )
@@ -242,7 +242,7 @@ class TestElevenLabsTTS:
         output_path = os.path.join(temp_audio_dir, "elevenlabs_long.wav")
         
         result = elevenlabs_service.generate_audio(
-            text=text,
+            text_input=text,
             output_filepath=output_path,
             upload_to_cloud=False
         )
@@ -265,7 +265,7 @@ class TestElevenLabsTTS:
         output_path = os.path.join(temp_audio_dir, "elevenlabs_markdown.wav")
         
         result = elevenlabs_service.generate_audio(
-            text=text,
+            text_input=text,
             output_filepath=output_path,
             upload_to_cloud=False
         )
@@ -280,7 +280,7 @@ class TestElevenLabsTTS:
     def test_elevenlabs_empty_text_error(self, elevenlabs_service):
         """Test that empty text raises appropriate error"""
         with pytest.raises((ValueError, Exception)) as exc_info:
-            elevenlabs_service.generate_audio(text="", upload_to_cloud=False)
+            elevenlabs_service.generate_audio(text_input="", upload_to_cloud=False)
         
         logger.info(f"✓ ElevenLabs empty text validation: {exc_info.value}")
     
@@ -293,7 +293,7 @@ class TestElevenLabsTTS:
         
         start_time = time.time()
         result = elevenlabs_service.generate_audio(
-            text=text,
+            text_input=text,
             output_filepath=output_path,
             upload_to_cloud=False
         )
@@ -324,7 +324,7 @@ class TestGoogleTTS:
         output_path = os.path.join(temp_audio_dir, "google_test.wav")
         
         result = google_service.generate_audio(
-            text=text,
+            text_input=text,
             output_filepath=output_path,
             upload_to_cloud=False
         )
@@ -350,7 +350,7 @@ class TestGoogleTTS:
         output_path = os.path.join(temp_audio_dir, "google_voice_params.wav")
         
         result = google_service.generate_audio(
-            text=text,
+            text_input=text,
             output_filepath=output_path,
             upload_to_cloud=False,
             voice_params={
@@ -380,7 +380,7 @@ class TestGoogleTTS:
             
             try:
                 result = google_service.generate_audio(
-                    text=text,
+                    text_input=text,
                     output_filepath=output_path,
                     upload_to_cloud=False,
                     voice_params={
@@ -404,7 +404,7 @@ class TestGoogleTTS:
         output_path = os.path.join(temp_audio_dir, "google_quality.wav")
         
         result = google_service.generate_audio(
-            text=text,
+            text_input=text,
             output_filepath=output_path,
             upload_to_cloud=False,
             audio_config_params={
@@ -438,7 +438,7 @@ class TestChatterboxTTS:
         output_path = os.path.join(temp_audio_dir, "chatterbox_test.wav")
         
         result = chatterbox_service.generate_audio(
-            text=text,
+            text_input=text,
             output_filepath=output_path,
             upload_to_cloud=False
         )
@@ -462,7 +462,7 @@ class TestChatterboxTTS:
         
         # Chatterbox has unique parameters like exaggeration and temperature
         result = chatterbox_service.generate_audio(
-            text=text,
+            text_input=text,
             output_filepath=output_path,
             upload_to_cloud=False,
             exaggeration=0.5,  # Voice characteristic intensity
@@ -501,7 +501,7 @@ class TestTTSComparison:
             try:
                 output_path = os.path.join(temp_audio_dir, f"compare_{provider_name}.wav")
                 result = service.generate_audio(
-                    text=text,
+                    text_input=text,
                     output_filepath=output_path,
                     upload_to_cloud=False
                 )
@@ -534,7 +534,7 @@ class TestTTSComparison:
         for provider_name, service in providers:
             # Test empty text
             with pytest.raises((ValueError, Exception)):
-                service.generate_audio(text="", upload_to_cloud=False)
+                service.generate_audio(text_input="", upload_to_cloud=False)
             
             logger.info(f"✓ {provider_name} handles empty text error")
 
@@ -556,7 +556,7 @@ class TestTTSPerformance:
         for i, text in enumerate(texts):
             output_path = os.path.join(temp_audio_dir, f"perf_batch_{i}.wav")
             elevenlabs_service.generate_audio(
-                text=text,
+                text_input=text,
                 output_filepath=output_path,
                 upload_to_cloud=False
             )
@@ -582,7 +582,7 @@ class TestTTSPerformance:
         
         start_time = time.time()
         google_service.generate_audio(
-            text=text,
+            text_input=text,
             output_filepath=output_path,
             upload_to_cloud=False
         )
@@ -619,7 +619,7 @@ class TestTTSIntegrationSummary:
         try:
             output = os.path.join(temp_audio_dir, "summary_elevenlabs.wav")
             elevenlabs_service.generate_audio(
-                text=test_text,
+                text_input=test_text,
                 output_filepath=output,
                 upload_to_cloud=False
             )
@@ -632,7 +632,7 @@ class TestTTSIntegrationSummary:
         try:
             output = os.path.join(temp_audio_dir, "summary_google.wav")
             google_service.generate_audio(
-                text=test_text,
+                text_input=test_text,
                 output_filepath=output,
                 upload_to_cloud=False
             )
@@ -646,7 +646,7 @@ class TestTTSIntegrationSummary:
             chatterbox_svc = TTSService(tts_provider=PROVIDER_CHATTERBOX, device='cpu')
             output = os.path.join(temp_audio_dir, "summary_chatterbox.wav")
             chatterbox_svc.generate_audio(
-                text=test_text,
+                text_input=test_text,
                 output_filepath=output,
                 upload_to_cloud=False
             )
