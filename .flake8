@@ -1,0 +1,18 @@
+[flake8]
+max-line-length = 88
+extend-ignore = E203, W503, F401, F841, F541, E501, E722, E712
+exclude =
+    .git,
+    __pycache__,
+    .venv,
+    venv,
+    .pytest_cache,
+    htmlcov,
+    .coverage,
+    .env,
+    credentials.json
+per-file-ignores =
+    tests/*:F401,F841,F541
+    scripts/*:F401,F841,F541,E501
+    gunicorn.conf.py:E501
+    authentication.py:E501

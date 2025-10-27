@@ -1,0 +1,89 @@
+# Pre-commit hooks configuration
+# Essential checks that match the CI/CD pipeline
+# Focused on core quality without overwhelming complexity
+
+repos:
+  # Python code formatting with Black
+  - repo: https://github.com/psf/black
+    rev: 25.9.0  # Match pyproject.toml version
+    hooks:
+      - id: black
+        language_version: python3
+        args: [--line-length=88, --target-version=py312]
+        files: \.py$
+
+  # Import sorting with isort
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        args: [--profile=black, --line-length=88]
+        files: \.py$
+
+  # Linting with flake8 (matching pipeline)
+  - repo: https://github.com/pycqa/flake8
+    rev: 7.3.0  # Match pyproject.toml version
+    hooks:
+      - id: flake8
+        files: \.py$
+
+  # Pylint (matching CI/CD pipeline exactly)
+  - repo: https://github.com/pycqa/pylint
+    rev: v3.0.3
+    hooks:
+      - id: pylint
+        args: [--fail-under=0.0]  # Match pipeline setting
+        files: \.py$
+
+  # Essential file checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      # Basic file hygiene
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1000]
+
+      # Python syntax check
+      - id: check-ast
+      - id: debug-statements
+
+      # Security checks
+      - id: detect-private-key
+
+      # File naming
+      - id: check-case-conflict
+
+  # Test that code still runs (only on push)
+  - repo: local
+    hooks:
+      - id: pytest-check
+        name: pytest-check
+        entry: python -m pytest tests/ --tb=short -q
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]  # Only run on push, not every commit
+
+# Configuration
+default_stages: [pre-commit]
+fail_fast: false
+
+# Exclude patterns
+exclude: |
+  (?x)^(
+    \.git/.*|
+    \.venv/.*|
+    venv/.*|
+    __pycache__/.*|
+    \.pytest_cache/.*|
+    htmlcov/.*|
+    \.coverage.*|
+    \.env.*|
+    credentials\.json
+  )$
