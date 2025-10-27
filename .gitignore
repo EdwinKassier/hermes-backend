@@ -72,3 +72,5 @@ service-account-key.json
 # Audio files (store in Cloud Storage instead)
 data/tts_audio_prompts/*.wav
 *.wav
+
+/tests

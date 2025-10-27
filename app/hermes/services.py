@@ -194,7 +194,7 @@ class HermesService:
             logger.error(f"AI generation failed: {e}")
             raise AIServiceError(f"Failed to generate AI response: {str(e)}")
 
-    def generate_tts(self, text: str) -> tuple[str, str]:
+    def generate_tts(self, text: str) -> tuple[str | None, str]:
         """
         Generate Text-to-Speech audio (public method).
         
@@ -203,16 +203,27 @@ class HermesService:
             
         Returns:
             Tuple of (cloud_url, tts_provider)
+            Note: cloud_url may be None if cloud storage is not configured
             
         Raises:
             TTSServiceError: If TTS generation fails
         """
         try:
             tts_result = self.tts_service.generate_audio(text)
+            
+            # Validate result is a dict
+            if not isinstance(tts_result, dict):
+                raise TTSServiceError(f"Invalid TTS result type: {type(tts_result)}")
+            
             tts_provider = self.tts_service.tts_provider
-            return tts_result['cloud_url'], tts_provider
+            
+            # Use .get() to safely access cloud_url which may not be present
+            # when cloud storage is not configured or upload fails
+            cloud_url = tts_result.get('cloud_url')
+            
+            return cloud_url, tts_provider
 
-        except (ValueError, TypeError, KeyError) as e:
+        except (ValueError, TypeError, KeyError, AttributeError) as e:
             logger.error(f"TTS generation failed: {e}")
             raise TTSServiceError(f"Failed to generate audio: {str(e)}")
 
