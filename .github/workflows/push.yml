@@ -230,6 +230,7 @@ jobs:
           REGION_DEPLOYED: "${{ env.RUN_REGION }}"
           APPLICATION_ENV: "production"
           APP_NAME: "hermes-backend"
+          SA_KEY_JSON: "${{ secrets.SA_KEY_JSON }}"
           EOF
           
           # Parse .env and append to YAML (matches deploy.sh logic)
