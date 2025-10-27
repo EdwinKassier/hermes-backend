@@ -1,6 +1,7 @@
 """Hermes Business Logic Services - Orchestrates domain operations."""
 from typing import Optional
 import logging
+import uuid
 
 from .models import (
     ProcessRequestResult,
@@ -209,7 +210,11 @@ class HermesService:
             TTSServiceError: If TTS generation fails
         """
         try:
-            tts_result = self.tts_service.generate_audio(text)
+            tts_result = self.tts_service.generate_audio(
+                text_input=text,
+                upload_to_cloud=True,
+                cloud_destination_path=f"hermes_tts/{uuid.uuid4().hex}.mp3"
+            )
             
             # Validate result is a dict
             if not isinstance(tts_result, dict):
