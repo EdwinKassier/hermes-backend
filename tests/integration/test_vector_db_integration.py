@@ -215,7 +215,7 @@ class TestRAGPipeline:
         # Should return a response
         assert isinstance(response, str)
         assert len(response) > 0
-        assert response != gemini_service.ERROR_MESSAGE
+        assert response != gemini_service.DEFAULT_ERROR_MESSAGE
 
         logger.info(f"✓ RAG Response: {response[:200]}")
 

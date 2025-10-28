@@ -162,7 +162,7 @@ class GeminiService:
                     # kwargs ignored - using explicit parameters
                     try:
                         result = genai.embed_content(
-                            model=self.EMBEDDING_MODEL_NAME,
+                            model="models/embedding-001",  # Use the model name directly
                             content=text,
                             task_type=self.task_type,
                             output_dimensionality=_target_dimensionality,
@@ -192,14 +192,14 @@ class GeminiService:
                         ) from e
 
             self.embeddings_model = CustomDimensionalityEmbeddings(
-                model=self.EMBEDDING_MODEL_NAME,
+                model="models/embedding-001",  # Use the model name directly
                 google_api_key=os.environ["GOOGLE_API_KEY"],
                 task_type="retrieval_document",
             )
 
             logging.info(
                 "Initialized Gemini API Embeddings with model: %s (%dD)",
-                self.EMBEDDING_MODEL_NAME,
+                "models/embedding-001",
                 self.EMBEDDING_DIMENSIONS,
             )
         except (ValueError, KeyError) as e:
