@@ -52,6 +52,22 @@ Thumbs.db
 .coverage
 htmlcov/
 .tox/
+.coverage.*
+coverage.xml
+*.cover
+*.py,cover
+test-results/
+test-output/
+test-reports/
+junit.xml
+test-results.xml
+performance-results/
+benchmark-results/
+test-artifacts/
+test-fixtures/
+test-data/
+*.test
+*.spec
 
 # Database
 *.db
@@ -64,6 +80,10 @@ htmlcov/
 # Temporary files
 *.tmp
 temp/
+test_*.py
+*_test.py
+test_*.log
+tests/*
 
 # Credentials and Secrets
 credentials.json
@@ -72,5 +92,4 @@ service-account-key.json
 # Audio files (store in Cloud Storage instead)
 data/tts_audio_prompts/*.wav
 *.wav
-
-/tests
+tests/performance/__pycache__/__init__.cpython-313.pyc

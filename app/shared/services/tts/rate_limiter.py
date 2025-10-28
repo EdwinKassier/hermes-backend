@@ -80,7 +80,6 @@ class RateLimiter:
     LIMITS = {
         "elevenlabs": {"rps": 10, "burst": 20},  # 10 req/sec, burst 20
         "google": {"rps": 100, "burst": 200},  # Higher limits
-        "chatterbox": {"rps": 1, "burst": 2},  # CPU-bound, very low
     }
 
     def __init__(self, provider: str):
@@ -88,7 +87,7 @@ class RateLimiter:
         Initialize rate limiter for provider.
 
         Args:
-            provider: Provider name ('elevenlabs', 'google', 'chatterbox')
+            provider: Provider name ('elevenlabs', 'google')
         """
         limits = self.LIMITS.get(provider, {"rps": 10, "burst": 20})
         self.bucket = TokenBucket(

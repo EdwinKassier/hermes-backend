@@ -9,11 +9,8 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app \
     PORT=8080
 
-# Install system dependencies including Redis
+# Install system dependencies (optimized for TTS operations)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libsndfile1 \
-    curl \
-    ffmpeg \
     redis-server \
     && rm -rf /var/lib/apt/lists/*
 

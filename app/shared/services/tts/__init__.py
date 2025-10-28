@@ -8,7 +8,7 @@ the conventional import path: from app.shared.services.TTSService import TTSServ
 
 This module contains:
 - BaseTTSProvider: Abstract base class for all providers
-- Provider implementations: ElevenLabs, Google, Chatterbox
+- Provider implementations: ElevenLabs, Google
 - Utilities: RateLimiter, CircuitBreaker, SimpleCache
 
 Usage:

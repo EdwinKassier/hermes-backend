@@ -306,18 +306,32 @@ def bot_audio():
                         # CRITICAL: Pace audio chunks to match playback duration
                         # 16kHz, 16-bit mono = 32000 bytes/sec
                         # 4096 bytes = 128ms of audio
-                        # For the first 10 chunks, send IMMEDIATELY with no delay to establish stream
-                        # For chunks 10-20, send at 10% speed
-                        # Then pace normally to match playback duration
+                        # Implement smooth transitions for better audio quality
                         chunk_duration = len(audio_chunk.data) / 32000.0  # seconds
 
-                        if audio_chunk.sequence < 10:
-                            # Send first 10 chunks IMMEDIATELY with no delay
+                        if audio_chunk.sequence < 5:
+                            # Send first 5 chunks IMMEDIATELY with no delay
                             # This establishes the audio stream as fast as possible
                             pass  # No sleep, send immediately
-                        elif audio_chunk.sequence < 20:
-                            # Send next 10 chunks very fast to keep stream active
-                            time.sleep(chunk_duration * 0.1)  # 10% speed
+                        elif audio_chunk.sequence < 15:
+                            # Gradual transition: send next 10 chunks at increasing speeds
+                            # This creates a smooth ramp-up instead of abrupt changes
+                            transition_factor = (
+                                audio_chunk.sequence - 5
+                            ) / 10.0  # 0.0 to 1.0
+                            sleep_duration = chunk_duration * (
+                                0.1 + 0.6 * transition_factor
+                            )  # 0.1 to 0.7
+                            time.sleep(sleep_duration)
+                        elif audio_chunk.sequence < 25:
+                            # Continue gradual transition to full speed
+                            transition_factor = (
+                                audio_chunk.sequence - 15
+                            ) / 10.0  # 0.0 to 1.0
+                            sleep_duration = chunk_duration * (
+                                0.7 + 0.3 * transition_factor
+                            )  # 0.7 to 1.0
+                            time.sleep(sleep_duration)
                         else:
                             # Normal pacing for actual speech
                             time.sleep(chunk_duration)
@@ -326,10 +340,6 @@ def bot_audio():
                         # Break out of audio sending loop on error to prevent cascade
                         break
 
-            except Exception as e:
-                logger.error(f"WebSocket error: {str(e)}")
-                break  # Exit loop on error
-
             except TimeoutError:
                 # Normal timeout, continue loop
                 continue
@@ -337,7 +347,7 @@ def bot_audio():
                 logger.info("Bot WebSocket connection closed")
                 break
             except Exception as e:
-                logger.error(f"Error in bot WebSocket loop: {str(e)}")
+                logger.error("Error in bot WebSocket loop: %s", str(e))
                 break
 
     except SessionNotFoundError:

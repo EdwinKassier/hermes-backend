@@ -22,7 +22,7 @@ GCS_CREDENTIALS_PATH = (
     and os.path.exists(os.getenv("GOOGLE_APPLICATION_CREDENTIALS", ""))
     else None
 )
-# TTS provider: 'elevenlabs', 'google', or 'chatterbox'
+# TTS provider: 'elevenlabs' or 'google'
 TTS_PROVIDER = os.getenv("TTS_PROVIDER", "elevenlabs")
 EL_API_KEY = os.getenv("EL_API_KEY")  # ElevenLabs API key
 
@@ -46,7 +46,7 @@ def get_tts_service(device: Optional[str] = None) -> TTSService:
     Args:
         device: The device to load the model on (e.g., 'cuda', 'cpu',
                 'mps'). If None, automatically detect the best device.
-                Only used for Chatterbox provider.
+                Currently not used by any providers.
 
     Returns:
         TTSService instance configured based on TTS_PROVIDER env var

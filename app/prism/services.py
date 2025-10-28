@@ -811,7 +811,85 @@ ANSWER: YES or NO"""
 
         except Exception as e:
             logger.error(f"Failed to get AI decision: {str(e)}", exc_info=True)
+            # Send user feedback for AI decision failure
+            try:
+                self._send_error_to_user(
+                    session, "I'm having trouble understanding. Could you repeat that?"
+                )
+            except Exception as feedback_error:
+                logger.error(
+                    f"Failed to send error feedback to user: {str(feedback_error)}"
+                )
             return False
+
+    def _detect_meeting_context(self, session: PrismSession) -> str:
+        """
+        Detect the current meeting context to determine appropriate timeout.
+
+        Args:
+            session: PrismSession
+
+        Returns:
+            str: Meeting context ('active_discussion', 'presentation', 'casual', 'unknown')
+        """
+        try:
+            # Analyze recent transcript activity
+            recent_transcripts = session.transcript_history[-5:]  # Last 5 messages
+
+            if not recent_transcripts:
+                return "unknown"
+
+            # Count messages in last 2 minutes
+            now = datetime.utcnow()
+            recent_activity = [
+                t
+                for t in recent_transcripts
+                if (now - t.timestamp).total_seconds() < 120
+            ]
+
+            # Analyze message patterns
+            message_count = len(recent_activity)
+            avg_message_length = sum(len(t.text) for t in recent_activity) / max(
+                len(recent_activity), 1
+            )
+
+            # Detect context based on activity patterns
+            if message_count >= 4 and avg_message_length > 50:
+                return "active_discussion"  # High activity, longer messages
+            elif message_count >= 3 and avg_message_length > 30:
+                return "presentation"  # Moderate activity, medium messages
+            elif message_count >= 2:
+                return "casual"  # Low activity, shorter messages
+            else:
+                return "unknown"  # Very low activity
+
+        except Exception as e:
+            logger.error("Failed to detect meeting context: %s", str(e))
+            return "unknown"
+
+    def _get_adaptive_timeout(self, session: PrismSession) -> int:
+        """
+        Get adaptive timeout based on meeting context.
+
+        Args:
+            session: PrismSession
+
+        Returns:
+            int: Timeout in seconds
+        """
+        context = self._detect_meeting_context(session)
+
+        # Adaptive timeouts based on meeting context
+        timeout_mapping = {
+            "active_discussion": 12,  # Shorter timeout for active discussions
+            "presentation": 18,  # Medium timeout for presentations
+            "casual": 25,  # Longer timeout for casual conversations
+            "unknown": 20,  # Default timeout
+        }
+
+        timeout = timeout_mapping.get(context, 20)
+        logger.debug("Meeting context: %s, timeout: %ds", context, timeout)
+        return timeout
 
     def _generate_and_send_response(self, session: PrismSession):
         """
@@ -823,11 +901,13 @@ ANSWER: YES or NO"""
         import time
 
         start_time = time.time()
-        max_response_time = 30  # 30 seconds timeout
+        max_response_time = self._get_adaptive_timeout(
+            session
+        )  # Adaptive timeout based on meeting context
 
         try:
             logger.info(
-                f"🎯 Starting response generation for session {session.session_id}"
+                f"🎯 Starting response generation for session {session.session_id} (timeout: {max_response_time}s)"
             )
 
             # Validate session still exists
@@ -857,7 +937,7 @@ ANSWER: YES or NO"""
             logger.info(f"📝 Generated response: {response_text[:100]}...")
 
             # Check if interrupted after text generation
-            if not session.is_generating_response:
+            if not current_session.is_generating_response:
                 logger.info("Response generation cancelled after text generation")
                 return
 
@@ -880,7 +960,7 @@ ANSWER: YES or NO"""
             audio_format = audio_result.get("audio_format", "unknown")
 
             # Check if interrupted before sending audio
-            if not session.is_generating_response:
+            if not current_session.is_generating_response:
                 logger.info("Response generation cancelled before sending audio")
                 return
 
@@ -1226,6 +1306,47 @@ Generate a natural, conversational response. Keep it concise (1-2 sentences) sin
 
         except Exception as e:
             logger.error("Failed to send state update to user WebSocket: %s", str(e))
+            # Remove broken WebSocket connection safely
+            with self.websocket_lock:
+                try:
+                    if session.session_id in self.user_websockets:
+                        del self.user_websockets[session.session_id]
+                except KeyError:
+                    pass  # Already removed
+            # Don't raise - we don't want to crash if WebSocket send fails
+
+    def _send_error_to_user(self, session: PrismSession, error_message: str):
+        """
+        Send error message to connected user WebSocket.
+
+        Args:
+            session: Session object
+            error_message: Human-readable error message
+        """
+        with self.websocket_lock:
+            if session.session_id not in self.user_websockets:
+                logger.debug(
+                    "No WebSocket connected for session %s, skipping error message",
+                    session.session_id,
+                )
+                return
+
+            ws = self.user_websockets[session.session_id]
+
+        try:
+            error_update = {
+                "type": "error",
+                "session_id": session.session_id,
+                "message": error_message,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+
+            # Send outside the lock to avoid blocking other WebSocket operations
+            ws.send(json.dumps(error_update))
+            logger.info("Sent error message to user WebSocket: %s", error_message)
+
+        except Exception as e:
+            logger.error("Failed to send error message to user WebSocket: %s", str(e))
             # Remove broken WebSocket connection safely
             with self.websocket_lock:
                 try:

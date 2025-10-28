@@ -5,16 +5,18 @@ set -e
 
 echo "🚀 Starting Hermes Backend..."
 
-# Start Redis in the background
+# Start Redis in the background with optimized configuration
 echo "📦 Starting local Redis server..."
 redis-server --daemonize yes \
   --bind 127.0.0.1 \
   --port 6379 \
-  --maxmemory 256mb \
+  --maxmemory 128mb \
   --maxmemory-policy allkeys-lru \
   --save "" \
   --appendonly no \
-  --loglevel warning
+  --loglevel warning \
+  --tcp-keepalive 60 \
+  --timeout 0
 
 # Wait for Redis to be ready
 echo "⏳ Waiting for Redis to be ready..."

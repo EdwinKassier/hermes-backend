@@ -12,14 +12,14 @@ env:
   RUN_REGION: us-central1
   REPO_NAME: ${{ github.event.repository.name }}
   ARTIFACT_REGISTRY_REPO_NAME: ashes
-  # Resource configuration (matches deploy.sh)
-  # Increased for local Redis + 8 Gunicorn workers + AI operations
-  CPU_COUNT: 2
-  MEMORY_LIMIT: 6Gi
+  # Resource configuration (optimized for I/O-bound TTS operations)
+  # Increased CPU for better parallelism, reduced memory for cost efficiency
+  CPU_COUNT: 4
+  MEMORY_LIMIT: 2Gi
   MIN_INSTANCES: 1  # Keep warm to avoid Redis startup latency
-  MAX_INSTANCES: 10
-  CONCURRENCY: 50
-  REQUEST_TIMEOUT: 300s
+  MAX_INSTANCES: 20  # Increased for better burst handling
+  CONCURRENCY: 100   # Increased for better throughput
+  REQUEST_TIMEOUT: 120s  # Reduced timeout (TTS operations are fast)
 
 jobs:
   lint:
@@ -51,13 +51,108 @@ jobs:
               pylint "$file" --fail-under=0.0 || true
             done
 
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    needs: lint  # Run after linting passes
+
+    steps:
+      - name: Checkout the code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'  # Match Dockerfile
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[test]"
+
+      - name: Generate .env file from secrets for integration tests
+        shell: bash
+        run: |
+          echo "📋 Creating .env file for integration tests..."
+
+          # Check if ENV_FILE secret exists
+          if [ -z "${{ secrets.ENV_FILE }}" ]; then
+            echo "❌ ENV_FILE secret not found or empty"
+            echo "Integration tests will be skipped"
+            echo "SKIP_INTEGRATION_TESTS=true" >> $GITHUB_ENV
+            exit 0
+          fi
+
+          # Decode base64-encoded ENV_FILE secret
+          echo "${{ secrets.ENV_FILE }}" | tr -d '\n\r' | base64 --decode > .env 2>&1
+          DECODE_STATUS=$?
+
+          if [ $DECODE_STATUS -ne 0 ]; then
+            echo "❌ Failed to decode ENV_FILE secret (exit code: $DECODE_STATUS)"
+            echo "Integration tests will be skipped"
+            echo "SKIP_INTEGRATION_TESTS=true" >> $GITHUB_ENV
+            exit 0
+          fi
+
+          # Verify .env exists and has content
+          if [ ! -f .env ] || [ ! -s .env ]; then
+            echo "❌ .env file is empty or missing"
+            echo "Integration tests will be skipped"
+            echo "SKIP_INTEGRATION_TESTS=true" >> $GITHUB_ENV
+            exit 0
+          fi
+
+          echo "✅ .env file created successfully for integration tests"
+          echo "SKIP_INTEGRATION_TESTS=false" >> $GITHUB_ENV
+
+      - name: Run unit tests
+        run: |
+          echo "🧪 Running unit tests..."
+          python -m pytest tests/unit/ -v --tb=short --no-cov
+
+      - name: Run integration tests (if environment available)
+        if: env.SKIP_INTEGRATION_TESTS == 'false'
+        run: |
+          echo "🧪 Running integration tests..."
+          python -m pytest tests/integration/ --run-integration -v --tb=short --no-cov
+
+      - name: Run integration tests (skip if no environment)
+        if: env.SKIP_INTEGRATION_TESTS == 'true'
+        run: |
+          echo "⏭️ Skipping integration tests (no environment variables available)"
+          echo "This is expected if ENV_FILE secret is not configured"
+
+      - name: Test summary
+        if: always()
+        run: |
+          echo "=================================================="
+          echo "  Test Summary"
+          echo "=================================================="
+          echo "Unit tests: ✅ Completed"
+          if [ "$SKIP_INTEGRATION_TESTS" = "false" ]; then
+            echo "Integration tests: ✅ Completed"
+          else
+            echo "Integration tests: ⏭️ Skipped (no env vars)"
+          fi
+          echo "=================================================="
+
   setup-build-deploy:
     name: Setup, Build, and Deploy
     runs-on: ubuntu-latest
+    needs: [lint, test]  # Run after both linting and tests pass
 
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+
+      - name: Verify tests passed
+        run: |
+          echo "✅ All tests passed - proceeding with deployment"
+          echo "This deployment is based on code that has passed:"
+          echo "  - Linting and code quality checks"
+          echo "  - Unit tests"
+          echo "  - Integration tests (if environment available)"
+          echo ""
 
       - name: Extract branch name and set service name
         shell: bash

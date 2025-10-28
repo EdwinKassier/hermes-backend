@@ -98,6 +98,111 @@ class GoogleTTSProvider(BaseTTSProvider):
     def is_cpu_bound(self) -> bool:
         return False
 
+    def _validate_text_input(self, text: str) -> None:
+        """Validate text input for TTS generation."""
+        if not text or not text.strip():
+            raise ValueError("Text cannot be empty")
+        if len(text) > 5000:
+            logger.warning(
+                f"Text length {len(text)} exceeds recommended limit of 5000 characters"
+            )
+
+    def _validate_output_filepath(self, output_filepath: Optional[str]) -> None:
+        """Validate output filepath if provided."""
+        if output_filepath:
+            # Check if directory exists
+            import os
+
+            directory = os.path.dirname(output_filepath)
+            if directory and not os.path.exists(directory):
+                raise ValueError(f"Output directory does not exist: {directory}")
+
+    def _clean_text_with_logging(self, text: str) -> str:
+        """
+        Clean text for TTS generation, removing markdown and problematic characters.
+
+        Args:
+            text: Raw text to clean
+
+        Returns:
+            Cleaned text suitable for TTS
+        """
+        import re
+
+        original_text = text
+
+        # Remove markdown formatting
+        text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)  # **bold**
+        text = re.sub(r"\*([^*]+)\*", r"\1", text)  # *italic*
+        text = re.sub(r"__([^_]+)__", r"\1", text)  # __bold__
+        text = re.sub(r"_([^_]+)_", r"\1", text)  # _italic_
+        text = re.sub(r"`([^`]+)`", r"\1", text)  # `code`
+        text = re.sub(r"```[^`]*```", "", text)  # ```code blocks```
+        text = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", text)  # [link](url)
+        text = re.sub(r"#{1,6}\s+", "", text)  # # headers
+
+        # Remove problematic characters for speech
+        text = re.sub(r"[•\-—–]+", ", ", text)  # bullet points and dashes
+        text = re.sub(r"\s+", " ", text)  # normalize whitespace
+        text = text.strip()
+
+        if text != original_text:
+            logger.debug(f"Text cleaned: '{original_text[:50]}...' -> '{text[:50]}...'")
+
+        return text
+
+    def _handle_cloud_upload(
+        self,
+        local_path: str,
+        sample_rate: int,
+        upload_to_cloud: bool,
+        cloud_destination_path: Optional[str],
+        cloud_storage_service_override,
+        file_extension: str,
+        audio_format: str,
+    ) -> Dict[str, Any]:
+        """
+        Handle cloud upload and return result dict.
+
+        Args:
+            local_path: Local file path
+            sample_rate: Audio sample rate
+            upload_to_cloud: Whether to upload to cloud
+            cloud_destination_path: Destination path in cloud storage
+            cloud_storage_service_override: Override cloud storage service
+            file_extension: File extension
+            audio_format: Audio format (e.g., wav)
+
+        Returns:
+            Dict with local_path, sample_rate, and optionally cloud_url
+        """
+        result = {
+            "local_path": local_path,
+            "sample_rate": sample_rate,
+            "audio_format": audio_format,
+        }
+
+        # Attempt cloud upload if requested and cloud storage is available
+        if upload_to_cloud:
+            cloud_service = cloud_storage_service_override or self.cloud_storage_service
+            if cloud_service:
+                try:
+                    # Use upload_and_get_signed_url to get the actual URL
+                    cloud_url = cloud_service.upload_and_get_signed_url(
+                        local_file_path=local_path,
+                        destination_blob_name=cloud_destination_path,
+                    )
+                    result["cloud_url"] = cloud_url
+                    logger.info(f"Audio uploaded to cloud: {cloud_url}")
+                except Exception as e:
+                    logger.warning(
+                        f"Cloud upload failed, using local file only: {str(e)}"
+                    )
+            else:
+                logger.debug("Cloud storage not available, using local file only")
+
+        return result
+
     @cached_tts(_tts_cache)
     def generate_audio(
         self,

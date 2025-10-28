@@ -25,7 +25,7 @@ MAX_CONVERSATION_HISTORY = 50  # messages
 DEFAULT_CONVERSATION_LIMIT = 10  # messages to retrieve
 
 # TTS Configuration
-DEFAULT_TTS_PROVIDER = "elevenlabs"  # or "google" or "chatterbox"
+DEFAULT_TTS_PROVIDER = "elevenlabs"  # or "google"
 DEFAULT_AUDIO_FORMAT = "wav"
 MAX_TTS_TEXT_LENGTH = 5000  # characters
 

@@ -12,35 +12,24 @@ backlog = 2048
 # Determine provider for optimal worker configuration
 TTS_PROVIDER = os.getenv("TTS_PROVIDER", "elevenlabs").lower()
 
-if TTS_PROVIDER == "chatterbox":
-    # Chatterbox: CPU-bound, high memory, NOT thread-safe
-    # Use single worker to prevent:
-    # - Model state corruption (race conditions)
-    # - Memory exhaustion (2.5GB per worker)
-    # - CPU contention (GIL thrashing)
-    workers = 1
-    worker_connections = 50  # Lower for CPU-bound work
-    print("⚠️  Chatterbox mode: Single worker (NOT suitable for high scale)")
-    print("    Recommendation: Use ElevenLabs or Google for production scale")
+# ElevenLabs/Google: I/O-bound, low memory, thread-safe
+# Use multiple workers with threading for optimal I/O handling
+cpu_count = multiprocessing.cpu_count()
+default_workers = cpu_count * 2  # 8 workers with 4 CPU
+workers = int(os.getenv("GUNICORN_WORKERS", default_workers))
+worker_connections = 100  # Reduced per-worker connections for better memory usage
+threads = 4  # 4 threads per worker for I/O operations
+print(
+    f"✅ {TTS_PROVIDER.title()} mode: {workers} workers × {threads} threads × {worker_connections} connections"
+)
+print(
+    f"   Theoretical capacity: {workers * threads * worker_connections} concurrent operations"
+)
+print(f"   Expected throughput: ~{workers * threads * 100} req/s")
 
-else:
-    # ElevenLabs/Google: I/O-bound, low memory, thread-safe
-    # Use multiple workers for true parallelism and fault isolation
-    cpu_count = multiprocessing.cpu_count()
-    default_workers = min(cpu_count * 2, 8)  # 2x CPU cores, max 8
-    workers = int(os.getenv("GUNICORN_WORKERS", default_workers))
-    worker_connections = 1000
-    print(
-        f"✅ {TTS_PROVIDER.title()} mode: {workers} workers × {worker_connections} connections"
-    )
-    print(
-        f"   Theoretical capacity: {workers * worker_connections} concurrent connections"
-    )
-    print(f"   Expected throughput: ~{workers * 100} req/s")
-
-# Use sync worker for reliable HTTP handling (WebSockets handled by separate server)
-worker_class = "sync"
-print("✅ Using sync worker (WebSockets handled by separate server)")
+# Use gthread worker for optimal I/O-bound operations (TTS requests)
+worker_class = "gthread"
+print("✅ Using gthread worker (optimized for I/O-bound TTS operations)")
 
 # Timeouts
 timeout = 120

@@ -1,6 +1,7 @@
 import logging
 import os
 import traceback
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -42,12 +43,65 @@ logging.basicConfig(
 )
 
 
+# Custom exceptions for better error handling
+class GeminiServiceError(Exception):
+    """Base exception for GeminiService errors."""
+
+    pass
+
+
+class PersonaNotFoundError(GeminiServiceError):
+    """Raised when a requested persona is not found."""
+
+    pass
+
+
+class EmbeddingError(GeminiServiceError):
+    """Raised when embedding generation fails."""
+
+    pass
+
+
+class VectorStoreError(GeminiServiceError):
+    """Raised when vector store operations fail."""
+
+    pass
+
+
+class ToolExecutionError(GeminiServiceError):
+    """Raised when tool execution fails."""
+
+    pass
+
+
+@dataclass
+class PersonaConfig:
+    """Configuration for a specific persona."""
+
+    name: str
+    base_prompt: str
+    model_name: str = "gemini-2.5-flash"
+    temperature: float = 0.3
+    timeout: int = 60
+    max_retries: int = 3
+    allowed_tools: Optional[List[str]] = None  # None means all tools
+    error_message_template: Optional[str] = None
+
+    def __post_init__(self):
+        """Set default templates if not provided."""
+        if self.error_message_template is None:
+            self.error_message_template = "Sorry, I encountered an error."
+
+
 class GeminiService:
-    MODEL_NAME = "gemini-2.5-flash"  # LLM for generation
-    TEMPERATURE = 0.3  # Lower temperature for factual accuracy
-    TIMEOUT = 60
-    MAX_RETRIES = 3
-    ERROR_MESSAGE = "Sorry, the Hermes LLM service encountered an error."
+    """Extensible Gemini service supporting multiple personas with individual configurations."""
+
+    # Default configuration (can be overridden per persona)
+    DEFAULT_MODEL_NAME = "gemini-2.5-flash"
+    DEFAULT_TEMPERATURE = 0.3
+    DEFAULT_TIMEOUT = 60
+    DEFAULT_MAX_RETRIES = 3
+    DEFAULT_ERROR_MESSAGE = "Sorry, the AI service encountered an error."
 
     # Using models/embedding-001 with 1536 dimensions (Gemini API)
     # IMPORTANT: Must match the model used to create embeddings in Supabase
@@ -60,9 +114,8 @@ class GeminiService:
 
     def __init__(
         self,
-        vertex_project: Optional[str] = None,
-        vertex_location: Optional[str] = None,
         conversation_db_path: str = "conversations.db",
+        persona_configs: Optional[Dict[str, PersonaConfig]] = None,
     ):
         if not LANGCHAIN_AVAILABLE:
             raise ImportError(
@@ -73,23 +126,23 @@ class GeminiService:
         if "GOOGLE_API_KEY" not in os.environ:
             raise ValueError("GOOGLE_API_KEY environment variable not set.")
 
-        # Initialize LLM
-        base_model = ChatGoogleGenerativeAI(
-            model=self.MODEL_NAME,
-            temperature=self.TEMPERATURE,
-            max_retries=self.MAX_RETRIES,
-            timeout=self.TIMEOUT,
-        )
+        # Initialize persona configurations
+        self.persona_configs = self._initialize_persona_configs(persona_configs)
 
-        # Attach tools
-        tools = get_all_tools()
-        self.model = base_model.bind_tools(tools)
-        logging.info("Initialized Gemini model with %d tools attached", len(tools))
+        # Initialize base model (will be customized per persona)
+        self.base_model_class = ChatGoogleGenerativeAI
 
-        # Base prompts for different personas - load from markdown files
+        # Get all available tools
+        self.all_tools = get_all_tools()
+        logging.info("Loaded %d tools for persona filtering", len(self.all_tools))
+
+        # Load base prompts and create persona configs
         self.base_prompts = self._load_agent_prompts()
+        self._create_persona_configs_from_prompts()
+
         logging.info(
-            "Loaded base prompts for agents: %s", list(self.base_prompts.keys())
+            "Initialized GeminiService with personas: %s",
+            list(self.persona_configs.keys()),
         )
 
         # Initialize Gemini embeddings (1536 dimensions)
@@ -104,19 +157,39 @@ class GeminiService:
             class CustomDimensionalityEmbeddings(GoogleGenerativeAIEmbeddings):
                 """Custom embeddings that enforce 1536 dimensions"""
 
-                def embed_query(self, text: str) -> list[float]:
+                def embed_query(self, text: str, **kwargs) -> list[float]:
                     """Override to add output_dimensionality parameter"""
-                    result = genai.embed_content(
-                        model=self.model,
-                        content=text,
-                        task_type=self.task_type,
-                        output_dimensionality=_target_dimensionality,
-                    )
-                    return result["embedding"]
+                    # kwargs ignored - using explicit parameters
+                    try:
+                        result = genai.embed_content(
+                            model=self.EMBEDDING_MODEL_NAME,
+                            content=text,
+                            task_type=self.task_type,
+                            output_dimensionality=_target_dimensionality,
+                        )
+                        return result["embedding"]
+                    except Exception as e:
+                        logging.error(
+                            "Failed to generate embedding for query: %s", str(e)
+                        )
+                        raise EmbeddingError(
+                            f"Failed to generate embedding: {str(e)}"
+                        ) from e
 
-                def embed_documents(self, texts: list[str]) -> list[list[float]]:
+                def embed_documents(
+                    self, texts: list[str], **kwargs
+                ) -> list[list[float]]:
                     """Override to add output_dimensionality parameter"""
-                    return [self.embed_query(text) for text in texts]
+                    # kwargs ignored - using explicit parameters
+                    try:
+                        return [self.embed_query(text) for text in texts]
+                    except Exception as e:
+                        logging.error(
+                            "Failed to generate embeddings for documents: %s", str(e)
+                        )
+                        raise EmbeddingError(
+                            f"Failed to generate document embeddings: {str(e)}"
+                        ) from e
 
             self.embeddings_model = CustomDimensionalityEmbeddings(
                 model=self.EMBEDDING_MODEL_NAME,
@@ -129,10 +202,15 @@ class GeminiService:
                 self.EMBEDDING_MODEL_NAME,
                 self.EMBEDDING_DIMENSIONS,
             )
+        except (ValueError, KeyError) as e:
+            logging.error(
+                "Configuration error initializing Gemini API Embeddings: %s", e
+            )
+            raise EmbeddingError(f"Configuration error: {str(e)}") from e
         except Exception as e:
             logging.error("Failed to initialize Gemini API Embeddings: %s", e)
             logging.error(traceback.format_exc())
-            raise
+            raise EmbeddingError(f"Failed to initialize embeddings: {str(e)}") from e
 
         # Initialize Supabase vector store
         if not SUPABASE_AVAILABLE:
@@ -158,10 +236,17 @@ class GeminiService:
                     table_name="hermes_vectors",
                 )
                 logging.info("Initialized Supabase vector store using LangChain")
+            except (ValueError, KeyError) as e:
+                logging.error(
+                    "Configuration error initializing Supabase vector store: %s", e
+                )
+                raise VectorStoreError(f"Configuration error: {str(e)}") from e
             except Exception as e:
                 logging.error("Failed to initialize Supabase vector store: %s", e)
                 logging.error(traceback.format_exc())
-                raise
+                raise VectorStoreError(
+                    f"Failed to initialize vector store: {str(e)}"
+                ) from e
 
         # Initialize conversation state
         self.conversation_state = ConversationState(db_path=conversation_db_path)
@@ -170,8 +255,7 @@ class GeminiService:
             "Supabase" if self.vector_store else "None (dependencies missing)"
         )
         logging.info(
-            "GeminiService initialized. LLM: %s, Embeddings: %s (%dD), Vector Store: %s",
-            self.MODEL_NAME,
+            "GeminiService initialized. Embeddings: %s (%dD), Vector Store: %s",
             self.EMBEDDING_MODEL_NAME,
             self.EMBEDDING_DIMENSIONS,
             vector_store_status,
@@ -179,45 +263,195 @@ class GeminiService:
 
     def _load_agent_prompts(self) -> Dict[str, str]:
         """
-        Load agent prompts from markdown files in docs/AgentPrompts/.
-        Returns a dictionary mapping agent names (lowercase) to their prompt content.
+        Load persona prompts from markdown files in docs/Personas/.
+        Returns a dictionary mapping persona names (lowercase) to their prompt content.
         """
         prompts = {}
 
         # Get the project root directory (3 levels up from this file)
         current_dir = os.path.dirname(os.path.abspath(__file__))
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
-        prompts_dir = os.path.join(project_root, "docs", "AgentPrompts")
+        personas_dir = os.path.join(project_root, "docs", "Personas")
 
-        if not os.path.exists(prompts_dir):
-            logging.warning("Agent prompts directory not found: %s", prompts_dir)
+        if not os.path.exists(personas_dir):
+            logging.warning("Personas directory not found: %s", personas_dir)
             return prompts
 
-        # Load all .md files from the prompts directory
+        # Load all .md files from the personas directory
         try:
-            for filename in os.listdir(prompts_dir):
+            for filename in os.listdir(personas_dir):
                 if filename.endswith(".md"):
-                    agent_name = filename[
+                    persona_name = filename[
                         :-3
                     ].lower()  # Remove .md extension and lowercase
-                    filepath = os.path.join(prompts_dir, filename)
+                    filepath = os.path.join(personas_dir, filename)
 
                     try:
                         with open(filepath, "r", encoding="utf-8") as f:
                             content = f.read().strip()
-                            prompts[agent_name] = content
-                            logging.info(
-                                "Loaded prompt for agent '%s' from %s (%d chars)",
-                                agent_name,
-                                filename,
-                                len(content),
-                            )
+                            if content:
+                                prompts[persona_name] = content
+                                logging.info(
+                                    "Loaded prompt for persona '%s' from %s (%d chars)",
+                                    persona_name,
+                                    filename,
+                                    len(content),
+                                )
+                            else:
+                                logging.warning("Empty prompt file: %s", filename)
                     except Exception as e:
                         logging.error("Failed to load prompt from %s: %s", filepath, e)
         except Exception as e:
-            logging.error("Error reading prompts directory %s: %s", prompts_dir, e)
+            logging.error("Error reading personas directory %s: %s", personas_dir, e)
 
         return prompts
+
+    def _initialize_persona_configs(
+        self, persona_configs: Optional[Dict[str, PersonaConfig]]
+    ) -> Dict[str, PersonaConfig]:
+        """Initialize persona configurations with defaults."""
+        configs = {}
+
+        if persona_configs:
+            configs.update(persona_configs)
+
+        # Add default hermes config if not provided
+        if "hermes" not in configs:
+            configs["hermes"] = PersonaConfig(
+                name="hermes", base_prompt=""  # Will be loaded from file
+            )
+
+        return configs
+
+    def _create_persona_configs_from_prompts(self):
+        """Create persona configs from loaded prompts."""
+        for persona_name, base_prompt in self.base_prompts.items():
+            if persona_name not in self.persona_configs:
+                self.persona_configs[persona_name] = PersonaConfig(
+                    name=persona_name, base_prompt=base_prompt
+                )
+            else:
+                # Update existing config with loaded prompt
+                self.persona_configs[persona_name].base_prompt = base_prompt
+
+    def _get_persona_config(self, persona: str) -> PersonaConfig:
+        """Get persona configuration with fallback."""
+        if persona not in self.persona_configs:
+            logging.warning("Unknown persona '%s', falling back to 'hermes'", persona)
+            if "hermes" not in self.persona_configs:
+                raise PersonaNotFoundError(
+                    f"Persona '{persona}' not found and no fallback 'hermes' persona available"
+                )
+            persona = "hermes"
+
+        return self.persona_configs[persona]
+
+    def _create_model_for_persona(self, persona_config: PersonaConfig):
+        """Create a model instance configured for a specific persona."""
+        model = self.base_model_class(
+            model=persona_config.model_name,
+            temperature=persona_config.temperature,
+            max_retries=persona_config.max_retries,
+            timeout=persona_config.timeout,
+        )
+
+        # Filter tools based on persona configuration
+        tools = self._filter_tools_for_persona(persona_config)
+        return model.bind_tools(tools)
+
+    def _filter_tools_for_persona(self, persona_config: PersonaConfig) -> List[Any]:
+        """Filter tools based on persona configuration."""
+        if persona_config.allowed_tools is None:
+            return self.all_tools
+
+        # Filter tools by name
+        filtered_tools = []
+        for tool in self.all_tools:
+            if hasattr(tool, "name") and tool.name in persona_config.allowed_tools:
+                filtered_tools.append(tool)
+
+        logging.info(
+            "Filtered %d tools for persona '%s'",
+            len(filtered_tools),
+            persona_config.name,
+        )
+        return filtered_tools
+
+    def _execute_tools(self, tool_calls: List[Dict[str, Any]]) -> List[str]:
+        """
+        Execute tool calls and return formatted results.
+
+        Args:
+            tool_calls: List of tool call dictionaries
+
+        Returns:
+            List of formatted tool result strings
+        """
+        tool_results = []
+
+        for tool_call in tool_calls:
+            tool_name = tool_call.get("name", "unknown")
+            tool_args = tool_call.get("args", {})
+            logging.info("Executing tool: %s with args: %s", tool_name, tool_args)
+
+            # Find and execute the tool
+            from app.shared.utils.toolhub import get_tool_by_name
+
+            tool = get_tool_by_name(tool_name)
+            if tool:
+                try:
+                    result = tool._run(**tool_args)
+                    tool_results.append(f"{tool_name}: {result}")
+                    logging.info("Tool %s result: %s", tool_name, result)
+                except (ValueError, TypeError, KeyError) as e:
+                    error_msg = f"Error executing {tool_name}: {str(e)}"
+                    tool_results.append(error_msg)
+                    logging.error("Tool execution error for %s: %s", tool_name, str(e))
+                    raise ToolExecutionError(
+                        f"Failed to execute tool {tool_name}: {str(e)}"
+                    ) from e
+                except Exception as e:
+                    error_msg = f"Unexpected error executing {tool_name}: {str(e)}"
+                    tool_results.append(error_msg)
+                    logging.error(
+                        "Unexpected tool execution error for %s: %s", tool_name, str(e)
+                    )
+                    raise ToolExecutionError(
+                        f"Unexpected error executing tool {tool_name}: {str(e)}"
+                    ) from e
+            else:
+                tool_results.append(f"Tool {tool_name} not found")
+                logging.warning("Tool not found: %s", tool_name)
+
+        return tool_results
+
+    def _create_tool_response_prompt(
+        self, tool_results: List[str], original_prompt: str, persona: str
+    ) -> str:
+        """
+        Create a follow-up prompt for incorporating tool results into natural responses.
+
+        Args:
+            tool_results: List of tool result strings
+            original_prompt: Original user prompt
+            persona: Persona name for context
+
+        Returns:
+            Formatted follow-up prompt
+        """
+        tool_results_text = "\n".join(tool_results)
+
+        # Simple, generic template for tool response incorporation
+        follow_up_prompt = f"""Based on the tool results below, provide a natural response that incorporates this information conversationally.
+
+Tool Results:
+{tool_results_text}
+
+Original User Query: {original_prompt}
+
+Don't just repeat the tool output verbatim - make it sound like a helpful assistant sharing information naturally."""
+
+        return follow_up_prompt
 
     def _direct_similarity_search(self, query: str, k: int = 5, threshold: float = 0.7):
         """
@@ -286,60 +520,158 @@ class GeminiService:
             return results[:k]
 
         except Exception as e:
-            logging.error(f"Direct similarity search failed: {e}")
+            logging.error("Direct similarity search failed: %s", e)
             logging.error(traceback.format_exc())
             return []
 
     def generate_gemini_response(self, prompt: str, persona: str = "hermes") -> str:
-        base_prompt = self.base_prompts.get(persona, self.base_prompts["hermes"])
+        """
+        Generate a response using Gemini with optional tool execution.
+
+        This method creates a persona-specific model, processes the user prompt,
+        and handles tool calls if the model requests them. It ensures natural
+        language responses by re-prompting the model with tool results.
+
+        Args:
+            prompt: User input prompt to process
+            persona: Persona name for response style and configuration (default: "hermes")
+
+        Returns:
+            Generated response string from the AI model
+
+        Raises:
+            PersonaNotFoundError: If the specified persona is not found
+            ToolExecutionError: If tool execution fails
+            GeminiServiceError: For other service-related errors
+
+        Example:
+            >>> service = GeminiService()
+            >>> response = service.generate_gemini_response("What's the time?", "hermes")
+            >>> print(response)
+            "The current time is..."
+        """
+        persona_config = self._get_persona_config(persona)
+
+        # Create persona-specific model
+        model = self._create_model_for_persona(persona_config)
+
+        # Simple prompt composition
+        base_prompt = persona_config.base_prompt
         prompt_prefix = f"{base_prompt}\n\n" if base_prompt else ""
         full_prompt = f"{prompt_prefix}User Input: {prompt}" if base_prompt else prompt
+
         try:
-            message = self.model.invoke([HumanMessage(content=full_prompt)])
+            message = model.invoke([HumanMessage(content=full_prompt)])
 
             # Handle tool calls
             if hasattr(message, "tool_calls") and message.tool_calls:
-                logging.info(f"Model requested {len(message.tool_calls)} tool call(s)")
-                tool_results = []
+                logging.info("Model requested %d tool call(s)", len(message.tool_calls))
 
-                for tool_call in message.tool_calls:
-                    tool_name = tool_call.get("name", "unknown")
-                    tool_args = tool_call.get("args", {})
-                    logging.info(f"Executing tool: {tool_name} with args: {tool_args}")
+                # Execute tools using abstracted method
+                tool_results = self._execute_tools(message.tool_calls)
 
-                    # Find and execute the tool
-                    from app.shared.utils.toolhub import get_tool_by_name
+                # Create persona-aware follow-up prompt
+                follow_up_prompt = self._create_tool_response_prompt(
+                    tool_results, prompt, persona
+                )
 
-                    tool = get_tool_by_name(tool_name)
-                    if tool:
-                        try:
-                            result = tool._run(**tool_args)
-                            tool_results.append(f"{tool_name}: {result}")
-                            logging.info(f"Tool {tool_name} result: {result}")
-                        except Exception as e:
-                            error_msg = f"Error executing {tool_name}: {str(e)}"
-                            tool_results.append(error_msg)
-                            logging.error(error_msg)
-                    else:
-                        tool_results.append(f"Tool {tool_name} not found")
+                # Generate follow-up response with tool results
+                follow_up_message = model.invoke(
+                    [HumanMessage(content=follow_up_prompt)]
+                )
+                response = follow_up_message.content.strip()
 
-                # Return tool results formatted
-                return "\n".join(tool_results)
+                if not response or "error" in response.lower():
+                    logging.warning(
+                        "Follow-up response failed, falling back to formatted tool results"
+                    )
+                    return "\n".join(tool_results)
+
+                logging.info("Generated natural response incorporating tool results")
+                return response
 
             # Handle regular text response
             response = message.content.strip()
             if "error" in response.lower() or not response:
                 logging.warning("Gemini returned error or empty: '%s'", response)
-                return self.ERROR_MESSAGE + " Check safety filters or prompt."
+                return persona_config.error_message_template
+
             logging.info("Generated response successfully with persona: %s", persona)
             return response
+
         except Exception as e:
             logging.error("Error generating response: %s", e)
             logging.error(traceback.format_exc())
             return (
-                self.ERROR_MESSAGE
+                persona_config.error_message_template
                 + " Rate limiting or internal error. Try again in 30s."
             )
+
+    def add_persona(self, persona_config: PersonaConfig) -> None:
+        """
+        Add a new persona configuration to the service.
+
+        This method allows runtime addition of new personas with custom configurations.
+        The persona will be immediately available for use in response generation.
+
+        Args:
+            persona_config: PersonaConfig object containing persona settings
+
+        Raises:
+            ValueError: If persona_config is invalid or persona name already exists
+
+        Example:
+            >>> service = GeminiService()
+            >>> custom_persona = PersonaConfig(
+            ...     name="customer_service",
+            ...     base_prompt="You are a helpful customer service agent.",
+            ...     temperature=0.5
+            ... )
+            >>> service.add_persona(custom_persona)
+        """
+        self.persona_configs[persona_config.name] = persona_config
+        logging.info("Added persona configuration: %s", persona_config.name)
+
+    def remove_persona(self, persona_name: str) -> bool:
+        """
+        Remove a persona configuration from the service.
+
+        Args:
+            persona_name: Name of the persona to remove
+
+        Returns:
+            True if persona was removed, False if persona was not found
+
+        Example:
+            >>> service = GeminiService()
+            >>> success = service.remove_persona("customer_service")
+            >>> print(success)
+            True
+        """
+        if persona_name in self.persona_configs:
+            del self.persona_configs[persona_name]
+            logging.info("Removed persona configuration: %s", persona_name)
+            return True
+        return False
+
+    def get_available_personas(self) -> List[str]:
+        """Get list of available persona names."""
+        return list(self.persona_configs.keys())
+
+    def get_persona_info(self, persona_name: str) -> Optional[Dict[str, Any]]:
+        """Get information about a specific persona."""
+        if persona_name not in self.persona_configs:
+            return None
+
+        config = self.persona_configs[persona_name]
+        return {
+            "name": config.name,
+            "model_name": config.model_name,
+            "temperature": config.temperature,
+            "timeout": config.timeout,
+            "allowed_tools": config.allowed_tools,
+            "has_custom_error_message": bool(config.error_message_template),
+        }
 
     def _format_conversation_history(self, messages: List[Dict[str, Any]]) -> str:
         formatted = []
@@ -385,7 +717,7 @@ Enriched Query:"""
         try:
             # Use a simpler model call without tools for query enrichment
             base_model = ChatGoogleGenerativeAI(
-                model=self.MODEL_NAME,
+                model="gemini-2.5-flash",
                 temperature=0.3,  # Lower temp for focused enrichment
                 max_retries=2,
                 timeout=10,  # Shorter timeout for speed
@@ -398,7 +730,7 @@ Enriched Query:"""
             return enriched_query
 
         except Exception as e:
-            logging.error(f"Error enriching query: {e}")
+            logging.error("Error enriching query: %s", e)
             logging.info("Falling back to original query")
             return user_query
 
@@ -410,7 +742,34 @@ Enriched Query:"""
         min_chunk_length: int = 20,
     ) -> str:
         """
-        Optimized RAG generation using Gemini embeddings and top-k.
+        Generate a response using Retrieval-Augmented Generation (RAG).
+
+        This method combines vector similarity search with LLM generation to provide
+        contextually relevant responses based on retrieved documents. It maintains
+        conversation state and uses persona-specific configurations.
+
+        Args:
+            prompt: User input prompt to process
+            user_id: Unique identifier for conversation state management
+            persona: Persona name for response style and configuration (default: "hermes")
+            min_chunk_length: Minimum length for retrieved document chunks (default: 20)
+
+        Returns:
+            Generated response string incorporating retrieved context
+
+        Raises:
+            PersonaNotFoundError: If the specified persona is not found
+            VectorStoreError: If vector store operations fail
+            EmbeddingError: If embedding generation fails
+            GeminiServiceError: For other service-related errors
+
+        Example:
+            >>> service = GeminiService()
+            >>> response = service.generate_gemini_response_with_rag(
+            ...     "Tell me about Edwin's work", "user123", "hermes"
+            ... )
+            >>> print(response)
+            "Based on the available information, Edwin has worked on..."
         """
 
         # Retrieve or initialize conversation state
@@ -447,7 +806,9 @@ Enriched Query:"""
         try:
             # Add entity context to improve matching
             contextualized_query = f"Edwin Kassier {prompt}"
-            logging.info(f"Searching vector store with query: '{contextualized_query}'")
+            logging.info(
+                "Searching vector store with query: '%s'", contextualized_query
+            )
 
             # Use direct RPC call instead of broken LangChain wrapper
             relevant_chunks = self._direct_similarity_search(
@@ -507,7 +868,9 @@ Enriched Query:"""
 
         # Merge chunks
         context_str = "\n\n".join([doc.page_content for doc in docs])
-        logging.info(f"Using {len(docs)} chunks ({len(context_str)} chars) for context")
+        logging.info(
+            "Using %d chunks (%d chars) for context", len(docs), len(context_str)
+        )
 
         # Construct strict RAG prompt
         full_prompt = (
@@ -527,12 +890,19 @@ Enriched Query:"""
 
         # Invoke LLM
         try:
-            message = self.model.invoke([HumanMessage(content=full_prompt)])
+            # Use persona-aware model creation
+            persona_config = self._get_persona_config(persona)
+            model = self._create_model_for_persona(persona_config)
+
+            message = model.invoke([HumanMessage(content=full_prompt)])
             response = message.content.strip()
 
             if not response or "error" in response.lower():
                 logging.warning("RAG response error or empty: '%s'", response)
-                return self.ERROR_MESSAGE + " RAG: Check rate limits or context."
+                return (
+                    persona_config.error_message_template
+                    + " RAG: Check rate limits or context."
+                )
 
             # Add assistant response to conversation state
             state.data["conversation"].append(
@@ -552,4 +922,5 @@ Enriched Query:"""
         except Exception as e:
             logging.error("Error generating RAG response: %s", e)
             logging.error(traceback.format_exc())
-            return self.ERROR_MESSAGE + " RAG: Generation error."
+            persona_config = self._get_persona_config(persona)
+            return persona_config.error_message_template + " RAG: Generation error."

@@ -156,7 +156,7 @@ class ProcessRequestResult(BaseModel):
     response_mode: ResponseMode = Field(..., description="Response delivery mode")
     audio_url: Optional[str] = Field(default=None, description="Audio URL if TTS mode")
     tts_provider: Optional[str] = Field(
-        default=None, description="TTS provider (elevenlabs, google, chatterbox)"
+        default=None, description="TTS provider (elevenlabs, google)"
     )
     user_id: str = Field(..., description="User identifier")
     timestamp: datetime = Field(default_factory=datetime.utcnow)

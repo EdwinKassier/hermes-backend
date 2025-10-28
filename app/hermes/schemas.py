@@ -108,7 +108,7 @@ class ProcessRequestResponseSchema(BaseModel):
     response_mode: str = Field(..., description="Response delivery mode")
     wave_url: Optional[str] = Field(None, description="Audio URL if TTS mode")
     tts_provider: Optional[str] = Field(
-        None, description="TTS provider (elevenlabs, google, chatterbox)"
+        None, description="TTS provider (elevenlabs, google)"
     )
     user_id: str = Field(..., description="User identifier")
     timestamp: datetime = Field(default_factory=datetime.utcnow)
