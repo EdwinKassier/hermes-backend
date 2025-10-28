@@ -54,8 +54,8 @@ README.md
 *.md
 docs/
 # But keep agent prompts (required for AI generation)
-!docs/AgentPrompts/
-!docs/AgentPrompts/*.md
+!docs/Personas/
+!docs/Personas/*.md
 *.png
 *.jpg
 *.jpeg
