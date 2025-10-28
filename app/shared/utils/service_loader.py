@@ -40,13 +40,8 @@ def get_cloud_storage_config():
 
 
 @lru_cache(maxsize=1)
-def get_tts_service(device: Optional[str] = None) -> TTSService:
+def get_tts_service() -> TTSService:
     """Lazy load and cache the TTSService instance.
-
-    Args:
-        device: The device to load the model on (e.g., 'cuda', 'cpu',
-                'mps'). If None, automatically detect the best device.
-                Currently not used by any providers.
 
     Returns:
         TTSService instance configured based on TTS_PROVIDER env var
@@ -55,7 +50,6 @@ def get_tts_service(device: Optional[str] = None) -> TTSService:
 
     return TTSService(
         tts_provider=TTS_PROVIDER,
-        device=device,
         cloud_storage_config=cloud_storage_config,
         elevenlabs_api_key=EL_API_KEY,
     )
