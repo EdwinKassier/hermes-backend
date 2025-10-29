@@ -71,11 +71,8 @@ class PrismService:
 
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
 
-        # Register cleanup handler for graceful shutdown
-        import signal
-
-        signal.signal(signal.SIGTERM, self._signal_handler)
-        signal.signal(signal.SIGINT, self._signal_handler)
+        # Signal handlers are now registered at the Gunicorn process level
+        # in gunicorn.conf.py when_ready hook to avoid threading issues
 
         # Initialize clients
         self.attendee_client = AttendeeClient()
@@ -247,12 +244,6 @@ class PrismService:
             logger.warning(f"Failed to cleanup sessions: {e}")
 
         logger.info("PrismService cleanup completed")
-
-    def _signal_handler(self, signum, frame):
-        """Handle shutdown signals gracefully."""
-        logger.info(f"Received signal {signum}, initiating graceful shutdown...")
-        self.cleanup()
-        exit(0)
 
     # ==================== BOT MANAGEMENT ====================
 

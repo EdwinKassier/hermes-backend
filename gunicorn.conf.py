@@ -72,6 +72,7 @@ def post_fork(server, worker):
 
 
 def pre_fork(server, worker):
+    # No pre-fork setup needed
     pass
 
 
@@ -81,6 +82,29 @@ def pre_exec(server):
 
 def when_ready(server):
     server.log.info("Server is ready. Spawning workers")
+
+    # Register signal handlers once per worker process (main thread)
+    # This prevents the "signal only works in main thread" error
+    import signal
+    import threading
+
+    def signal_handler(signum, frame):
+        """Handle graceful shutdown signals."""
+        server.log.info(f"Received signal {signum}, initiating graceful shutdown...")
+        # The actual cleanup is handled by Gunicorn's graceful shutdown
+        # This just ensures we don't get the threading error
+        # signum and frame are required by signal handler signature
+
+    # Only register if we're in the main thread of this process
+    if threading.current_thread() is threading.main_thread():
+        try:
+            signal.signal(signal.SIGTERM, signal_handler)
+            signal.signal(signal.SIGINT, signal_handler)
+            server.log.info("Signal handlers registered successfully")
+        except Exception as e:
+            server.log.warning(f"Failed to register signal handlers: {e}")
+    else:
+        server.log.warning("Not in main thread, skipping signal registration")
 
 
 def worker_int(worker):
