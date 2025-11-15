@@ -24,6 +24,12 @@ Your `.env` file should contain the following variables:
 - `SUPABASE_PROJECT_URL` - Supabase project URL
 - `SUPABASE_DATABASE_URL` - Supabase PostgreSQL connection string
 
+### MCP Server (Database Query Tool)
+- `SUPABASE_MCP_SERVER_URL` - MCP server URL (e.g., http://localhost:3001)
+- `SUPABASE_MCP_API_KEY` - MCP server API key for authentication
+- `MCP_SERVER_ENABLED` - Enable MCP server integration (default: false)
+- `MCP_SERVER_PORT` - MCP server port for Docker Compose (default: 3001)
+
 ### Prism (Voice Bot)
 - `ATTENDEE_API_KEY` - Attendee API key for voice bot integration
 
@@ -54,6 +60,12 @@ PRISM_BASE_PROMPT="You are Prism, a voice assistant..."
 SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 SUPABASE_PROJECT_URL=https://xxxxx.supabase.co
 SUPABASE_DATABASE_URL=postgresql://postgres.xxxxx...
+
+# MCP Server (Optional - for database query tool)
+MCP_SERVER_ENABLED=true
+SUPABASE_MCP_SERVER_URL=http://localhost:3001
+SUPABASE_MCP_API_KEY=your-mcp-api-key
+MCP_SERVER_PORT=3001
 
 # Prism Voice Bot
 ATTENDEE_API_KEY=your-attendee-api-key

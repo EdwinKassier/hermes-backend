@@ -22,6 +22,13 @@ def load_environment():
         # Supabase Vector Store Configuration
         "SUPABASE_DATABASE_URL": environ.get("SUPABASE_DATABASE_URL"),
         "SUPABASE_SERVICE_ROLE_KEY": environ.get("SUPABASE_SERVICE_ROLE_KEY"),
+        "SUPABASE_PROJECT_URL": environ.get("SUPABASE_PROJECT_URL"),
+        # MCP Server Configuration
+        "SUPABASE_MCP_SERVER_URL": environ.get("SUPABASE_MCP_SERVER_URL"),
+        "SUPABASE_MCP_API_KEY": environ.get("SUPABASE_MCP_API_KEY"),
+        # MCP Server defaults for development
+        "MCP_SERVER_ENABLED": environ.get("MCP_SERVER_ENABLED", "false").lower()
+        == "true",
         # Base Prompts for different personas
         "BASE_PROMPT": environ.get(
             "BASE_PROMPT", ""
@@ -44,3 +51,28 @@ def load_environment():
 def get_env(key):
     """Get environment variable by key"""
     return load_environment().get(key)
+
+
+def validate_mcp_config():
+    """Validate MCP server configuration."""
+    env = load_environment()
+
+    if env.get("MCP_SERVER_ENABLED", False):
+        required_vars = ["SUPABASE_MCP_SERVER_URL", "SUPABASE_MCP_API_KEY"]
+        missing_vars = [var for var in required_vars if not env.get(var)]
+
+        if missing_vars:
+            raise ValueError(
+                f"MCP server is enabled but missing required environment variables: {', '.join(missing_vars)}"
+            )
+
+        # Validate URL format
+        mcp_url = env.get("SUPABASE_MCP_SERVER_URL")
+        if mcp_url and not (
+            mcp_url.startswith("http://") or mcp_url.startswith("https://")
+        ):
+            raise ValueError(
+                f"SUPABASE_MCP_SERVER_URL must be a valid HTTP/HTTPS URL, got: {mcp_url}"
+            )
+
+    return True

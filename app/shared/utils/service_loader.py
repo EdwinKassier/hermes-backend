@@ -61,3 +61,11 @@ def get_cloud_storage_service() -> CloudStorageService:
     return CloudStorageService(
         bucket_name=GCS_BUCKET_NAME, credentials_path=GCS_CREDENTIALS_PATH
     )
+
+
+@lru_cache(maxsize=1)
+def get_mcp_database_service():
+    """Lazy load and cache the MCP Database Service instance."""
+    from app.shared.services.MCPDatabaseService import get_mcp_database_service
+
+    return get_mcp_database_service()
