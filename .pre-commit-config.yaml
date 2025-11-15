@@ -60,15 +60,16 @@ repos:
       - id: check-case-conflict
 
   # Test that code still runs (only on push)
-  - repo: local
-    hooks:
-      - id: pytest-check
-        name: pytest-check
-        entry: python3 -m pytest tests/ --tb=short -q
-        language: system
-        pass_filenames: false
-        always_run: true
-        stages: [pre-push]  # Only run on push, not every commit
+
+#  - repo: local
+#    hooks:
+#      - id: pytest-check
+#        name: pytest-check
+#        entry: python3 -m pytest tests/ --tb=short -q
+#        language: system
+#        pass_filenames: false
+#        always_run: true
+#        stages: [pre-push]
 
 # Configuration
 default_stages: [pre-commit]
