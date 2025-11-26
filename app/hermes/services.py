@@ -75,16 +75,20 @@ class HermesService:
         # Route to legion service if requested
         if legion_mode:
             try:
+                import asyncio
+
                 from .legion.graph_service import LegionGraphService
 
                 legion_service = LegionGraphService()
                 logger.info("Using Legion service type: langgraph")
 
-                return legion_service.process_request(
-                    text=text,
-                    user_identity=user_identity,
-                    response_mode=response_mode,
-                    persona=persona,
+                return asyncio.run(
+                    legion_service.process_request(
+                        text=text,
+                        user_identity=user_identity,
+                        response_mode=response_mode,
+                        persona=persona,
+                    )
                 )
             except Exception as e:
                 logger.error(f"Legion service error: {e}")
@@ -166,13 +170,17 @@ class HermesService:
         # Route to legion service if requested
         if legion_mode:
             try:
+                import asyncio
+
                 from .legion.graph_service import LegionGraphService
 
                 legion_service = LegionGraphService()
                 logger.info("Using Legion service type: langgraph")
 
-                return legion_service.chat(
-                    message=message, user_identity=user_identity, persona=persona
+                return asyncio.run(
+                    legion_service.chat(
+                        message=message, user_identity=user_identity, persona=persona
+                    )
                 )
             except Exception as e:
                 logger.error(f"Legion service error: {e}")

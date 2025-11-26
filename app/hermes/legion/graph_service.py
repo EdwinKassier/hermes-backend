@@ -1,15 +1,29 @@
-"""LangGraph-based Legion service implementation."""
-
+import asyncio
 import logging
-from datetime import datetime
-from typing import Optional
+import sqlite3
+from typing import Any, AsyncIterator, Dict, List, Optional
 
-from app.shared.utils.service_loader import get_gemini_service, get_tts_service
+from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.graph.state import CompiledStateGraph
 
-from ..exceptions import AIServiceError, InvalidRequestError, TTSServiceError
-from ..models import GeminiResponse, ProcessRequestResult, ResponseMode, UserIdentity
-from .nodes import get_orchestration_graph
-from .state import Message, OrchestratorState
+from app.hermes.exceptions import AIServiceError
+from app.hermes.models import GeminiResponse, ProcessRequestResult, UserIdentity
+from app.shared.services.TTSService import TTSService
+
+from .nodes.graph_nodes import (
+    AgentFactory,
+    OrchestratorState,
+    SubAgentState,
+    TaskInfo,
+    TaskStatus,
+)
+from .nodes.orchestration_graph import get_orchestration_graph
+from .persistence import LegionPersistence
+from .utils.input_sanitizer import (
+    redact_pii_for_logging,
+    sanitize_user_input,
+    validate_user_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -21,60 +35,16 @@ class LegionGraphService:
     This replaces the procedural orchestration logic with a proper graph-based workflow.
     """
 
-    def __init__(self, checkpoint_db_path: str = ":memory:"):
+    def __init__(self, checkpoint_db_path: str = "legion_state.db"):
         """
         Initialize LangGraph-based Legion service.
 
         Args:
             checkpoint_db_path: Path to SQLite database for state persistence
         """
-        self._gemini_service = None
-        self._tts_service = None
-        self._graph = None
         self._checkpoint_db_path = checkpoint_db_path
-        self._checkpointer = None
-        self._checkpointer_cm = None
-
-    @property
-    def gemini_service(self):
-        """Lazy load Gemini service."""
-        if self._gemini_service is None:
-            self._gemini_service = get_gemini_service()
-        return self._gemini_service
-
-    @property
-    def tts_service(self):
-        """Lazy load TTS service."""
-        if self._tts_service is None:
-            self._tts_service = get_tts_service()
-        return self._tts_service
-
-    def get_graph(self):
-        """Get or create orchestration graph with checkpointer."""
-        if self._graph is None:
-            if self._checkpoint_db_path == ":memory:":
-                from langgraph.checkpoint.memory import MemorySaver
-
-                checkpointer = MemorySaver()
-            else:
-                import sqlite3
-
-                from langgraph.checkpoint.sqlite import SqliteSaver
-
-                # Create persistent SQLite connection
-                conn = sqlite3.connect(
-                    self._checkpoint_db_path, check_same_thread=False, timeout=30.0
-                )
-
-                # Enable WAL mode for better concurrency
-                conn.execute("PRAGMA journal_mode=WAL")
-                conn.execute("PRAGMA synchronous=NORMAL")
-                conn.commit()
-
-                checkpointer = SqliteSaver(conn)
-
-            self._graph = get_orchestration_graph(checkpointer=checkpointer)
-        return self._graph
+        self._tts_service = TTSService()
+        self._persistence = LegionPersistence(checkpoint_db_path)
 
     def _build_orchestration_rationale(
         self,
@@ -150,7 +120,7 @@ class LegionGraphService:
         agent_explanations = []
         for agent_id in agents_used:
             # Extract agent type from ID (e.g., "research_1" -> "research")
-            agent_type = agent_id.split("_")[0] if "_" in agent_id else agent_id
+            agent_type = agent_id.split("_")[0]
 
             explanation = {
                 "id": agent_id,
@@ -189,11 +159,11 @@ class LegionGraphService:
 
         return toolset_info
 
-    def process_request(
+    async def process_request(
         self,
         text: str,
         user_identity: UserIdentity,
-        response_mode: ResponseMode = ResponseMode.TEXT,
+        response_mode: str = "text",
         persona: str = "hermes",
     ) -> ProcessRequestResult:
         """
@@ -202,7 +172,7 @@ class LegionGraphService:
         Args:
             text: User's input text
             user_identity: User identity information
-            response_mode: How to return the response (text or TTS)
+            response_mode: Desired response mode ('text' or 'audio')
             persona: Which AI persona to use ('hermes' or 'prisma')
 
         Returns:
@@ -213,12 +183,6 @@ class LegionGraphService:
             AIServiceError: If AI generation fails
             TTSServiceError: If TTS generation fails
         """
-        from .utils.input_sanitizer import (
-            redact_pii_for_logging,
-            sanitize_user_input,
-            validate_user_id,
-        )
-
         try:
             # Validate and sanitize inputs
             user_id = validate_user_id(user_identity.user_id)
@@ -227,21 +191,22 @@ class LegionGraphService:
             # Log safely (with PII redaction)
             logger.info(
                 f"Processing request in LangGraph Legion mode for user {user_id[:8]}...: "
-                f"{redact_pii_for_logging(sanitized_text, max_len=100)}"
+                f"{redact_pii_for_logging(sanitized_text)}"
             )
 
-            # Generate AI response using LangGraph with sanitized input
-            response_content, metadata = self._generate_ai_response_with_graph(
+            # Generate AI response using graph
+            response_content, metadata = await self._generate_ai_response_with_graph(
                 sanitized_text, user_id, persona
             )
 
             # Check if the graph interrupted for human approval
             if response_content == "INTERRUPTED" and metadata.get("interrupted"):
                 # Return interrupt information to API caller
+                # We return a special response that indicates an interrupt
                 return ProcessRequestResult(
-                    message="",  # No message content during interrupt
-                    user_id=user_id,
+                    message="I need your approval to proceed with the plan.",
                     response_mode=response_mode,
+                    user_id=user_id,
                     metadata={
                         "legion_mode": True,
                         "langgraph_enabled": True,
@@ -250,52 +215,39 @@ class LegionGraphService:
                 )
 
             # Generate TTS if requested
-            audio_url = None
+            wave_url = None
             tts_provider = None
-            if response_mode == ResponseMode.TTS:
-                audio_url, tts_provider = self.generate_tts(response_content)
-
-            # Build result
-            result = ProcessRequestResult(
-                message=response_content,
-                user_id=user_id,
-                response_mode=response_mode,
-                metadata={
-                    "legion_mode": True,
-                    "langgraph_enabled": True,
-                    "model": "gemini-pro",
-                    "prompt_length": len(sanitized_text),
-                    "response_length": len(response_content),
-                    **metadata,  # Include all metadata from graph execution
-                },
-                audio_url=audio_url,
-                tts_provider=tts_provider,
-            )
+            if response_mode == "audio":
+                wave_url, tts_provider = self.generate_tts(response_content)
 
             logger.info(
                 f"LangGraph Legion request processed successfully for user {user_id}"
             )
-
-            return result
+            return ProcessRequestResult(
+                message=response_content,
+                response_mode=response_mode,
+                audio_url=wave_url,
+                tts_provider=tts_provider,
+                user_id=user_id,
+                metadata={
+                    "legion_mode": True,
+                    "langgraph_enabled": True,
+                    **metadata,
+                },
+            )
 
         except ValueError as e:
-            # Input validation errors
-            logger.error(f"Input validation failed: {e}")
-            raise InvalidRequestError(f"Invalid input: {e}")
-        except InvalidRequestError:
-            raise
-        except (AIServiceError, TTSServiceError) as e:
-            logger.error(f"LangGraph Legion service error: {e}")
+            logger.warning(f"Invalid request: {e}")
+            # Re-raise as is, will be handled by caller
             raise
         except Exception as e:
             logger.error(f"Error processing LangGraph Legion request: {e}")
             raise AIServiceError(f"Failed to process Legion request: {str(e)}")
 
-    def chat(
+    async def chat(
         self,
         message: str,
         user_identity: UserIdentity,
-        include_context: bool = True,
         persona: str = "hermes",
     ) -> GeminiResponse:
         """
@@ -304,7 +256,6 @@ class LegionGraphService:
         Args:
             message: User's chat message
             user_identity: User identity information
-            include_context: Whether to include conversation history
             persona: Which AI persona to use ('hermes' or 'prisma')
 
         Returns:
@@ -314,12 +265,6 @@ class LegionGraphService:
             InvalidRequestError: If the message is invalid
             AIServiceError: If AI generation fails
         """
-        from .utils.input_sanitizer import (
-            redact_pii_for_logging,
-            sanitize_user_input,
-            validate_user_id,
-        )
-
         try:
             # Validate and sanitize inputs
             user_id = validate_user_id(user_identity.user_id)
@@ -328,11 +273,11 @@ class LegionGraphService:
             # Log safely
             logger.info(
                 f"Processing chat in LangGraph Legion mode for user {user_id[:8]}...: "
-                f"{redact_pii_for_logging(sanitized_message, max_len=100)}"
+                f"{redact_pii_for_logging(sanitized_message)}"
             )
 
-            # Generate response using LangGraph with sanitized input
-            response_content, metadata = self._generate_ai_response_with_graph(
+            # Generate AI response using graph
+            response_content, metadata = await self._generate_ai_response_with_graph(
                 sanitized_message, user_id, persona
             )
 
@@ -340,10 +285,7 @@ class LegionGraphService:
             if response_content == "INTERRUPTED" and metadata.get("interrupted"):
                 # Return interrupt information
                 return GeminiResponse(
-                    content="",  # Empty content for interrupt
-                    user_id=user_id,
-                    prompt=sanitized_message,
-                    model_used="gemini-pro",
+                    content="I need your approval to proceed.",
                     metadata={
                         "legion_mode": True,
                         "langgraph_enabled": True,
@@ -353,9 +295,6 @@ class LegionGraphService:
 
             response = GeminiResponse(
                 content=response_content,
-                user_id=user_id,
-                prompt=sanitized_message,
-                model_used="gemini-pro",
                 metadata={
                     "legion_mode": True,
                     "langgraph_enabled": True,
@@ -369,19 +308,13 @@ class LegionGraphService:
             return response
 
         except ValueError as e:
-            # Input validation errors
-            logger.error(f"Input validation failed: {e}")
-            raise InvalidRequestError(f"Invalid input: {e}")
-        except InvalidRequestError:
-            raise
-        except AIServiceError as e:
-            logger.error(f"LangGraph Legion chat error: {e}")
+            logger.warning(f"Invalid chat request: {e}")
             raise
         except Exception as e:
             logger.error(f"Error processing LangGraph Legion chat: {e}")
             raise AIServiceError(f"Failed to process Legion chat: {str(e)}")
 
-    def _generate_ai_response_with_graph(
+    async def _generate_ai_response_with_graph(
         self, prompt: str, user_id: str, persona: str = "hermes", resume_value=None
     ) -> tuple[str, dict]:
         """
@@ -407,114 +340,115 @@ class LegionGraphService:
             # If resuming, pass the resume value
             if resume_value is not None:
                 logger.info(f"Resuming graph execution with value: {resume_value}")
-                inputs = resume_value
-            else:
-                # Create initial state for new conversation
-                user_message: Message = {
-                    "role": "user",
-                    "content": prompt,
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "metadata": {},
-                }
+                inputs = None  # Resume doesn't need inputs, it uses the resume value
+                # We need to use Command(resume=...) for LangGraph 0.2+
+                # But for now assuming we just pass None as input and the graph handles it?
+                # Actually, LangGraph resume is handled by passing Command or update_state
+                # Let's assume standard input for now if not using Command
+                # For this implementation, we'll treat resume_value as input update if needed
+                # But standard LangGraph resume is: graph.stream(Command(resume=value), ...)
+                from langgraph.types import Command
 
-                initial_state: OrchestratorState = {
-                    "messages": [user_message],
+                inputs = Command(resume=resume_value)
+            else:
+                # Initial input
+                inputs = {
+                    "messages": [{"role": "user", "content": prompt}],
                     "user_id": user_id,
                     "persona": persona,
+                    # Initialize other state fields
                     "task_ledger": {},
                     "agents": {},
                     "tool_allocations": {},
-                    "current_agent_id": None,
-                    "current_task_id": None,
-                    "next_action": "",
-                    "required_info": {},
+                    "decision_rationale": [],
                     "collected_info": {},
                     "pending_questions": [],
-                    "decision_rationale": [],
-                    "parallel_mode": False,
-                    "parallel_tasks": {},
-                    "parallel_results": {},
-                    "agents_awaiting_info": {},
-                    "synthesis_needed": False,
-                    "legion_strategy": "council",
-                    "legion_results": {},
-                    "awaiting_user_response": False,  # NEW: Enable conversation continuation
-                    "conversation_complete": False,  # NEW: Track conversation completion
                     "metadata": {},
                 }
-                inputs = initial_state
 
-            # Get graph and stream execution
-            graph = self.get_graph()
+            # Use async persistence context manager
+            async with self._persistence.get_checkpointer() as checkpointer:
+                # Create graph with this checkpointer
+                graph = get_orchestration_graph(checkpointer=checkpointer)
 
-            result = None
-            for chunk in graph.stream(inputs, config=config, stream_mode="values"):
-                # Check if we hit an interrupt
-                if "__interrupt__" in chunk:
-                    interrupt_data = chunk["__interrupt__"]
-                    logger.info(
-                        f"Graph interrupted: {interrupt_data.get('type', 'unknown')}"
-                    )
-
-                    # Return interrupt information to caller
-                    return "INTERRUPTED", {
-                        "interrupted": True,
-                        "interrupt_data": interrupt_data,
-                        "thread_id": user_id,
-                    }
-
-                # Store the latest state
-                result = chunk
-                logger.info(
-                    f"Graph step completed. Keys: {list(chunk.keys()) if chunk else 'None'}"
-                )
-
-            logger.info("Graph execution loop finished")
-
-            # No interrupt - execution completed
-            if result and "messages" in result:
-                last_message = result["messages"][-1]
-                if last_message["role"] == "assistant":
-                    response_content = last_message["content"]
-
-                    # Create metadata - extract from state metadata
-                    state_metadata = result.get("metadata", {})
-                    metadata = {
-                        "interrupted": False,
-                        "agents_used": state_metadata.get("agents_used", []),
-                        "tools_used": state_metadata.get("tools_used", []),
-                        "execution_path": result.get("execution_path", []),
-                    }
-
-                    # Add single unified orchestration rationale
-                    if "decision_rationale" in result and result["decision_rationale"]:
-                        decision_rationale = result["decision_rationale"]
-
-                        # Build orchestration rationale
-                        orchestration_rationale = self._build_orchestration_rationale(
-                            decision_rationale,
-                            metadata.get("agents_used", []),
-                            metadata.get("tools_used", []),
-                            result.get("metadata", {}).get(
-                                "parallel_execution_metrics"
-                            ),
+                result = None
+                # Use async stream
+                async for chunk in graph.astream(
+                    inputs, config=config, stream_mode="values"
+                ):
+                    # Check if we hit an interrupt
+                    if "__interrupt__" in chunk:
+                        interrupt_data = chunk["__interrupt__"]
+                        logger.info(
+                            f"Graph interrupted: {interrupt_data.get('type', 'unknown')}"
                         )
 
-                        metadata["orchestration_rationale"] = orchestration_rationale
+                        # Return interrupt information to caller
+                        return "INTERRUPTED", {
+                            "interrupted": True,
+                            "interrupt_data": interrupt_data,
+                            "thread_id": user_id,
+                        }
 
-                    # Add performance metrics if available
-                    if "parallel_execution_metrics" in result.get("metadata", {}):
-                        metadata["parallel_execution_metrics"] = result["metadata"][
-                            "parallel_execution_metrics"
-                        ]
+                    # Store the latest state
+                    result = chunk
+                    logger.info(
+                        f"Graph step completed. Keys: {list(chunk.keys()) if chunk else 'None'}"
+                    )
 
-                    return response_content, metadata
+                logger.info("Graph execution loop finished")
 
-            # Fallback
-            return "I apologize, but I couldn't generate a proper response.", {}
+                # No interrupt - execution completed
+                if result and "messages" in result:
+                    last_message = result["messages"][-1]
+                    if last_message["role"] == "assistant":
+                        response_content = last_message["content"]
+
+                        # Create metadata - extract from state metadata
+                        state_metadata = result.get("metadata", {})
+                        metadata = {
+                            "interrupted": False,
+                            "agents_used": state_metadata.get("agents_used", []),
+                            "tools_used": state_metadata.get("tools_used", []),
+                            "execution_path": result.get("execution_path", []),
+                        }
+
+                        # Add single unified orchestration rationale
+                        if (
+                            "decision_rationale" in result
+                            and result["decision_rationale"]
+                        ):
+                            decision_rationale = result["decision_rationale"]
+
+                            # Build orchestration rationale
+                            orchestration_rationale = (
+                                self._build_orchestration_rationale(
+                                    decision_rationale,
+                                    metadata.get("agents_used", []),
+                                    metadata.get("tools_used", []),
+                                    result.get("metadata", {}).get(
+                                        "parallel_execution_metrics"
+                                    ),
+                                )
+                            )
+
+                            metadata["orchestration_rationale"] = (
+                                orchestration_rationale
+                            )
+
+                        # Add performance metrics if available
+                        if "parallel_execution_metrics" in result.get("metadata", {}):
+                            metadata["parallel_execution_metrics"] = result["metadata"][
+                                "parallel_execution_metrics"
+                            ]
+
+                        return response_content, metadata
+
+                # Fallback
+                return "I apologize, but I couldn't generate a proper response.", {}
 
         except Exception as e:
-            logger.error(f"LangGraph execution failed: {e}")
+            logger.error(f"Error executing orchestration graph: {e}")
             raise AIServiceError(f"Graph execution failed: {str(e)}")
 
     def generate_tts(self, text: str) -> tuple[str | None, str]:
@@ -528,27 +462,12 @@ class LegionGraphService:
             Tuple of (cloud_url, tts_provider)
         """
         try:
-            import uuid
-
-            tts_result = self.tts_service.generate_audio(
-                text_input=text,
-                upload_to_cloud=True,
-                cloud_destination_path=f"legion_tts/{uuid.uuid4().hex}.mp3",
-            )
-
-            if not isinstance(tts_result, dict):
-                raise TTSServiceError(f"Invalid TTS result type: {type(tts_result)}")
-
-            tts_provider = self.tts_service.tts_provider
-            cloud_url = tts_result.get("cloud_url")
-
-            return cloud_url, tts_provider
-
-        except (ValueError, TypeError, KeyError, AttributeError) as e:
+            return self._tts_service.generate_speech(text)
+        except Exception as e:
             logger.error(f"TTS generation failed: {e}")
-            raise TTSServiceError(f"Failed to generate audio: {str(e)}")
+            return None, None
 
-    def resume(
+    async def resume_execution(
         self,
         user_identity: UserIdentity,
         resume_value: dict,
@@ -571,7 +490,6 @@ class LegionGraphService:
         Raises:
             AIServiceError: If resumption fails
         """
-        from .utils.input_sanitizer import validate_user_id
 
         try:
             user_id = validate_user_id(user_identity.user_id)
@@ -579,17 +497,14 @@ class LegionGraphService:
             logger.info(f"Resuming conversation for user {user_id}")
 
             # Resume from checkpoint with user's response
-            response_content, metadata = self._generate_ai_response_with_graph(
+            response_content, metadata = await self._generate_ai_response_with_graph(
                 prompt="", user_id=user_id, persona=persona, resume_value=resume_value
             )
 
             # Check if we hit another interrupt
             if response_content == "INTERRUPTED" and metadata.get("interrupted"):
                 return GeminiResponse(
-                    content="",
-                    user_id=user_id,
-                    prompt="",
-                    model_used="gemini-pro",
+                    content="I need your approval to proceed.",
                     metadata={
                         "legion_mode": True,
                         "langgraph_enabled": True,
@@ -600,13 +515,9 @@ class LegionGraphService:
             # Execution completed
             return GeminiResponse(
                 content=response_content,
-                user_id=user_id,
-                prompt="",
-                model_used="gemini-pro",
                 metadata={
                     "legion_mode": True,
                     "langgraph_enabled": True,
-                    "resumed": True,
                     **metadata,
                 },
             )
@@ -615,7 +526,9 @@ class LegionGraphService:
             logger.error(f"Error resuming graph: {e}")
             raise AIServiceError(f"Failed to resume execution: {str(e)}")
 
-    def get_conversation_history(self, user_id: str, limit: int = 50) -> list[Message]:
+    async def get_conversation_history(
+        self, user_id: str, limit: int = 50
+    ) -> list[Dict]:
         """
         Get conversation history from LangGraph checkpoints.
 
@@ -629,15 +542,21 @@ class LegionGraphService:
         try:
             config = {"configurable": {"thread_id": user_id}}
 
-            # Get the latest checkpoint state
-            state = self.graph.get_state(config)
+            # Use persistence to get state
+            async with self._persistence.get_checkpointer() as checkpointer:
+                # We need the graph to get state, or we can use checkpointer directly?
+                # LangGraph's get_state is on the compiled graph
+                graph = get_orchestration_graph(checkpointer=checkpointer)
 
-            if state and state.values:
-                messages = state.values.get("messages", [])
+                # Get the latest checkpoint state
+                state = await graph.aget_state(config)
 
-                # Return most recent messages up to limit
-                if messages:
-                    return messages[-limit:] if len(messages) > limit else messages
+                if state and state.values:
+                    messages = state.values.get("messages", [])
+
+                    # Return most recent messages up to limit
+                    if messages:
+                        return messages[-limit:] if len(messages) > limit else messages
 
             logger.info(f"No conversation history found for user {user_id}")
             return []
@@ -645,15 +564,3 @@ class LegionGraphService:
         except Exception as e:
             logger.error(f"Failed to retrieve conversation history: {e}")
             return []
-
-
-# Singleton instance
-_legion_graph_service: Optional[LegionGraphService] = None
-
-
-def get_legion_graph_service() -> LegionGraphService:
-    """Get or create the LangGraph-based Legion service singleton."""
-    global _legion_graph_service
-    if _legion_graph_service is None:
-        _legion_graph_service = LegionGraphService()
-    return _legion_graph_service

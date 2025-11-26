@@ -1499,6 +1499,7 @@ name = "hermes-backend"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "aiosqlite" },
     { name = "amqp" },
     { name = "apispec" },
     { name = "async-timeout" },
@@ -1628,6 +1629,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aiosqlite", specifier = ">=0.19.0" },
     { name = "amqp", specifier = ">=5.3.1" },
     { name = "apispec", specifier = ">=6.8.4" },
     { name = "async-timeout", specifier = ">=5.0.1" },
