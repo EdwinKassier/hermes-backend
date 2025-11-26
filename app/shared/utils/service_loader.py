@@ -2,6 +2,7 @@ import os
 from functools import lru_cache
 from typing import Optional
 
+from app.shared.services.AsyncLLMService import AsyncLLMService
 from app.shared.services.CloudStorageService import CloudStorageService
 from app.shared.services.GeminiService import GeminiService
 from app.shared.services.TTSService import TTSService
@@ -31,6 +32,20 @@ EL_API_KEY = os.getenv("EL_API_KEY")  # ElevenLabs API key
 def get_gemini_service():
     """Lazy load and cache the GeminiService instance."""
     return GeminiService()
+
+
+@lru_cache(maxsize=1)
+def get_async_llm_service() -> AsyncLLMService:
+    """
+    Lazy load and cache the AsyncLLMService instance.
+
+    This wraps the synchronous GeminiService in an async interface
+    to prevent blocking the event loop in async contexts.
+
+    Returns:
+        AsyncLLMService instance wrapping the cached GeminiService
+    """
+    return AsyncLLMService(gemini_service=get_gemini_service())
 
 
 @lru_cache(maxsize=1)
@@ -64,8 +79,10 @@ def get_cloud_storage_service() -> CloudStorageService:
 
 
 @lru_cache(maxsize=1)
-def get_mcp_database_service():
-    """Lazy load and cache the MCP Database Service instance."""
-    from app.shared.services.MCPDatabaseService import get_mcp_database_service
+def get_supabase_database_service():
+    """Lazy load and cache the Supabase Database Service instance."""
+    from app.shared.services.SupabaseDatabaseService import (
+        get_supabase_database_service,
+    )
 
-    return get_mcp_database_service()
+    return get_supabase_database_service()

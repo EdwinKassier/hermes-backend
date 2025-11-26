@@ -32,6 +32,7 @@ except ImportError:
     create_client = None
     SUPABASE_AVAILABLE = False
 
+from app.shared.config.posthog_config import posthog_config
 from app.shared.utils.conversation_state import ConversationState, State
 
 # Import tools and services
@@ -467,19 +468,28 @@ Don't just repeat the tool output verbatim - make it sound like a helpful assist
             List of (Document, score) tuples
         """
         try:
-            # Generate embedding for query
-            query_embedding = self.embeddings_model.embed_query(query)
 
-            # Call Supabase RPC function directly (note: _client with underscore)
-            # The function signature is: match_documents(filter, match_count, query_embedding)
-            response = self.vector_store._client.rpc(
-                "match_documents",
-                {
-                    "query_embedding": query_embedding,
-                    "match_count": k * 2,  # Get more results to filter by threshold
-                    "filter": {},  # Empty filter for now
-                },
-            ).execute()
+            from concurrent.futures import ThreadPoolExecutor, TimeoutError
+
+            def _execute_search_rpc():
+                # Generate embedding
+                query_embedding = self.embeddings_model.embed_query(query)
+
+                # Call Supabase RPC function directly
+                logging.info("Calling match_documents RPC function...")
+                return self.vector_store._client.rpc(
+                    "match_documents",
+                    {
+                        "query_embedding": query_embedding,
+                        "match_count": k * 2,  # Get more results to filter by threshold
+                        "filter": {},  # Empty filter for now
+                    },
+                ).execute()
+
+            # Execute with timeout using ThreadPoolExecutor (thread-safe)
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(_execute_search_rpc)
+                response = future.result(timeout=25)  # 25s total timeout
 
             if not response.data:
                 logging.warning("No data returned from match_documents RPC")
@@ -519,12 +529,50 @@ Don't just repeat the tool output verbatim - make it sound like a helpful assist
             results.sort(key=lambda x: x[1], reverse=True)
             return results[:k]
 
+        except TimeoutError as e:
+            logging.error(f"Vector search timed out: {e}")
+            logging.warning("Falling back to non-RAG response due to timeout")
+            return []
         except Exception as e:
             logging.error("Direct similarity search failed: %s", e)
             logging.error(traceback.format_exc())
             return []
 
-    def generate_gemini_response(self, prompt: str, persona: str = "hermes") -> str:
+    def _create_callback_handler(
+        self,
+        user_id: Optional[str] = None,
+        trace_id: Optional[str] = None,
+        persona: str = "hermes",
+        operation_type: str = "standard",
+    ) -> Optional[Any]:
+        """
+        Create a PostHog callback handler for tracking LLM events.
+
+        Args:
+            user_id: User ID for tracking
+            trace_id: Trace ID for grouping events
+            persona: Current persona name
+            operation_type: Type of operation (standard, rag, enrichment)
+
+        Returns:
+            CallbackHandler or None
+        """
+        properties = {
+            "persona": persona,
+            "model": self.persona_configs.get(
+                persona, self.persona_configs["hermes"]
+            ).model_name,
+            "operation_type": operation_type,
+            "service": "GeminiService",
+        }
+
+        return posthog_config.get_callback_handler(
+            user_id=user_id, trace_id=trace_id, properties=properties
+        )
+
+    def generate_gemini_response(
+        self, prompt: str, persona: str = "hermes", user_id: Optional[str] = None
+    ) -> str:
         """
         Generate a response using Gemini with optional tool execution.
 
@@ -535,6 +583,7 @@ Don't just repeat the tool output verbatim - make it sound like a helpful assist
         Args:
             prompt: User input prompt to process
             persona: Persona name for response style and configuration (default: "hermes")
+            user_id: Optional user ID for analytics tracking
 
         Returns:
             Generated response string from the AI model
@@ -560,11 +609,25 @@ Don't just repeat the tool output verbatim - make it sound like a helpful assist
         prompt_prefix = f"{base_prompt}\n\n" if base_prompt else ""
         full_prompt = f"{prompt_prefix}User Input: {prompt}" if base_prompt else prompt
 
+        # Setup callbacks
+        callback_handler = self._create_callback_handler(
+            user_id=user_id, persona=persona, operation_type="standard"
+        )
+        callbacks = [callback_handler] if callback_handler else []
+        config = {"callbacks": callbacks}
+
         try:
-            message = model.invoke([HumanMessage(content=full_prompt)])
+            logging.info(
+                f"Invoking Gemini model with prompt length: {len(full_prompt)}"
+            )
+            message = model.invoke([HumanMessage(content=full_prompt)], config=config)
+            logging.info("Gemini model invocation successful")
+
+            content = message.content
 
             # Handle tool calls
             if hasattr(message, "tool_calls") and message.tool_calls:
+                logging.info(f"Tool calls detected: {len(message.tool_calls)}")
                 logging.info("Model requested %d tool call(s)", len(message.tool_calls))
 
                 # Execute tools using abstracted method
@@ -576,8 +639,10 @@ Don't just repeat the tool output verbatim - make it sound like a helpful assist
                 )
 
                 # Generate follow-up response with tool results
+                # Reuse callbacks for the follow-up generation
                 follow_up_message = model.invoke(
-                    [HumanMessage(content=follow_up_prompt)]
+                    [HumanMessage(content=follow_up_prompt)],
+                    config={"callbacks": callbacks},
                 )
                 response = follow_up_message.content.strip()
 
@@ -592,8 +657,8 @@ Don't just repeat the tool output verbatim - make it sound like a helpful assist
 
             # Handle regular text response
             response = message.content.strip()
-            if "error" in response.lower() or not response:
-                logging.warning("Gemini returned error or empty: '%s'", response)
+            if not response:
+                logging.warning("Gemini returned empty response")
                 return persona_config.error_message_template
 
             logging.info("Generated response successfully with persona: %s", persona)
@@ -683,7 +748,10 @@ Don't just repeat the tool output verbatim - make it sound like a helpful assist
         return "\n".join(formatted)
 
     def _enrich_query_for_vector_search(
-        self, user_query: str, conversation_history: str = ""
+        self,
+        user_query: str,
+        conversation_history: str = "",
+        user_id: Optional[str] = None,
     ) -> str:
         """
         Enrich a user query using Gemini to make it more detailed and suitable for vector search.
@@ -692,6 +760,7 @@ Don't just repeat the tool output verbatim - make it sound like a helpful assist
         Args:
             user_query: The original user query
             conversation_history: Optional conversation context
+            user_id: Optional user ID for analytics tracking
 
         Returns:
             Enriched query string optimized for vector similarity search
@@ -723,7 +792,16 @@ Enriched Query:"""
                 timeout=10,  # Shorter timeout for speed
             )
 
-            message = base_model.invoke([HumanMessage(content=enrichment_prompt)])
+            # Setup callbacks
+            callback_handler = self._create_callback_handler(
+                user_id=user_id, persona="hermes", operation_type="query_enrichment"
+            )
+            callbacks = [callback_handler] if callback_handler else []
+
+            message = base_model.invoke(
+                [HumanMessage(content=enrichment_prompt)],
+                config={"callbacks": callbacks},
+            )
             # Validate enrichment - check if it adds meaningful value
             enriched_query = message.content.strip()
 
@@ -800,7 +878,7 @@ Enriched Query:"""
         # Vector store fallback
         if self.vector_store is None:
             logging.info("Vector store not available. Using standard generation.")
-            return self.generate_gemini_response(prompt, persona)
+            return self.generate_gemini_response(prompt, persona, user_id=user_id)
 
         # Retrieve top relevant chunks using DIRECT RPC call
         try:
@@ -821,7 +899,7 @@ Enriched Query:"""
                 logging.warning(
                     f"No chunks above similarity threshold {self.RAG_SIMILARITY_THRESHOLD}"
                 )
-                return self.generate_gemini_response(prompt, persona)
+                return self.generate_gemini_response(prompt, persona, user_id=user_id)
 
             # Log similarity scores for debugging
             scores = [score for _, score in relevant_chunks]
@@ -849,13 +927,13 @@ Enriched Query:"""
                 logging.info(
                     "No chunks passed length filter. Using standard generation."
                 )
-                return self.generate_gemini_response(prompt, persona)
+                return self.generate_gemini_response(prompt, persona, user_id=user_id)
 
         except Exception as e:
             logging.error("Error in vector search: %s", e)
             logging.error(traceback.format_exc())
             logging.info("Falling back to standard generation.")
-            return self.generate_gemini_response(prompt, persona)
+            return self.generate_gemini_response(prompt, persona, user_id=user_id)
 
         # Conversation history
         conversation_history = self._format_conversation_history(
@@ -894,7 +972,15 @@ Enriched Query:"""
             persona_config = self._get_persona_config(persona)
             model = self._create_model_for_persona(persona_config)
 
-            message = model.invoke([HumanMessage(content=full_prompt)])
+            # Setup callbacks
+            callback_handler = self._create_callback_handler(
+                user_id=user_id, persona=persona, operation_type="rag"
+            )
+            callbacks = [callback_handler] if callback_handler else []
+
+            message = model.invoke(
+                [HumanMessage(content=full_prompt)], config={"callbacks": callbacks}
+            )
             response = message.content.strip()
 
             if not response or "error" in response.lower():

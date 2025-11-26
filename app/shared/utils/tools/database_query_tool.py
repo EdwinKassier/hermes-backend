@@ -30,13 +30,14 @@ except ImportError:
 
     LANGCHAIN_AVAILABLE = False
 
-from app.shared.services.MCPDatabaseService import (
-    MCPAuthenticationError,
-    MCPConnectionError,
-    MCPDatabaseServiceError,
-    MCPTimeoutError,
-    MCPValidationError,
-    get_mcp_database_service,
+from app.shared.services.SupabaseDatabaseService import (
+    SupabaseAuthenticationError,
+    SupabaseConnectionError,
+    SupabaseDatabaseService,
+    SupabaseDatabaseServiceError,
+    SupabaseTimeoutError,
+    SupabaseValidationError,
+    get_supabase_database_service,
 )
 
 logger = logging.getLogger(__name__)
@@ -82,118 +83,119 @@ class DatabaseQueryInput(BaseModel):
 
 class DatabaseQueryTool(BaseTool):
     """
-    Database Query Tool using Official Supabase MCP Server.
+    Tool for querying the database using natural language.
 
-    Provides secure, performant database querying with AI-powered analysis.
+    This tool allows agents to query the database using natural language descriptions.
+    It uses an LLM to convert the description into a safe, read-only PostgREST query.
     """
 
-    name: str = "database_query"
-    description: str = """
-    Query the Supabase PostgreSQL database using natural language.
-
-    This tool uses the official Supabase MCP Server to provide:
-    - Secure SQL query generation from natural language
-    - AI-powered data analysis and synthesis
-    - High-performance caching and connection pooling
-    - Full compliance with security best practices
-
-    Use this when you need to retrieve, analyze, or understand data from the database.
-    """
-    args_schema: Type[BaseModel] = DatabaseQueryInput
+    name = "database_query"
+    description = "Query the database using natural language. Provide a description of what data you need."
 
     def __init__(self):
-        """Initialize Database Query Tool."""
+        """Initialize the database query tool."""
         super().__init__()
-
         try:
-            # Store MCP service as a private attribute
-            self._mcp_service = get_mcp_database_service()
-            logger.info("DatabaseQueryTool initialized with MCP server")
+            self.db_service = get_supabase_database_service()
+            logger.info("DatabaseQueryTool initialized with Supabase service")
         except Exception as e:
             logger.error(f"Failed to initialize DatabaseQueryTool: {e}")
-            raise
+            self.db_service = None
 
-    def _run(
-        self, query: str, include_analysis: bool = True, use_cache: bool = True
-    ) -> str:
+    def _run(self, query: str) -> str:
         """
-        Execute database query.
+        Execute the database query.
 
         Args:
-            query: Natural language query description
-            include_analysis: Whether to include AI analysis
-            use_cache: Whether to use cached results
+            query: Natural language description of the data needed
 
         Returns:
-            Query results with optional AI analysis
+            Query results or error message
         """
-        try:
-            # Run async method in sync context with proper event loop handling
-            return self._run_async_safe(
-                self._mcp_service.execute_query(
-                    query=query, include_analysis=include_analysis, use_cache=use_cache
-                )
+        if not self.db_service:
+            return (
+                "Error: Database service is not available. Please check configuration."
             )
-        except MCPValidationError as e:
-            return f"Query validation error: {str(e)}"
-        except MCPAuthenticationError as e:
-            return f"Authentication error: {str(e)}"
-        except MCPConnectionError as e:
-            return f"Connection error: {str(e)}"
-        except MCPTimeoutError as e:
-            return f"Request timeout: {str(e)}"
-        except MCPDatabaseServiceError as e:
-            return f"Database query error: {str(e)}"
-        except Exception as e:
-            logger.error(f"Unexpected error in DatabaseQueryTool: {e}")
-            return f"Unexpected error: {str(e)}"
 
-    def _arun(self, **kwargs):
-        """Async execution not supported."""
-        raise NotImplementedError("DatabaseQueryTool does not support async execution")
-
-    def _run_async_safe(self, coro):
-        """
-        Safely run async coroutine in sync context.
-        Handles existing event loops properly.
-        """
         try:
-            # Try to get existing event loop
-            loop = asyncio.get_event_loop()
+            # Run async query in sync context
+            # We use a new event loop if needed, or run_until_complete
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+
             if loop.is_running():
-                # If loop is running, we need to use a different approach
+                # If we are already in an event loop (e.g. FastAPI), we can't block it.
+                # Ideally this tool should be async, but LangChain tools are often sync.
+                # For now, we assume this is called in a thread or we use nest_asyncio if installed.
+                # Or better, we use the async implementation _arun if supported.
+                # But BaseTool usually supports _run (sync) and _arun (async).
+                # Let's try to return a coroutine if possible, but _run expects str.
+
+                # Hack: Use a separate thread to run the async code if loop is running
                 import concurrent.futures
 
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(asyncio.run, coro)
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    future = pool.submit(
+                        lambda: asyncio.run(self.db_service.execute_query(query))
+                    )
                     return future.result()
             else:
-                # Loop exists but not running, we can use it
-                return loop.run_until_complete(coro)
-        except RuntimeError:
-            # No event loop exists, create a new one
-            return asyncio.run(coro)
+                return loop.run_until_complete(self.db_service.execute_query(query))
 
-    def list_tables(self) -> str:
+        except SupabaseValidationError as e:
+            return f"Validation Error: {str(e)}"
+        except SupabaseAuthenticationError:
+            return "Authentication Error: Failed to authenticate with database."
+        except SupabaseConnectionError:
+            return "Connection Error: Failed to connect to database."
+        except SupabaseTimeoutError:
+            return "Timeout Error: Database query timed out."
+        except SupabaseDatabaseServiceError as e:
+            return f"Database Error: {str(e)}"
+        except Exception as e:
+            logger.error(f"Unexpected error in DatabaseQueryTool: {e}")
+            return f"Error: An unexpected error occurred: {str(e)}"
+
+    async def _arun(self, query: str) -> str:
         """
-        List all available tables in the database.
+        Execute the database query asynchronously.
+
+        Args:
+            query: Natural language description of the data needed
 
         Returns:
-            Comma-separated list of table names
+            Query results or error message
         """
+        if not self.db_service:
+            return (
+                "Error: Database service is not available. Please check configuration."
+            )
+
         try:
-            tables = self._run_async_safe(self._mcp_service.list_tables())
-            if not tables:
-                return "No tables found in the database"
-
-            return f"Available tables: {', '.join(tables)}"
+            return await self.db_service.execute_query(query)
+        except SupabaseValidationError as e:
+            return f"Validation Error: {str(e)}"
+        except SupabaseAuthenticationError:
+            return "Authentication Error: Failed to authenticate with database."
+        except SupabaseConnectionError:
+            return "Connection Error: Failed to connect to database."
+        except SupabaseTimeoutError:
+            return "Timeout Error: Database query timed out."
+        except SupabaseDatabaseServiceError as e:
+            return f"Database Error: {str(e)}"
         except Exception as e:
-            logger.error(f"Failed to list tables: {e}")
-            return f"Error listing tables: {str(e)}"
+            logger.error(f"Unexpected error in DatabaseQueryTool: {e}")
+            return f"Error: An unexpected error occurred: {str(e)}"
 
-    def describe_table(self, table_name: str) -> str:
+    def _describe_table(self, table_name: str) -> str:
         """
         Get detailed information about a specific table.
+
+        NOTE: Internal utility method, not exposed to LangChain.
+        Call directly if needed: tool._describe_table("table_name")
 
         Args:
             table_name: Name of the table to describe
@@ -202,23 +204,24 @@ class DatabaseQueryTool(BaseTool):
             Table schema information
         """
         try:
-            schema_info = self._run_async_safe(
-                self._mcp_service.describe_table(table_name)
-            )
+            schema_info = asyncio.run(self._mcp_service.describe_table(table_name))
             return f"Table '{table_name}' schema:\n{json.dumps(schema_info, indent=2, default=str)}"
         except Exception as e:
             logger.error(f"Failed to describe table {table_name}: {e}")
             return f"Error describing table: {str(e)}"
 
-    def get_schema_info(self) -> str:
+    def _get_schema_info(self) -> str:
         """
         Get comprehensive schema information for the entire database.
+
+        NOTE: Internal utility method, not exposed to LangChain.
+        Call directly if needed: tool._get_schema_info()
 
         Returns:
             Complete database schema information
         """
         try:
-            schema_info = self._run_async_safe(self._mcp_service.get_schema_info())
+            schema_info = asyncio.run(self._mcp_service.get_schema_info())
             return f"Database schema:\n{json.dumps(schema_info, indent=2, default=str)}"
         except Exception as e:
             logger.error(f"Failed to get schema info: {e}")

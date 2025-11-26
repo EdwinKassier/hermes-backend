@@ -24,6 +24,9 @@ class ProcessRequestSchema(BaseModel):
     persona: Optional[str] = Field(
         default="hermes", description="Which AI persona to use ('hermes' or 'prisma')"
     )
+    legion_mode: Optional[bool] = Field(
+        default=False, description="Whether to use legion processing mode"
+    )
 
     @field_validator("request_text")
     @classmethod
@@ -49,12 +52,29 @@ class ProcessRequestSchema(BaseModel):
             raise ValueError("Persona must be 'hermes' or 'prisma'")
         return v or "hermes"
 
+    @field_validator("legion_mode", mode="before")
+    @classmethod
+    def validate_legion_mode(cls, v) -> bool:
+        """Convert string booleans from query params to actual booleans."""
+        if isinstance(v, str):
+            v_lower = v.lower().strip()
+            if v_lower in ("true", "1", "yes"):
+                return True
+            if v_lower in ("false", "0", "no", ""):
+                return False
+            # For any other string value, default to False
+            return False
+        if v is None:
+            return False
+        return bool(v)
+
     model_config = {
         "json_schema_extra": {
             "example": {
                 "request_text": "Tell me about artificial intelligence",
                 "response_mode": "text",
                 "persona": "hermes",
+                "legion_mode": False,
             }
         }
     }
@@ -71,6 +91,9 @@ class ChatMessageSchema(BaseModel):
     )
     persona: Optional[str] = Field(
         default="hermes", description="Which AI persona to use ('hermes' or 'prisma')"
+    )
+    legion_mode: Optional[bool] = Field(
+        default=False, description="Whether to use legion processing mode"
     )
 
     @field_validator("message")
@@ -89,12 +112,29 @@ class ChatMessageSchema(BaseModel):
             raise ValueError("Persona must be 'hermes' or 'prisma'")
         return v or "hermes"
 
+    @field_validator("legion_mode", mode="before")
+    @classmethod
+    def validate_legion_mode(cls, v) -> bool:
+        """Convert string booleans from query params to actual booleans."""
+        if isinstance(v, str):
+            v_lower = v.lower().strip()
+            if v_lower in ("true", "1", "yes"):
+                return True
+            if v_lower in ("false", "0", "no", ""):
+                return False
+            # For any other string value, default to False
+            return False
+        if v is None:
+            return False
+        return bool(v)
+
     model_config = {
         "json_schema_extra": {
             "example": {
                 "message": "Hello, how can you help me today?",
                 "include_context": True,
                 "persona": "hermes",
+                "legion_mode": False,
             }
         }
     }

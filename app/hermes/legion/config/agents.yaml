@@ -1,0 +1,121 @@
+# Agent Configuration for Legion System
+#
+# This file defines the available agents and their configurations.
+# Agents can be dynamically created based on these specifications.
+
+agents:
+  # Research Agent - For research and investigation tasks
+  - id: research_agent
+    type: research
+    description: "Performs research, investigation, and information gathering tasks"
+    task_types:
+      - research
+      - investigation
+      - analysis
+    required_tools:
+      - search
+      - web_search
+    optional_tools:
+      - document_retrieval
+      - summarize
+    max_iterations: 5
+    metadata:
+      priority: high
+      concurrent_limit: 3
+
+  # Code Agent - For programming and code generation
+  - id: code_agent
+    type: code
+    description: "Generates code, implements features, and helps with programming tasks"
+    task_types:
+      - code
+      - programming
+      - implementation
+      - debugging
+    required_tools:
+      - python_repl
+      - code_interpreter
+    optional_tools:
+      - linter
+      - debugger
+      - file_reader
+      - file_writer
+    max_iterations: 10
+    metadata:
+      priority: high
+      concurrent_limit: 2
+
+  # Analysis Agent - For data analysis and evaluation
+  - id: analysis_agent
+    type: analysis
+    description: "Analyzes data, evaluates information, and provides insights"
+    task_types:
+      - analysis
+      - evaluation
+      - assessment
+      - comparison
+    required_tools:
+      - calculator
+      - statistical_analysis
+    optional_tools:
+      - chart_generator
+      - data_parser
+      - summarize
+    max_iterations: 5
+    metadata:
+      priority: medium
+      concurrent_limit: 3
+
+  # Data Agent - For data processing and transformation
+  - id: data_agent
+    type: data
+    description: "Processes, transforms, and manipulates data"
+    task_types:
+      - data
+      - transformation
+      - processing
+      - extraction
+      - cleaning
+    required_tools:
+      - data_parser
+    optional_tools:
+      - csv_reader
+      - json_parser
+      - sql_executor
+      - data_validator
+      - python_repl
+    max_iterations: 7
+    metadata:
+      priority: medium
+      concurrent_limit: 2
+
+# Global agent configuration
+global:
+  # Default timeout for agent execution (seconds)
+  default_timeout: 300
+
+  # Maximum concurrent agents per user
+  max_concurrent_per_user: 5
+
+  # Enable agent persistence across sessions
+  enable_persistence: true
+
+  # Log level for agent operations
+  log_level: INFO
+
+  # Retry configuration
+  retry:
+    max_attempts: 3
+    backoff_multiplier: 2
+    initial_delay: 1
+
+# Tool allocation preferences
+tool_allocation:
+  # Strategy for tool selection: "greedy", "minimal", "recommended"
+  strategy: recommended
+
+  # Share tools between concurrent agents
+  allow_tool_sharing: true
+
+  # Maximum tools per agent
+  max_tools_per_agent: 10

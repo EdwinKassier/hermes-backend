@@ -19,16 +19,13 @@ def load_environment():
         "GOOGLE_PROJECT_LOCATION": environ.get("GOOGLE_PROJECT_LOCATION"),
         "EL_API_KEY": environ.get("EL_API_KEY"),  # ElevenLabs API key
         "PORT": int(environ.get("PORT", 8080)),
-        # Supabase Vector Store Configuration
+        # Supabase Configuration
         "SUPABASE_DATABASE_URL": environ.get("SUPABASE_DATABASE_URL"),
-        "SUPABASE_SERVICE_ROLE_KEY": environ.get("SUPABASE_SERVICE_ROLE_KEY"),
         "SUPABASE_PROJECT_URL": environ.get("SUPABASE_PROJECT_URL"),
-        # MCP Server Configuration
+        "SUPABASE_SERVICE_ROLE_KEY": environ.get("SUPABASE_SERVICE_ROLE_KEY"),
+        # Supabase MCP Server Configuration (legacy)
         "SUPABASE_MCP_SERVER_URL": environ.get("SUPABASE_MCP_SERVER_URL"),
         "SUPABASE_MCP_API_KEY": environ.get("SUPABASE_MCP_API_KEY"),
-        # MCP Server defaults for development
-        "MCP_SERVER_ENABLED": environ.get("MCP_SERVER_ENABLED", "false").lower()
-        == "true",
         # Base Prompts for different personas
         "BASE_PROMPT": environ.get(
             "BASE_PROMPT", ""
@@ -48,31 +45,26 @@ def load_environment():
     }
 
 
-def get_env(key):
+def get_env(key: str, default: str = "") -> str:
     """Get environment variable by key"""
-    return load_environment().get(key)
+    value = load_environment().get(key)
+    return value if value is not None else default
 
 
-def validate_mcp_config():
-    """Validate MCP server configuration."""
-    env = load_environment()
+def validate_mcp_config() -> None:
+    """
+    Validate Supabase configuration.
 
-    if env.get("MCP_SERVER_ENABLED", False):
-        required_vars = ["SUPABASE_MCP_SERVER_URL", "SUPABASE_MCP_API_KEY"]
-        missing_vars = [var for var in required_vars if not env.get(var)]
+    Raises:
+        ValueError: If required Supabase configuration is missing
+    """
+    import os
 
-        if missing_vars:
-            raise ValueError(
-                f"MCP server is enabled but missing required environment variables: {', '.join(missing_vars)}"
-            )
+    supabase_url = os.getenv("SUPABASE_PROJECT_URL")
+    supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
-        # Validate URL format
-        mcp_url = env.get("SUPABASE_MCP_SERVER_URL")
-        if mcp_url and not (
-            mcp_url.startswith("http://") or mcp_url.startswith("https://")
-        ):
-            raise ValueError(
-                f"SUPABASE_MCP_SERVER_URL must be a valid HTTP/HTTPS URL, got: {mcp_url}"
-            )
-
-    return True
+    if not supabase_url or not supabase_key:
+        raise ValueError(
+            "Supabase configuration incomplete. Required: "
+            "SUPABASE_PROJECT_URL and SUPABASE_SERVICE_ROLE_KEY"
+        )

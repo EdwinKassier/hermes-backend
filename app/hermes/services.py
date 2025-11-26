@@ -52,6 +52,7 @@ class HermesService:
         user_identity: UserIdentity,
         response_mode: ResponseMode = ResponseMode.TEXT,
         persona: str = "hermes",
+        legion_mode: bool = False,
     ) -> ProcessRequestResult:
         """
         Process a user request through the Hermes AI pipeline.
@@ -61,6 +62,7 @@ class HermesService:
             user_identity: User identity information
             response_mode: How to return the response (text or TTS)
             persona: Which AI persona to use ('hermes' or 'prisma')
+            legion_mode: Whether to use legion processing mode
 
         Returns:
             ProcessRequestResult with the AI response
@@ -70,6 +72,26 @@ class HermesService:
             AIServiceError: If AI generation fails
             TTSServiceError: If TTS generation fails
         """
+        # Route to legion service if requested
+        if legion_mode:
+            try:
+                from .legion.graph_service import LegionGraphService
+
+                legion_service = LegionGraphService()
+                logger.info("Using Legion service type: langgraph")
+
+                return legion_service.process_request(
+                    text=text,
+                    user_identity=user_identity,
+                    response_mode=response_mode,
+                    persona=persona,
+                )
+            except Exception as e:
+                logger.error(f"Legion service error: {e}")
+                raise AIServiceError(
+                    f"Failed to process request in legion mode: {str(e)}"
+                )
+
         try:
             if not text or not text.strip():
                 raise InvalidRequestError("Request text cannot be empty")
@@ -98,6 +120,7 @@ class HermesService:
                     "model": gemini_response.model_used,
                     "prompt_length": len(text),
                     "response_length": len(gemini_response.content),
+                    "legion_mode": legion_mode,
                 },
             )
 
@@ -121,6 +144,7 @@ class HermesService:
         user_identity: UserIdentity,
         include_context: bool = True,
         persona: str = "hermes",
+        legion_mode: bool = False,
     ) -> GeminiResponse:
         """
         Handle a chat message with conversation context.
@@ -130,6 +154,7 @@ class HermesService:
             user_identity: User identity information
             include_context: Whether to include conversation history
             persona: Which AI persona to use ('hermes' or 'prisma')
+            legion_mode: Whether to use legion processing mode
 
         Returns:
             GeminiResponse with the AI reply
@@ -138,6 +163,23 @@ class HermesService:
             InvalidRequestError: If the message is invalid
             AIServiceError: If AI generation fails
         """
+        # Route to legion service if requested
+        if legion_mode:
+            try:
+                from .legion.graph_service import LegionGraphService
+
+                legion_service = LegionGraphService()
+                logger.info("Using Legion service type: langgraph")
+
+                return legion_service.chat(
+                    message=message, user_identity=user_identity, persona=persona
+                )
+            except Exception as e:
+                logger.error(f"Legion service error: {e}")
+                raise AIServiceError(
+                    f"Failed to process chat request in legion mode: {str(e)}"
+                )
+
         try:
             if not message or not message.strip():
                 raise InvalidRequestError("Chat message cannot be empty")
@@ -157,6 +199,9 @@ class HermesService:
             if include_context:
                 context.add_message("assistant", response.content)
                 self._save_conversation_context(user_id, context)
+
+            # Add legion_mode to metadata
+            response.metadata["legion_mode"] = legion_mode
 
             logger.info(f"Chat processed successfully for user {user_id}")
             return response

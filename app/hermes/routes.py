@@ -87,21 +87,44 @@ def process_request():
     """
     Process user requests through Gemini with RAG.
 
-    Query Parameters:
+    Supports both GET (query parameters) and POST (JSON body) methods.
+
+    Query Parameters (GET or POST):
         request_text (str): Text to process
         response_mode (str): Response mode (text or tts)
+        persona (str): AI persona to use ('hermes' or 'prisma')
+        legion_mode (bool/str): Whether to use legion processing mode (default: false)
+
+    Request Body (POST with JSON):
+        {
+            "request_text": "Text to process",
+            "response_mode": "text",
+            "persona": "hermes",
+            "legion_mode": false
+        }
 
     Returns:
         JSON response with AI-generated content
     """
     logger.info("Process request route hit")
 
-    # Validate query parameters
-    params = ProcessRequestSchema(
-        request_text=request.args.get("request_text", ""),
-        response_mode=request.args.get("response_mode", "text"),
-        persona=request.args.get("persona", "hermes"),
-    )
+    # Handle both JSON body (POST) and query params (GET/POST)
+    if request.method == "POST" and request.is_json:
+        data = request.get_json() or {}
+        params = ProcessRequestSchema(
+            request_text=data.get("request_text", ""),
+            response_mode=data.get("response_mode", "text"),
+            persona=data.get("persona", "hermes"),
+            legion_mode=data.get("legion_mode", False),
+        )
+    else:
+        # Handle query parameters (GET or POST without JSON)
+        params = ProcessRequestSchema(
+            request_text=request.args.get("request_text", ""),
+            response_mode=request.args.get("response_mode", "text"),
+            persona=request.args.get("persona", "hermes"),
+            legion_mode=request.args.get("legion_mode", False),
+        )
 
     # Create user identity model
     user_identity = UserIdentity(**g.identity)
@@ -113,6 +136,7 @@ def process_request():
         user_identity=user_identity,
         response_mode=ResponseMode(params.response_mode),
         persona=params.persona,
+        legion_mode=params.legion_mode,
     )
 
     # Build response
@@ -138,7 +162,9 @@ def chat():
     Request Body:
         {
             "message": "User's chat message",
-            "include_context": true
+            "include_context": true,
+            "persona": "hermes",
+            "legion_mode": false
         }
 
     Returns:
@@ -163,6 +189,7 @@ def chat():
         user_identity=user_identity,
         include_context=chat_request.include_context,
         persona=chat_request.persona,
+        legion_mode=chat_request.legion_mode,
     )
 
     # Build response

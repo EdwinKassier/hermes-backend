@@ -80,10 +80,10 @@ test-data/
 # Temporary files
 *.tmp
 temp/
-test_*.py
-*_test.py
-test_*.log
-tests/*
+# test_*.py  # TEMPORARILY DISABLED - creating new tests
+# *_test.py  # TEMPORARILY DISABLED - creating new tests
+# test_*.log
+# tests/*    # TEMPORARILY DISABLED - creating new tests
 
 # Credentials and Secrets
 credentials.json
