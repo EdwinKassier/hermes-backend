@@ -6,8 +6,10 @@ import sys
 # Add app directory to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../")))
 
-from app.hermes.legion.nodes.orchestration_graph import get_orchestration_graph
-from app.hermes.legion.state import OrchestratorState
+from app.hermes.legion.nodes.orchestration_graph import (  # noqa: E402
+    get_orchestration_graph,
+)
+from app.hermes.legion.state import OrchestratorState  # noqa: E402
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
