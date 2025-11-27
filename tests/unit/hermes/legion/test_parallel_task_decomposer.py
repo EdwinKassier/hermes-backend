@@ -14,26 +14,50 @@ class TestParallelTaskDecomposer:
         """Set up test fixtures."""
         self.decomposer = ParallelTaskDecomposer()
 
-    def test_is_multi_agent_task_with_compound_query(self):
+    @patch("app.hermes.legion.parallel.task_decomposer.get_gemini_service")
+    def test_is_multi_agent_task_with_compound_query(self, mock_get_gemini):
         """Test detection of multi-agent tasks with 'and' conjunction."""
+        # Mock Gemini response
+        mock_service = MagicMock()
+        mock_service.generate_gemini_response.return_value = "MULTI_AGENT"
+        mock_get_gemini.return_value = mock_service
+
         query = "Research quantum computing and analyze its applications"
         result = self.decomposer.is_multi_agent_task(query)
         assert result is True
 
-    def test_is_multi_agent_task_with_multiple_verbs(self):
+    @patch("app.hermes.legion.parallel.task_decomposer.get_gemini_service")
+    def test_is_multi_agent_task_with_multiple_verbs(self, mock_get_gemini):
         """Test detection based on multiple action verbs."""
+        # Mock Gemini response
+        mock_service = MagicMock()
+        mock_service.generate_gemini_response.return_value = "MULTI_AGENT"
+        mock_get_gemini.return_value = mock_service
+
         query = "Find data sources, analyze trends, and write report"
         result = self.decomposer.is_multi_agent_task(query)
         assert result is True
 
-    def test_is_multi_agent_task_single_task(self):
+    @patch("app.hermes.legion.parallel.task_decomposer.get_gemini_service")
+    def test_is_multi_agent_task_single_task(self, mock_get_gemini):
         """Test that single tasks are not detected as multi-agent."""
+        # Mock Gemini response
+        mock_service = MagicMock()
+        mock_service.generate_gemini_response.return_value = "SINGLE_AGENT"
+        mock_get_gemini.return_value = mock_service
+
         query = "Write Python code to sort a list"
         result = self.decomposer.is_multi_agent_task(query)
         assert result is False
 
-    def test_is_multi_agent_task_simple_question(self):
+    @patch("app.hermes.legion.parallel.task_decomposer.get_gemini_service")
+    def test_is_multi_agent_task_simple_question(self, mock_get_gemini):
         """Test that simple questions are not multi-agent."""
+        # Mock Gemini response
+        mock_service = MagicMock()
+        mock_service.generate_gemini_response.return_value = "SINGLE_AGENT"
+        mock_get_gemini.return_value = mock_service
+
         query = "What is machine learning?"
         result = self.decomposer.is_multi_agent_task(query)
         assert result is False
@@ -101,20 +125,38 @@ class TestTaskDecompositionEdgeCases:
         """Set up test fixtures."""
         self.decomposer = ParallelTaskDecomposer()
 
-    def test_very_long_query(self):
+    @patch("app.hermes.legion.parallel.task_decomposer.get_gemini_service")
+    def test_very_long_query(self, mock_get_gemini):
         """Test handling of very long queries."""
+        # Mock Gemini response
+        mock_service = MagicMock()
+        mock_service.generate_gemini_response.return_value = "MULTI_AGENT"
+        mock_get_gemini.return_value = mock_service
+
         query = "Research " + " and ".join([f"topic_{i}" for i in range(10)])
         result = self.decomposer.is_multi_agent_task(query)
         assert isinstance(result, bool)
 
-    def test_query_with_special_characters(self):
+    @patch("app.hermes.legion.parallel.task_decomposer.get_gemini_service")
+    def test_query_with_special_characters(self, mock_get_gemini):
         """Test queries with special characters."""
+        # Mock Gemini response
+        mock_service = MagicMock()
+        mock_service.generate_gemini_response.return_value = "MULTI_AGENT"
+        mock_get_gemini.return_value = mock_service
+
         query = "Research AI & ML, analyze data, write code!"
         result = self.decomposer.is_multi_agent_task(query)
         assert isinstance(result, bool)
 
-    def test_ambiguous_query(self):
+    @patch("app.hermes.legion.parallel.task_decomposer.get_gemini_service")
+    def test_ambiguous_query(self, mock_get_gemini):
         """Test handling of ambiguous queries."""
+        # Mock Gemini response
+        mock_service = MagicMock()
+        mock_service.generate_gemini_response.return_value = "SINGLE_AGENT"
+        mock_get_gemini.return_value = mock_service
+
         query = "Do research and stuff"
         result = self.decomposer.is_multi_agent_task(query)
         assert isinstance(result, bool)

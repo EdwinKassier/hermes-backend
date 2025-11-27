@@ -14,19 +14,22 @@ from app.hermes.models import UserIdentity
 class TestPerformanceBenchmarks:
     """Performance and scalability tests."""
 
-    @patch("app.hermes.legion.graph_service.get_gemini_service")
-    def test_response_time_acceptable(self, mock_gemini):
+    @patch("app.shared.utils.service_loader.get_gemini_service")
+    @pytest.mark.asyncio
+    async def test_response_time_acceptable(self, mock_gemini):
         """Test that response time is within acceptable limits."""
         mock_gemini_service = MagicMock()
         mock_gemini_service.generate_gemini_response.return_value = "Test response"
         mock_gemini.return_value = mock_gemini_service
 
-        service = LegionGraphService()
-        user_identity = UserIdentity(user_id="test_user")
+        service = LegionGraphService(checkpoint_db_path=":memory:")
+        user_identity = UserIdentity(
+            user_id="test_user", ip_address="127.0.0.1", user_agent="test-agent"
+        )
 
         start_time = time.time()
 
-        result = service.process_request(
+        result = await service.process_request(
             text="Write Python code to sort a list", user_identity=user_identity
         )
 
@@ -36,8 +39,9 @@ class TestPerformanceBenchmarks:
         assert elapsed_time < 10.0
         assert result is not None
 
-    @patch("app.hermes.legion.graph_service.get_gemini_service")
-    def test_parallel_speedup(self, mock_gemini):
+    @patch("app.shared.utils.service_loader.get_gemini_service")
+    @pytest.mark.asyncio
+    async def test_parallel_speedup(self, mock_gemini):
         """Test that parallel execution provides speedup."""
         mock_gemini_service = MagicMock()
 
@@ -49,8 +53,10 @@ class TestPerformanceBenchmarks:
         mock_gemini_service.generate_gemini_response.side_effect = slow_response
         mock_gemini.return_value = mock_gemini_service
 
-        service = LegionGraphService()
-        user_identity = UserIdentity(user_id="test_user")
+        service = LegionGraphService(checkpoint_db_path=":memory:")
+        user_identity = UserIdentity(
+            user_id="test_user", ip_address="127.0.0.1", user_agent="test-agent"
+        )
 
         with patch(
             "app.hermes.legion.parallel.task_decomposer.ParallelTaskDecomposer"
@@ -64,7 +70,7 @@ class TestPerformanceBenchmarks:
 
             start_time = time.time()
 
-            result = service.process_request(
+            result = await service.process_request(
                 text="Research X and analyze Y", user_identity=user_identity
             )
 
@@ -76,8 +82,9 @@ class TestPerformanceBenchmarks:
             # We allow for overhead, so < 800ms indicates parallelism
             assert elapsed_time < 0.8 or result is not None  # Permissive for CI/CD
 
-    @patch("app.hermes.legion.graph_service.get_gemini_service")
-    def test_memory_stable(self, mock_gemini):
+    @patch("app.shared.utils.service_loader.get_gemini_service")
+    @pytest.mark.asyncio
+    async def test_memory_stable(self, mock_gemini):
         """Test that memory usage is stable across multiple requests."""
         import tracemalloc
 
@@ -85,14 +92,16 @@ class TestPerformanceBenchmarks:
         mock_gemini_service.generate_gemini_response.return_value = "Response"
         mock_gemini.return_value = mock_gemini_service
 
-        service = LegionGraphService()
-        user_identity = UserIdentity(user_id="test_user")
+        service = LegionGraphService(checkpoint_db_path=":memory:")
+        user_identity = UserIdentity(
+            user_id="test_user", ip_address="127.0.0.1", user_agent="test-agent"
+        )
 
         tracemalloc.start()
 
         # Make multiple requests
         for i in range(5):
-            result = service.process_request(
+            result = await service.process_request(
                 text=f"Test query {i}", user_identity=user_identity
             )
             assert result is not None
@@ -103,8 +112,9 @@ class TestPerformanceBenchmarks:
         # Memory should be reasonable (< 100MB peak)
         assert peak < 100 * 1024 * 1024  # 100MB in bytes
 
-    @patch("app.hermes.legion.graph_service.get_gemini_service")
-    def test_concurrent_requests(self, mock_gemini):
+    @patch("app.shared.utils.service_loader.get_gemini_service")
+    @pytest.mark.asyncio
+    async def test_concurrent_requests(self, mock_gemini):
         """Test handling of concurrent requests."""
         import asyncio
 
@@ -112,19 +122,24 @@ class TestPerformanceBenchmarks:
         mock_gemini_service.generate_gemini_response.return_value = "Response"
         mock_gemini.return_value = mock_gemini_service
 
-        service = LegionGraphService()
+        service = LegionGraphService(checkpoint_db_path=":memory:")
 
         async def make_request(i):
-            user_identity = UserIdentity(user_id=f"user_{i}")
-            return service.process_request(
+            user_identity = UserIdentity(
+                user_id=f"user_{i}", ip_address="127.0.0.1", user_agent="test-agent"
+            )
+            return await service.process_request(
                 text=f"Query {i}", user_identity=user_identity
             )
 
         # This is a sync test, so we test sequential "concurrent" calls
         results = []
         for i in range(3):
-            result = service.process_request(
-                text=f"Query {i}", user_identity=UserIdentity(user_id=f"user_{i}")
+            result = await service.process_request(
+                text=f"Query {i}",
+                user_identity=UserIdentity(
+                    user_id=f"user_{i}", ip_address="127.0.0.1", user_agent="test-agent"
+                ),
             )
             results.append(result)
 
@@ -137,8 +152,9 @@ class TestPerformanceBenchmarks:
 class TestScalability:
     """Test system scalability."""
 
-    @patch("app.hermes.legion.graph_service.get_gemini_service")
-    def test_handles_large_responses(self, mock_gemini):
+    @patch("app.shared.utils.service_loader.get_gemini_service")
+    @pytest.mark.asyncio
+    async def test_handles_large_responses(self, mock_gemini):
         """Test handling of large response payloads."""
         # Create a large response (1MB of text)
         large_response = "X" * (1024 * 1024)
@@ -147,13 +163,15 @@ class TestScalability:
         mock_gemini_service.generate_gemini_response.return_value = large_response
         mock_gemini.return_value = mock_gemini_service
 
-        service = LegionGraphService()
-        user_identity = UserIdentity(user_id="test_user")
+        service = LegionGraphService(checkpoint_db_path=":memory:")
+        user_identity = UserIdentity(
+            user_id="test_user", ip_address="127.0.0.1", user_agent="test-agent"
+        )
 
-        result = service.process_request(
+        result = await service.process_request(
             text="Generate large output", user_identity=user_identity
         )
 
         assert result is not None
         # Should handle large response without crashing
-        assert len(result.content) > 0
+        assert len(result.message) > 0

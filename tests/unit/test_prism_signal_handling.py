@@ -21,11 +21,14 @@ class TestPrismSignalHandling:
 
     def test_prism_service_instantiation_from_main_thread(self):
         """Test that PrismService can be instantiated from main thread."""
-        # This should work fine
-        service = PrismService()
-        assert service is not None
-        assert hasattr(service, "executor")
-        service.cleanup()
+        # Mock RedisSessionStore to avoid connection errors
+        with patch("app.prism.services.RedisSessionStore") as mock_redis:
+            mock_redis.return_value = MagicMock()
+            # This should work fine
+            service = PrismService()
+            assert service is not None
+            assert hasattr(service, "executor")
+            service.cleanup()
 
     def test_prism_service_instantiation_from_worker_thread(self):
         """Test that PrismService can be instantiated from worker thread."""
@@ -35,11 +38,13 @@ class TestPrismSignalHandling:
         def worker_thread():
             nonlocal exception
             try:
-                # This should work without signal registration errors
-                service = PrismService()
-                result["service"] = service
-                result["success"] = True
-                service.cleanup()
+                with patch("app.prism.services.RedisSessionStore") as mock_redis:
+                    mock_redis.return_value = MagicMock()
+                    # This should work without signal registration errors
+                    service = PrismService()
+                    result["service"] = service
+                    result["success"] = True
+                    service.cleanup()
             except Exception as e:
                 exception = e
                 result["success"] = False
@@ -64,10 +69,12 @@ class TestPrismSignalHandling:
         def worker_thread():
             nonlocal exception
             try:
-                # This should work without signal registration errors
-                service = get_prism_service()
-                result["service"] = service
-                result["success"] = True
+                with patch("app.prism.services.RedisSessionStore") as mock_redis:
+                    mock_redis.return_value = MagicMock()
+                    # This should work without signal registration errors
+                    service = get_prism_service()
+                    result["service"] = service
+                    result["success"] = True
             except Exception as e:
                 exception = e
                 result["success"] = False
@@ -89,11 +96,13 @@ class TestPrismSignalHandling:
 
         def worker_thread(thread_id):
             try:
-                service = PrismService()
-                results.append(
-                    {"thread_id": thread_id, "service": service, "success": True}
-                )
-                service.cleanup()
+                with patch("app.prism.services.RedisSessionStore") as mock_redis:
+                    mock_redis.return_value = MagicMock()
+                    service = PrismService()
+                    results.append(
+                        {"thread_id": thread_id, "service": service, "success": True}
+                    )
+                    service.cleanup()
             except Exception as e:
                 exceptions.append({"thread_id": thread_id, "exception": e})
 
@@ -132,10 +141,12 @@ class TestPrismSignalHandling:
             def worker_thread():
                 nonlocal exception
                 try:
-                    service = PrismService()
-                    result["service"] = service
-                    result["success"] = True
-                    service.cleanup()
+                    with patch("app.prism.services.RedisSessionStore") as mock_redis:
+                        mock_redis.return_value = MagicMock()
+                        service = PrismService()
+                        result["service"] = service
+                        result["success"] = True
+                        service.cleanup()
                 except Exception as e:
                     exception = e
                     result["success"] = False
@@ -156,20 +167,28 @@ class TestPrismSignalHandling:
     def test_gunicorn_when_ready_signal_registration(self):
         """Test that Gunicorn when_ready hook can register signals."""
         # Import the function directly from the module
+        import importlib.util
         import os
-        import sys
 
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-        from gunicorn.conf import when_ready
+        gunicorn_conf_path = os.path.join(
+            os.path.dirname(__file__), "..", "..", "gunicorn.conf.py"
+        )
+        spec = importlib.util.spec_from_file_location(
+            "gunicorn.conf", gunicorn_conf_path
+        )
+        gunicorn_conf = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(gunicorn_conf)
+        when_ready = gunicorn_conf.when_ready
 
         # Mock server object
         mock_server = MagicMock()
         mock_server.log = MagicMock()
 
         # Mock threading to simulate main thread
-        with patch("threading.current_thread") as mock_thread:
-            mock_thread.return_value.is_main_thread.return_value = True
+        import threading
 
+        main_thread = threading.main_thread()
+        with patch("threading.current_thread", return_value=main_thread):
             # Mock signal registration
             with patch("signal.signal") as mock_signal:
                 # Call when_ready hook
@@ -184,20 +203,28 @@ class TestPrismSignalHandling:
     def test_gunicorn_when_ready_skips_signal_registration_in_worker_thread(self):
         """Test that Gunicorn when_ready skips signal registration in worker threads."""
         # Import the function directly from the module
+        import importlib.util
         import os
-        import sys
 
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-        from gunicorn.conf import when_ready
+        gunicorn_conf_path = os.path.join(
+            os.path.dirname(__file__), "..", "..", "gunicorn.conf.py"
+        )
+        spec = importlib.util.spec_from_file_location(
+            "gunicorn.conf", gunicorn_conf_path
+        )
+        gunicorn_conf = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(gunicorn_conf)
+        when_ready = gunicorn_conf.when_ready
 
         # Mock server object
         mock_server = MagicMock()
         mock_server.log = MagicMock()
 
         # Mock threading to simulate worker thread
-        with patch("threading.current_thread") as mock_thread:
-            mock_thread.return_value.is_main_thread.return_value = False
+        import threading
 
+        worker_thread = threading.Thread()
+        with patch("threading.current_thread", return_value=worker_thread):
             # Mock signal registration
             with patch("signal.signal") as mock_signal:
                 # Call when_ready hook
@@ -211,25 +238,29 @@ class TestPrismSignalHandling:
 
     def test_prism_service_cleanup_works(self):
         """Test that PrismService cleanup works correctly."""
-        service = PrismService()
+        with patch("app.prism.services.RedisSessionStore") as mock_redis:
+            mock_redis.return_value = MagicMock()
+            service = PrismService()
 
-        # Verify service has required attributes
-        assert hasattr(service, "executor")
-        assert hasattr(service, "cleanup")
+            # Verify service has required attributes
+            assert hasattr(service, "executor")
+            assert hasattr(service, "cleanup")
 
-        # Test cleanup
-        service.cleanup()
+            # Test cleanup
+            service.cleanup()
 
-        # Verify executor was shut down
-        assert service.executor._shutdown
+            # Verify executor was shut down
+            assert service.executor._shutdown
 
     def test_singleton_behavior_across_threads(self):
         """Test that get_prism_service returns the same instance across threads."""
         results = []
 
         def worker_thread(thread_id):
-            service = get_prism_service()
-            results.append({"thread_id": thread_id, "service_id": id(service)})
+            with patch("app.prism.services.RedisSessionStore") as mock_redis:
+                mock_redis.return_value = MagicMock()
+                service = get_prism_service()
+                results.append({"thread_id": thread_id, "service_id": id(service)})
 
         # Start multiple worker threads
         threads = []
@@ -249,33 +280,37 @@ class TestPrismSignalHandling:
 
     def test_prism_service_thread_safety(self):
         """Test that PrismService operations are thread-safe."""
-        service = PrismService()
-        results = []
-        exceptions = []
+        with patch("app.prism.services.RedisSessionStore") as mock_redis:
+            mock_redis.return_value = MagicMock()
+            service = PrismService()
+            results = []
+            exceptions = []
 
-        def worker_operation(thread_id):
-            try:
-                # Test various service operations
-                service.get_session_metrics("test_session")
-                service.get_system_metrics()
-                results.append({"thread_id": thread_id, "success": True})
-            except Exception as e:
-                exceptions.append({"thread_id": thread_id, "exception": e})
+            def worker_operation(thread_id):
+                try:
+                    # Test various service operations
+                    service.get_session_metrics("test_session")
+                    service.get_system_metrics()
+                    results.append({"thread_id": thread_id, "success": True})
+                except Exception as e:
+                    exceptions.append({"thread_id": thread_id, "exception": e})
 
-        # Start multiple worker threads
-        threads = []
-        for i in range(5):
-            thread = threading.Thread(target=worker_operation, args=(i,))
-            threads.append(thread)
-            thread.start()
+            # Start multiple worker threads
+            threads = []
+            for i in range(5):
+                thread = threading.Thread(target=worker_operation, args=(i,))
+                threads.append(thread)
+                thread.start()
 
-        # Wait for all threads to complete
-        for thread in threads:
-            thread.join(timeout=10)
+            # Wait for all threads to complete
+            for thread in threads:
+                thread.join(timeout=10)
 
-        # Verify no exceptions occurred
-        assert len(exceptions) == 0, f"Exceptions in worker threads: {exceptions}"
-        assert len(results) == 5, f"Expected 5 successful results, got {len(results)}"
+            # Verify no exceptions occurred
+            assert len(exceptions) == 0, f"Exceptions in worker threads: {exceptions}"
+            assert (
+                len(results) == 5
+            ), f"Expected 5 successful results, got {len(results)}"
 
-        # Cleanup
-        service.cleanup()
+            # Cleanup
+            service.cleanup()

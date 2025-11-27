@@ -6,12 +6,19 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from app.hermes.legion.service import LegionService
+# from app.hermes.legion.service import LegionService  # Module removed, tests need rewrite
 from app.hermes.models import ResponseMode, UserIdentity
 
 pytestmark = pytest.mark.skip(
     reason="Tests depend on removed LegionService class. Needs rewrite for LegionGraphService."
 )
+
+
+# Stub class to prevent flake8 errors in skipped tests
+class LegionService:  # noqa: F811
+    """Stub for removed LegionService class."""
+
+    pass
 
 
 @pytest.fixture

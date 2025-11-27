@@ -228,7 +228,7 @@ class PrismService:
         logger.info("Cleaning up PrismService resources...")
 
         # Shutdown thread pool gracefully
-        self.executor.shutdown(wait=True, timeout=30)
+        self.executor.shutdown(wait=True)
 
         # Clear any remaining sessions
         try:

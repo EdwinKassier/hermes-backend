@@ -80,7 +80,7 @@ class TestSignalFixVerification:
 
         with patch("signal.signal", side_effect=mock_signal):
             # Mock RedisSessionStore to avoid connection errors
-            with patch("app.prism.session_store.RedisSessionStore") as mock_redis:
+            with patch("app.prism.services.RedisSessionStore") as mock_redis:
                 mock_redis.return_value = MagicMock()
 
                 result = {}
@@ -115,42 +115,44 @@ class TestSignalFixVerification:
 
     def test_gunicorn_when_ready_signal_registration_logic(self):
         """Test the signal registration logic in Gunicorn when_ready hook."""
-        # Test the logic without actually calling the function
+        # Test the logic by actually calling the function
+        import importlib.util
+        import os
         import signal
         import threading
 
-        def test_signal_handler(signum, frame):
-            """Test signal handler."""
-            pass
+        gunicorn_conf_path = os.path.join(
+            os.path.dirname(__file__), "..", "..", "gunicorn.conf.py"
+        )
+        spec = importlib.util.spec_from_file_location(
+            "gunicorn.conf", gunicorn_conf_path
+        )
+        gunicorn_conf = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(gunicorn_conf)
+        when_ready = gunicorn_conf.when_ready
 
         # Test main thread case
-        with patch("threading.current_thread") as mock_thread:
-            mock_thread.return_value.is_main_thread.return_value = True
+        mock_server = MagicMock()
+        mock_server.log = MagicMock()
 
+        main_thread = threading.main_thread()
+        with patch("threading.current_thread", return_value=main_thread):
             with patch("signal.signal") as mock_signal:
-                # Simulate the when_ready logic
-                if threading.current_thread() is threading.main_thread():
-                    try:
-                        signal.signal(signal.SIGTERM, test_signal_handler)
-                        signal.signal(signal.SIGINT, test_signal_handler)
-                    except Exception as e:
-                        pass
+                # Call when_ready hook
+                when_ready(mock_server)
 
                 # Verify signal registration was attempted
                 assert mock_signal.call_count == 2  # SIGTERM and SIGINT
 
         # Test worker thread case
-        with patch("threading.current_thread") as mock_thread:
-            mock_thread.return_value.is_main_thread.return_value = False
+        mock_server = MagicMock()
+        mock_server.log = MagicMock()
 
+        worker_thread = threading.Thread()
+        with patch("threading.current_thread", return_value=worker_thread):
             with patch("signal.signal") as mock_signal:
-                # Simulate the when_ready logic
-                if threading.current_thread() is threading.main_thread():
-                    try:
-                        signal.signal(signal.SIGTERM, test_signal_handler)
-                        signal.signal(signal.SIGINT, test_signal_handler)
-                    except Exception as e:
-                        pass
+                # Call when_ready hook
+                when_ready(mock_server)
 
                 # Verify signal registration was not attempted
                 assert mock_signal.call_count == 0
@@ -196,7 +198,7 @@ class TestSignalFixVerification:
         # This test verifies that the fix prevents the original threading error
 
         # Mock RedisSessionStore to avoid connection errors
-        with patch("app.prism.session_store.RedisSessionStore") as mock_redis:
+        with patch("app.prism.services.RedisSessionStore") as mock_redis:
             mock_redis.return_value = MagicMock()
 
             # Test that PrismService can be instantiated from a worker thread

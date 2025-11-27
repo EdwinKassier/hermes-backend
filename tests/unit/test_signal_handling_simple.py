@@ -19,7 +19,7 @@ class TestSignalHandlingSimple:
 
     def test_prism_service_instantiation_without_redis(self):
         """Test that PrismService can be instantiated without Redis (mocked)."""
-        with patch("app.prism.session_store.RedisSessionStore") as mock_redis:
+        with patch("app.prism.services.RedisSessionStore") as mock_redis:
             mock_redis.return_value = MagicMock()
 
             # This should work without signal registration errors
@@ -36,7 +36,7 @@ class TestSignalHandlingSimple:
         def worker_thread():
             nonlocal exception
             try:
-                with patch("app.prism.session_store.RedisSessionStore") as mock_redis:
+                with patch("app.prism.services.RedisSessionStore") as mock_redis:
                     mock_redis.return_value = MagicMock()
                     # This should work without signal registration errors
                     service = PrismService()
@@ -67,7 +67,7 @@ class TestSignalHandlingSimple:
         def worker_thread():
             nonlocal exception
             try:
-                with patch("app.prism.session_store.RedisSessionStore") as mock_redis:
+                with patch("app.prism.services.RedisSessionStore") as mock_redis:
                     mock_redis.return_value = MagicMock()
                     # This should work without signal registration errors
                     service = get_prism_service()
@@ -102,9 +102,7 @@ class TestSignalHandlingSimple:
             def worker_thread():
                 nonlocal exception
                 try:
-                    with patch(
-                        "app.prism.session_store.RedisSessionStore"
-                    ) as mock_redis:
+                    with patch("app.prism.services.RedisSessionStore") as mock_redis:
                         mock_redis.return_value = MagicMock()
                         service = PrismService()
                         result["service"] = service
@@ -130,118 +128,78 @@ class TestSignalHandlingSimple:
     def test_gunicorn_when_ready_signal_registration(self):
         """Test that Gunicorn when_ready hook can register signals."""
         # Import the function directly from the module
+        import importlib.util
         import os
-        import sys
 
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+        gunicorn_conf_path = os.path.join(
+            os.path.dirname(__file__), "..", "..", "gunicorn.conf.py"
+        )
+        spec = importlib.util.spec_from_file_location(
+            "gunicorn.conf", gunicorn_conf_path
+        )
+        gunicorn_conf = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(gunicorn_conf)
+        when_ready = gunicorn_conf.when_ready
 
-        # Mock the gunicorn.conf module
-        with patch.dict("sys.modules", {"gunicorn.conf": MagicMock()}):
-            # Create a mock when_ready function
-            def mock_when_ready(server):
-                server.log.info("Server is ready. Spawning workers")
+        # Mock server object
+        mock_server = MagicMock()
+        mock_server.log = MagicMock()
 
-                # Register signal handlers once per worker process (main thread)
-                import signal
-                import threading
+        # Mock threading to simulate main thread
+        import threading
 
-                def signal_handler(signum, frame):
-                    """Handle graceful shutdown signals."""
-                    server.log.info(
-                        f"Received signal {signum}, initiating graceful shutdown..."
-                    )
+        main_thread = threading.main_thread()
+        with patch("threading.current_thread", return_value=main_thread):
+            # Mock signal registration
+            with patch("signal.signal") as mock_signal:
+                # Call when_ready hook
+                when_ready(mock_server)
 
-                # Only register if we're in the main thread of this process
-                if threading.current_thread() is threading.main_thread():
-                    try:
-                        signal.signal(signal.SIGTERM, signal_handler)
-                        signal.signal(signal.SIGINT, signal_handler)
-                        server.log.info("Signal handlers registered successfully")
-                    except Exception as e:
-                        server.log.warning(f"Failed to register signal handlers: {e}")
-                else:
-                    server.log.warning(
-                        "Not in main thread, skipping signal registration"
-                    )
-
-            # Mock server object
-            mock_server = MagicMock()
-            mock_server.log = MagicMock()
-
-            # Mock threading to simulate main thread
-            with patch("threading.current_thread") as mock_thread:
-                mock_thread.return_value.is_main_thread.return_value = True
-
-                # Mock signal registration
-                with patch("signal.signal") as mock_signal:
-                    # Call when_ready hook
-                    mock_when_ready(mock_server)
-
-                    # Verify signal registration was attempted
-                    assert mock_signal.call_count == 2  # SIGTERM and SIGINT
-                    mock_server.log.info.assert_called_with(
-                        "Signal handlers registered successfully"
-                    )
+                # Verify signal registration was attempted
+                assert mock_signal.call_count == 2  # SIGTERM and SIGINT
+                mock_server.log.info.assert_called_with(
+                    "Signal handlers registered successfully"
+                )
 
     def test_gunicorn_when_ready_skips_signal_registration_in_worker_thread(self):
         """Test that Gunicorn when_ready skips signal registration in worker threads."""
         # Import the function directly from the module
+        import importlib.util
         import os
-        import sys
 
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+        gunicorn_conf_path = os.path.join(
+            os.path.dirname(__file__), "..", "..", "gunicorn.conf.py"
+        )
+        spec = importlib.util.spec_from_file_location(
+            "gunicorn.conf", gunicorn_conf_path
+        )
+        gunicorn_conf = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(gunicorn_conf)
+        when_ready = gunicorn_conf.when_ready
 
-        # Mock the gunicorn.conf module
-        with patch.dict("sys.modules", {"gunicorn.conf": MagicMock()}):
-            # Create a mock when_ready function
-            def mock_when_ready(server):
-                server.log.info("Server is ready. Spawning workers")
+        # Mock server object
+        mock_server = MagicMock()
+        mock_server.log = MagicMock()
 
-                # Register signal handlers once per worker process (main thread)
-                import signal
-                import threading
+        # Mock threading to simulate worker thread
+        import threading
 
-                def signal_handler(signum, frame):
-                    """Handle graceful shutdown signals."""
-                    server.log.info(
-                        f"Received signal {signum}, initiating graceful shutdown..."
-                    )
+        worker_thread = threading.Thread()
+        with patch("threading.current_thread", return_value=worker_thread):
+            # Mock signal registration
+            with patch("signal.signal") as mock_signal:
+                # Call when_ready hook
+                when_ready(mock_server)
 
-                # Only register if we're in the main thread of this process
-                if threading.current_thread() is threading.main_thread():
-                    try:
-                        signal.signal(signal.SIGTERM, signal_handler)
-                        signal.signal(signal.SIGINT, signal_handler)
-                        server.log.info("Signal handlers registered successfully")
-                    except Exception as e:
-                        server.log.warning(f"Failed to register signal handlers: {e}")
-                else:
-                    server.log.warning(
-                        "Not in main thread, skipping signal registration"
-                    )
-
-            # Mock server object
-            mock_server = MagicMock()
-            mock_server.log = MagicMock()
-
-            # Mock threading to simulate worker thread
-            with patch("threading.current_thread") as mock_thread:
-                mock_thread.return_value.is_main_thread.return_value = False
-
-                # Mock signal registration
-                with patch("signal.signal") as mock_signal:
-                    # Call when_ready hook
-                    mock_when_ready(mock_server)
-
-                    # Verify signal registration was not attempted
-                    assert mock_signal.call_count == 0
-                    mock_server.log.warning.assert_called_with(
-                        "Not in main thread, skipping signal registration"
-                    )
+                # Verify signal registration was not attempted
+                assert mock_signal.call_count == 0
+                mock_server.log.warning.assert_called_with(
+                    "Not in main thread, skipping signal registration"
+                )
 
     def test_prism_service_cleanup_works(self):
         """Test that PrismService cleanup works correctly."""
-        with patch("app.prism.session_store.RedisSessionStore") as mock_redis:
+        with patch("app.prism.services.RedisSessionStore") as mock_redis:
             mock_redis.return_value = MagicMock()
             service = PrismService()
 
@@ -260,7 +218,7 @@ class TestSignalHandlingSimple:
         results = []
 
         def worker_thread(thread_id):
-            with patch("app.prism.session_store.RedisSessionStore") as mock_redis:
+            with patch("app.prism.services.RedisSessionStore") as mock_redis:
                 mock_redis.return_value = MagicMock()
                 service = get_prism_service()
                 results.append({"thread_id": thread_id, "service_id": id(service)})
@@ -283,7 +241,7 @@ class TestSignalHandlingSimple:
 
     def test_prism_service_thread_safety(self):
         """Test that PrismService operations are thread-safe."""
-        with patch("app.prism.session_store.RedisSessionStore") as mock_redis:
+        with patch("app.prism.services.RedisSessionStore") as mock_redis:
             mock_redis.return_value = MagicMock()
             service = get_prism_service()
             results = []

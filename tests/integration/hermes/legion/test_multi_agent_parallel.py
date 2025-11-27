@@ -12,9 +12,10 @@ from app.hermes.models import UserIdentity
 class TestMultiAgentParallelExecution:
     """Integration tests for end-to-end multi-agent workflows."""
 
-    @patch("app.hermes.legion.graph_service.get_gemini_service")
+    @patch("app.shared.utils.service_loader.get_gemini_service")
     @patch("app.hermes.legion.nodes.graph_nodes.AgentFactory")
-    def test_research_and_code_task(self, mock_factory, mock_gemini):
+    @pytest.mark.asyncio
+    async def test_research_and_code_task(self, mock_factory, mock_gemini):
         """Test parallel execution of research + code task."""
         # Mock Gemini service
         mock_gemini_service = MagicMock()
@@ -32,27 +33,32 @@ class TestMultiAgentParallelExecution:
         mock_factory.create_agent.side_effect = [mock_research_agent, mock_code_agent]
 
         # Create service and execute
-        service = LegionGraphService()
-        user_identity = UserIdentity(user_id="test_user")
+        service = LegionGraphService(checkpoint_db_path=":memory:")
+        user_identity = UserIdentity(
+            user_id="test_user", ip_address="127.0.0.1", user_agent="test-agent"
+        )
 
-        result = service.process_request(
+        result = await service.process_request(
             text="Research sorting algorithms and write Python implementation",
             user_identity=user_identity,
         )
 
         assert result is not None
-        assert result.content is not None
+        assert result.message is not None
         # Should have used both agents
         assert mock_factory.create_agent.call_count >= 1
 
-    @patch("app.hermes.legion.graph_service.get_gemini_service")
-    def test_multi_agent_result_synthesis(self, mock_gemini):
+    @patch("app.shared.utils.service_loader.get_gemini_service")
+    @pytest.mark.asyncio
+    async def test_multi_agent_result_synthesis(self, mock_gemini):
         """Test that results from multiple agents are synthesized."""
         mock_gemini_service = MagicMock()
         mock_gemini.return_value = mock_gemini_service
 
-        service = LegionGraphService()
-        user_identity = UserIdentity(user_id="test_user")
+        service = LegionGraphService(checkpoint_db_path=":memory:")
+        user_identity = UserIdentity(
+            user_id="test_user", ip_address="127.0.0.1", user_agent="test-agent"
+        )
 
         with patch(
             "app.hermes.legion.parallel.task_decomposer.ParallelTaskDecomposer"
@@ -65,7 +71,7 @@ class TestMultiAgentParallelExecution:
                 {"agent_type": "analysis", "description": "Analyze trends"},
             ]
 
-            result = service.process_request(
+            result = await service.process_request(
                 text="Research AI and analyze trends", user_identity=user_identity
             )
 
@@ -76,16 +82,19 @@ class TestMultiAgentParallelExecution:
                 or "agents_used" in result.metadata
             )
 
-    @patch("app.hermes.legion.graph_service.get_gemini_service")
-    def test_performance_metrics_tracked(self, mock_gemini):
+    @patch("app.shared.utils.service_loader.get_gemini_service")
+    @pytest.mark.asyncio
+    async def test_performance_metrics_tracked(self, mock_gemini):
         """Test that performance metrics are tracked for parallel execution."""
         mock_gemini_service = MagicMock()
         mock_gemini.return_value = mock_gemini_service
 
-        service = LegionGraphService()
-        user_identity = UserIdentity(user_id="test_user")
+        service = LegionGraphService(checkpoint_db_path=":memory:")
+        user_identity = UserIdentity(
+            user_id="test_user", ip_address="127.0.0.1", user_agent="test-agent"
+        )
 
-        result = service.process_request(
+        result = await service.process_request(
             text="Research quantum computing and analyze applications",
             user_identity=user_identity,
         )
@@ -95,14 +104,17 @@ class TestMultiAgentParallelExecution:
         # May have performance metrics if multi-agent was triggered
         # This is a permissive test as routing depends on AI
 
-    @patch("app.hermes.legion.graph_service.get_gemini_service")
-    def test_three_agent_parallel_execution(self, mock_gemini):
+    @patch("app.shared.utils.service_loader.get_gemini_service")
+    @pytest.mark.asyncio
+    async def test_three_agent_parallel_execution(self, mock_gemini):
         """Test execution with three parallel agents."""
         mock_gemini_service = MagicMock()
         mock_gemini.return_value = mock_gemini_service
 
-        service = LegionGraphService()
-        user_identity = UserIdentity(user_id="test_user")
+        service = LegionGraphService(checkpoint_db_path=":memory:")
+        user_identity = UserIdentity(
+            user_id="test_user", ip_address="127.0.0.1", user_agent="test-agent"
+        )
 
         with patch(
             "app.hermes.legion.parallel.task_decomposer.ParallelTaskDecomposer"
@@ -115,22 +127,23 @@ class TestMultiAgentParallelExecution:
                 {"agent_type": "code", "description": "Code"},
             ]
 
-            result = service.process_request(
+            result = await service.process_request(
                 text="Research ML, analyze data, write Python code",
                 user_identity=user_identity,
             )
 
             assert result is not None
-            assert result.content is not None
+            assert result.message is not None
 
 
 @pytest.mark.integration
 class TestPartialFailureRecovery:
     """Test graceful handling of partial agent failures."""
 
-    @patch("app.hermes.legion.graph_service.get_gemini_service")
+    @patch("app.shared.utils.service_loader.get_gemini_service")
     @patch("app.hermes.legion.nodes.graph_nodes.AgentFactory")
-    def test_one_agent_fails_others_succeed(self, mock_factory, mock_gemini):
+    @pytest.mark.asyncio
+    async def test_one_agent_fails_others_succeed(self, mock_factory, mock_gemini):
         """Test that system handles one agent failing gracefully."""
         mock_gemini_service = MagicMock()
         mock_gemini.return_value = mock_gemini_service
@@ -144,14 +157,16 @@ class TestPartialFailureRecovery:
 
         mock_factory.create_agent.side_effect = [mock_success_agent, mock_fail_agent]
 
-        service = LegionGraphService()
-        user_identity = UserIdentity(user_id="test_user")
+        service = LegionGraphService(checkpoint_db_path=":memory:")
+        user_identity = UserIdentity(
+            user_id="test_user", ip_address="127.0.0.1", user_agent="test-agent"
+        )
 
         # Should not crash, should return partial results
-        result = service.process_request(
+        result = await service.process_request(
             text="Research X and analyze Y", user_identity=user_identity
         )
 
         assert result is not None
         # Should still have some content from successful agent
-        assert result.content is not None
+        assert result.message is not None
