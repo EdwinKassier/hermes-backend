@@ -34,7 +34,7 @@ ngrok-update: ## Update .env.local with current ngrok URL
 	@uv run python scripts/development/get_ngrok_url.py --update
 
 test: ## Run tests
-	uv run pytest
+	uv run pytest -m "not redis"
 
 lint: ## Run linters
 	uv run flake8 app/
