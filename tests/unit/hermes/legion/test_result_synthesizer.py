@@ -14,8 +14,15 @@ class TestResultSynthesizer:
         """Set up test fixtures."""
         self.synthesizer = ResultSynthesizer()
 
-    def test_synthesize_results_with_two_agents(self):
+    @patch("app.hermes.legion.parallel.result_synthesizer.get_gemini_service")
+    def test_synthesize_results_with_two_agents(self, mock_get_gemini):
         """Test synthesis of results from two agents."""
+        mock_service = MagicMock()
+        mock_service.generate_gemini_response.return_value = (
+            "Based on the research on quantum computing and analysis of applications..."
+        )
+        mock_get_gemini.return_value = mock_service
+
         results = {
             "research_1": {
                 "agent_type": "research",
@@ -67,8 +74,15 @@ class TestResultSynthesizer:
         # Should have some fallback message
         assert len(result) > 0
 
-    def test_synthesize_with_failed_agent(self):
+    @patch("app.hermes.legion.parallel.result_synthesizer.get_gemini_service")
+    def test_synthesize_with_failed_agent(self, mock_get_gemini):
         """Test synthesis when one agent failed."""
+        mock_service = MagicMock()
+        mock_service.generate_gemini_response.return_value = (
+            "Based on the research results..."
+        )
+        mock_get_gemini.return_value = mock_service
+
         results = {
             "research_1": {
                 "agent_type": "research",

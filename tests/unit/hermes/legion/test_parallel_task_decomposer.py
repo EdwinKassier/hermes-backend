@@ -22,7 +22,7 @@ class TestParallelTaskDecomposer:
 
     def test_is_multi_agent_task_with_multiple_verbs(self):
         """Test detection based on multiple action verbs."""
-        query = "Find data sources, analyze trends, write report"
+        query = "Find data sources, analyze trends, and write report"
         result = self.decomposer.is_multi_agent_task(query)
         assert result is True
 

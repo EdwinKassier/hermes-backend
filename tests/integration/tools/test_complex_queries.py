@@ -50,7 +50,7 @@ def test_complex_queries():
     result = tool._run("How many records are in the hermes_vectors table?")
     print(result)
     assert "has" in result and "records" in result, "Should return record count"
-    assert not "could not determine" in result.lower(), f"Query failed: {result}"
+    assert "could not determine" not in result.lower(), f"Query failed: {result}"
     print("✓ PASSED - Got record count\n")
 
     # Test 4: Describe table
@@ -60,7 +60,7 @@ def test_complex_queries():
     assert (
         "columns" in result.lower() or "table:" in result.lower()
     ), f"Should describe table schema, got: {result}"
-    assert not "could not determine" in result.lower(), f"Query failed: {result}"
+    assert "could not determine" not in result.lower(), f"Query failed: {result}"
     print("✓ PASSED - Described table schema\n")
 
     # Test 5: Complex SELECT query
@@ -70,7 +70,7 @@ def test_complex_queries():
     assert (
         "record" in result.lower() or "project" in result.lower()
     ), f"Should return project data, got: {result}"
-    assert not "could not determine" in result.lower(), f"Query failed: {result}"
+    assert "could not determine" not in result.lower(), f"Query failed: {result}"
     print("✓ PASSED - Retrieved project data\n")
 
     # Test 6: Filtered query
@@ -80,9 +80,9 @@ def test_complex_queries():
     )
     print(result[:800] + "..." if len(result) > 800 else result)
     # This query might legitimately return no results, so just check it executed
-    assert not "could not determine" in result.lower(), f"Query failed: {result}"
+    assert "could not determine" not in result.lower(), f"Query failed: {result}"
     assert (
-        not "error" in result.lower() or "no results" in result.lower()
+        "error" not in result.lower() or "no results" in result.lower()
     ), f"Query had error: {result}"
     print("✓ PASSED - Executed filtered query\n")
 
@@ -93,7 +93,7 @@ def test_complex_queries():
     assert "has" in result and (
         "record" in result or "workflow" in result
     ), f"Should return count, got: {result}"
-    assert not "could not determine" in result.lower(), f"Query failed: {result}"
+    assert "could not determine" not in result.lower(), f"Query failed: {result}"
     print("✓ PASSED - Got workflow count\n")
 
     print("\n" + "=" * 60)

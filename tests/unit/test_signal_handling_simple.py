@@ -11,6 +11,8 @@ import pytest
 
 from app.prism.services import PrismService, get_prism_service
 
+pytestmark = pytest.mark.redis
+
 
 class TestSignalHandlingSimple:
     """Test signal handling in multi-threaded contexts without Redis dependency."""

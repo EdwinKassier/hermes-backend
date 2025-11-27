@@ -509,6 +509,8 @@ class LegionGraphService:
             if response_content == "INTERRUPTED" and metadata.get("interrupted"):
                 return GeminiResponse(
                     content="I need your approval to proceed.",
+                    user_id=user_id,
+                    prompt="[RESUMED]",
                     metadata={
                         "legion_mode": True,
                         "langgraph_enabled": True,
@@ -519,6 +521,8 @@ class LegionGraphService:
             # Execution completed
             return GeminiResponse(
                 content=response_content,
+                user_id=user_id,
+                prompt="[RESUMED]",
                 metadata={
                     "legion_mode": True,
                     "langgraph_enabled": True,

@@ -24,15 +24,12 @@ class ToolAllocator:
         # Tool capability mapping - ONLY tools with unique external capabilities
         # Updated 2025-11-19: Removed file tools (OCR'd) and python_repl (no code execution)
         # Only keeping tools that provide capabilities LLMs fundamentally cannot perform
-        self._tool_capabilities: Dict[str, List[str]] = {
-            # Database tool - Access to external database
-            "database_query": ["data", "analysis", "research", "investigation"],
-            # Time tool - Real-time temporal information
-            "time_info": ["general", "information", "utility", "time"],
-            # Web search tool - Internet access for current information
-            "web_search": ["research", "investigation", "information", "current"],
-            # Calculator tool - Mathematical operations
-            "calculator": ["code", "programming", "analysis", "calculation", "math"],
+        # Map capabilities to tools
+        # Only include tools that actually exist in the system
+        self._tool_capabilities = {
+            "database_query": ["data", "analysis", "information"],
+            "time_info": ["general", "information"],
+            "web_search": ["research", "information", "general"],
         }
 
         # Validate on initialization

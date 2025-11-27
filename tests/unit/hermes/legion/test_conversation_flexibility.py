@@ -85,20 +85,33 @@ class TestConversationFlexibility:
             "task_ledger": {"task_1": task_info},
         }
 
-        # Mock TopicChangeDetector to return high-confidence topic change
+        # Mock RoutingIntelligence to return topic change decision
+        from app.hermes.legion.intelligence.routing_intelligence import (
+            ConversationPhase,
+            RoutingAction,
+            RoutingDecision,
+        )
+
         with patch(
-            "app.hermes.legion.utils.topic_change_detector.TopicChangeDetector"
-        ) as MockDetector:
-            mock_instance = MockDetector.return_value
-            mock_instance.detect_topic_change = AsyncMock(
-                return_value={
-                    "is_topic_change": True,
-                    "confidence": 0.95,
-                    "reason": "User changed from coding task to explanation request",
-                    "new_topic": "Explain web scraping concepts",
-                }
+            "app.hermes.legion.intelligence.routing_service.RoutingIntelligence"
+        ) as MockRoutingIntelligence:
+            mock_routing = MockRoutingIntelligence.return_value
+            mock_decision = RoutingDecision(
+                action=RoutingAction.SIMPLE_RESPONSE,
+                reasoning="Topic change detected",
+                confidence=0.95,
+                requires_agents=False,
+                conversation_type="topic_change",
+                complexity_estimate=0.1,
+                user_goal="explain_web_scraping",
+                conversation_phase=ConversationPhase.TOPIC_SHIFTING,
+                topic_change_detected=True,
+                topic_change_confidence=0.95,
+                should_abandon_current_task=True,
+                previous_topic_description="Write code for web scraper",
+                new_topic_description="Explain web scraping concepts",
             )
-            mock_instance.should_trigger_replan = Mock(return_value=True)
+            mock_routing.analyze = AsyncMock(return_value=mock_decision)
 
             # Execute
             result = await orchestrator_node(state)
@@ -228,7 +241,7 @@ class TestConversationFlexibility:
 
         # Patch at the orchestrator module level before import
         with patch(
-            "app.hermes.legion.orchestrator.InformationExtractor"
+            "app.hermes.legion.nodes.graph_nodes.InformationExtractor"
         ) as MockExtractor:
             mock_instance = MockExtractor.return_value
             # Mock extract_information to return partial extraction

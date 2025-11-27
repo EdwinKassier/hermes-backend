@@ -10,6 +10,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+pytestmark = pytest.mark.redis
+
 
 class TestSignalFixVerification:
     """Test that the signal handling fix works correctly."""

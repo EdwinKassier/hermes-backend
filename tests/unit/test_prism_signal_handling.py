@@ -13,6 +13,8 @@ import pytest
 
 from app.prism.services import PrismService, get_prism_service
 
+pytestmark = pytest.mark.redis
+
 
 class TestPrismSignalHandling:
     """Test signal handling in multi-threaded contexts."""
