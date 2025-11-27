@@ -5,7 +5,7 @@ Database Query Tool - LangChain tool wrapper for Supabase MCP Server.
 import asyncio
 import json
 import logging
-from typing import Type
+from typing import Any, Type
 
 try:
     from langchain.tools import BaseTool
@@ -89,12 +89,19 @@ class DatabaseQueryTool(BaseTool):
     It uses an LLM to convert the description into a safe, read-only PostgREST query.
     """
 
-    name = "database_query"
-    description = "Query the database using natural language. Provide a description of what data you need."
+    name: str = "database_query"
+    description: str = (
+        "Query the database using natural language. Provide a description of what data you need."
+    )
 
-    def __init__(self):
+    # Pydantic field for db_service (excluded from tool schema)
+    db_service: Any = None
+
+    model_config = {"arbitrary_types_allowed": True}
+
+    def __init__(self, **kwargs):
         """Initialize the database query tool."""
-        super().__init__()
+        super().__init__(**kwargs)
         try:
             self.db_service = get_supabase_database_service()
             logger.info("DatabaseQueryTool initialized with Supabase service")
@@ -102,12 +109,13 @@ class DatabaseQueryTool(BaseTool):
             logger.error(f"Failed to initialize DatabaseQueryTool: {e}")
             self.db_service = None
 
-    def _run(self, query: str) -> str:
+    def _run(self, query: str, **kwargs) -> str:
         """
         Execute the database query.
 
         Args:
             query: Natural language description of the data needed
+            **kwargs: Additional arguments like include_analysis, use_cache
 
         Returns:
             Query results or error message
@@ -116,6 +124,20 @@ class DatabaseQueryTool(BaseTool):
             return (
                 "Error: Database service is not available. Please check configuration."
             )
+
+        # Input validation
+        if not isinstance(query, str):
+            return "Error: Query must be a non-empty string."
+
+        query = query.strip()
+        if not query:
+            return "Error: Query must be a non-empty string."
+
+        if len(query) < 3:
+            return "Error: Query is too short. Please provide a descriptive query."
+
+        if len(query) > 1000:
+            return "Error: Query is too long. Please keep it under 1000 characters."
 
         try:
             # Run async query in sync context
@@ -139,11 +161,15 @@ class DatabaseQueryTool(BaseTool):
 
                 with concurrent.futures.ThreadPoolExecutor() as pool:
                     future = pool.submit(
-                        lambda: asyncio.run(self.db_service.execute_query(query))
+                        lambda: asyncio.run(
+                            self.db_service.execute_query(query, **kwargs)
+                        )
                     )
                     return future.result()
             else:
-                return loop.run_until_complete(self.db_service.execute_query(query))
+                return loop.run_until_complete(
+                    self.db_service.execute_query(query, **kwargs)
+                )
 
         except SupabaseValidationError as e:
             return f"Validation Error: {str(e)}"
@@ -159,12 +185,13 @@ class DatabaseQueryTool(BaseTool):
             logger.error(f"Unexpected error in DatabaseQueryTool: {e}")
             return f"Error: An unexpected error occurred: {str(e)}"
 
-    async def _arun(self, query: str) -> str:
+    async def _arun(self, query: str, **kwargs) -> str:
         """
         Execute the database query asynchronously.
 
         Args:
             query: Natural language description of the data needed
+            **kwargs: Additional arguments like include_analysis, use_cache
 
         Returns:
             Query results or error message
@@ -174,8 +201,22 @@ class DatabaseQueryTool(BaseTool):
                 "Error: Database service is not available. Please check configuration."
             )
 
+        # Input validation
+        if not isinstance(query, str):
+            return "Error: Query must be a non-empty string."
+
+        query = query.strip()
+        if not query:
+            return "Error: Query must be a non-empty string."
+
+        if len(query) < 3:
+            return "Error: Query is too short. Please provide a descriptive query."
+
+        if len(query) > 1000:
+            return "Error: Query is too long. Please keep it under 1000 characters."
+
         try:
-            return await self.db_service.execute_query(query)
+            return await self.db_service.execute_query(query, **kwargs)
         except SupabaseValidationError as e:
             return f"Validation Error: {str(e)}"
         except SupabaseAuthenticationError:
@@ -189,6 +230,25 @@ class DatabaseQueryTool(BaseTool):
         except Exception as e:
             logger.error(f"Unexpected error in DatabaseQueryTool: {e}")
             return f"Error: An unexpected error occurred: {str(e)}"
+
+    def _list_tables(self) -> str:
+        """
+        List all tables in the database.
+
+        NOTE: Internal utility method, not exposed to LangChain.
+        Call directly if needed: tool._list_tables()
+
+        Returns:
+            List of tables or error message
+        """
+        try:
+            tables = asyncio.run(self.db_service.list_tables())
+            if not tables:
+                return "No tables found in the database."
+            return f"Tables in database: {', '.join(tables)}"
+        except Exception as e:
+            logger.error(f"Failed to list tables: {e}")
+            return f"Error listing tables: {str(e)}"
 
     def _describe_table(self, table_name: str) -> str:
         """
@@ -204,7 +264,7 @@ class DatabaseQueryTool(BaseTool):
             Table schema information
         """
         try:
-            schema_info = asyncio.run(self._mcp_service.describe_table(table_name))
+            schema_info = asyncio.run(self.db_service.describe_table(table_name))
             return f"Table '{table_name}' schema:\n{json.dumps(schema_info, indent=2, default=str)}"
         except Exception as e:
             logger.error(f"Failed to describe table {table_name}: {e}")
@@ -221,7 +281,7 @@ class DatabaseQueryTool(BaseTool):
             Complete database schema information
         """
         try:
-            schema_info = asyncio.run(self._mcp_service.get_schema_info())
+            schema_info = asyncio.run(self.db_service.get_schema_info())
             return f"Database schema:\n{json.dumps(schema_info, indent=2, default=str)}"
         except Exception as e:
             logger.error(f"Failed to get schema info: {e}")

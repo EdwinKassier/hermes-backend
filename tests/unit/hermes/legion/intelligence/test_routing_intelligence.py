@@ -30,6 +30,7 @@ def mock_async_llm_service():
 class TestRoutingIntelligence:
     """Test suite for routing intelligence."""
 
+    @pytest.mark.asyncio
     async def test_simple_greeting_routing(self, mock_async_llm_service):
         """Test that greetings route to simple response."""
         mock_async_llm_service.generate_async.return_value = """
@@ -60,6 +61,7 @@ class TestRoutingIntelligence:
         assert decision.complexity_estimate < 0.2
         assert decision.conversation_phase == ConversationPhase.INITIATING
 
+    @pytest.mark.asyncio
     async def test_complex_research_routing(self, mock_async_llm_service):
         """Test that complex research routes to orchestration."""
         mock_async_llm_service.generate_async.return_value = """
@@ -95,6 +97,7 @@ class TestRoutingIntelligence:
         assert decision.should_seek_approval == True
         assert decision.risk_level == RiskLevel.MEDIUM
 
+    @pytest.mark.asyncio
     async def test_topic_change_detection(self, mock_async_llm_service):
         """Test topic change detection with active context."""
         mock_async_llm_service.generate_async.return_value = """
@@ -144,6 +147,7 @@ class TestRoutingIntelligence:
         assert decision.should_abandon_current_task == True
         assert decision.conversation_phase == ConversationPhase.TOPIC_SHIFTING
 
+    @pytest.mark.asyncio
     async def test_information_gathering_flow(self, mock_async_llm_service):
         """Test multi-turn information gathering."""
         mock_async_llm_service.generate_async.return_value = """
@@ -183,6 +187,7 @@ class TestRoutingIntelligence:
         assert decision.suggested_next_question is not None
         assert decision.builds_on_previous == True
 
+    @pytest.mark.asyncio
     async def test_refining_phase(self, mock_async_llm_service):
         """Test user refinement during execution."""
         mock_async_llm_service.generate_async.return_value = """
@@ -230,6 +235,7 @@ class TestRoutingIntelligence:
         assert decision.should_abandon_current_task == False
         assert decision.builds_on_previous == True
 
+    @pytest.mark.asyncio
     async def test_high_risk_approval_needed(self, mock_async_llm_service):
         """Test high-risk operations require approval."""
         mock_async_llm_service.generate_async.return_value = """
@@ -265,6 +271,7 @@ class TestRoutingIntelligence:
         assert decision.approval_reason is not None
         assert decision.estimated_cost is not None
 
+    @pytest.mark.asyncio
     async def test_fallback_on_llm_failure(self, mock_async_llm_service):
         """Test graceful fallback when LLM fails."""
         mock_async_llm_service.generate_async.side_effect = Exception("LLM timeout")
@@ -277,6 +284,7 @@ class TestRoutingIntelligence:
         assert decision.confidence == 0.5
         assert "failed" in decision.reasoning.lower()
 
+    @pytest.mark.asyncio
     async def test_batch_analysis(self, mock_async_llm_service):
         """Test parallel analysis of multiple messages."""
         mock_async_llm_service.generate_async.side_effect = [

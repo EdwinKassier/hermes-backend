@@ -286,6 +286,8 @@ class LegionGraphService:
                 # Return interrupt information
                 return GeminiResponse(
                     content="I need your approval to proceed.",
+                    user_id=user_id,
+                    prompt=sanitized_message,
                     metadata={
                         "legion_mode": True,
                         "langgraph_enabled": True,
@@ -295,6 +297,8 @@ class LegionGraphService:
 
             response = GeminiResponse(
                 content=response_content,
+                user_id=user_id,
+                prompt=sanitized_message,
                 metadata={
                     "legion_mode": True,
                     "langgraph_enabled": True,

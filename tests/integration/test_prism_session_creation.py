@@ -34,7 +34,7 @@ class TestPrismSessionCreation:
         # Test basic functionality
         system_metrics = service.get_system_metrics()
         assert isinstance(system_metrics, dict)
-        assert "sessions" in health_metrics
+        assert "sessions" in system_metrics
 
         # Cleanup
         service.cleanup()
@@ -51,7 +51,7 @@ class TestPrismSessionCreation:
 
         # Verify service is functional
         health_metrics = service1.get_health_metrics()
-        assert isinstance(system_metrics, dict)
+        assert isinstance(health_metrics, dict)
 
     def test_prism_session_creation_integration(self):
         """Test that PrismSession can be created without signal errors."""

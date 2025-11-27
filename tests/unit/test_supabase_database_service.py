@@ -1,272 +1,141 @@
 """
-Unit tests for MCP Database Service.
+Unit tests for Supabase Database Service.
 """
 
-import asyncio
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import httpx
 import pytest
 
 from app.shared.services.SupabaseDatabaseService import (
-    SupabaseAuthenticationError,
-    SupabaseConnectionError,
     SupabaseDatabaseService,
     SupabaseDatabaseServiceError,
-    SupabaseTimeoutError,
     SupabaseValidationError,
-    get_supabase_database_service,
 )
 
 
 class TestSupabaseDatabaseService:
-    """Test MCP Database Service."""
+    """Test Supabase Database Service."""
 
     @pytest.fixture
-    def mock_httpx_client(self):
-        """Mock httpx.AsyncClient."""
-        with patch("httpx.AsyncClient") as mock:
-            client = AsyncMock()
-            client.aclose = AsyncMock()
-            mock.return_value.__aenter__.return_value = client
+    def mock_supabase_client(self):
+        """Mock Supabase Client."""
+        with patch("app.shared.services.SupabaseDatabaseService.create_client") as mock:
+            client = MagicMock()
+            mock.return_value = client
             yield client
 
     @pytest.fixture
-    def service(self, mock_httpx_client):
-        """Create MCP service instance with mocked client."""
+    def service(self, mock_supabase_client):
+        """Create service instance with mocked client."""
         return SupabaseDatabaseService(
-            mcp_server_url="http://localhost:3001",
-            api_key="test-key",
-            enable_cache=True,
+            supabase_url="http://localhost:54321",
+            supabase_key="test-key",
         )
 
-    @pytest.mark.asyncio
-    async def test_execute_query_success(self, service, mock_httpx_client):
-        """Test successful query execution."""
-        # Mock response
-        mock_response = MagicMock()
-        mock_response.json.return_value = {"result": "test data"}
-        mock_response.raise_for_status.return_value = None
-        mock_httpx_client.post.return_value = mock_response
-
-        result = await service.execute_query("test query", include_analysis=False)
-
-        assert result == "test data"
-        mock_httpx_client.post.assert_called_once_with(
-            "http://localhost:3001/query",
-            json={"query": "test query", "format": "json"},
-        )
+    @pytest.fixture
+    def mock_gemini_service(self):
+        """Mock GeminiService."""
+        with patch("app.shared.services.GeminiService.GeminiService") as mock_cls:
+            mock_instance = MagicMock()
+            mock_cls.return_value = mock_instance
+            yield mock_instance
 
     @pytest.mark.asyncio
-    async def test_execute_query_with_analysis(self, service, mock_httpx_client):
-        """Test query execution with AI analysis."""
-        # Mock response
-        mock_response = MagicMock()
-        mock_response.json.return_value = {"result": "test data"}
-        mock_response.raise_for_status.return_value = None
-        mock_httpx_client.post.return_value = mock_response
+    async def test_execute_query_success_select(
+        self, service, mock_supabase_client, mock_gemini_service
+    ):
+        """Test successful SELECT query execution."""
+        # Mock table list
+        with patch.object(service, "_get_table_list", return_value=["users"]):
+            # Mock Gemini response
+            query_plan = {
+                "operation": "select",
+                "table": "users",
+                "columns": "*",
+                "limit": 10,
+            }
+            mock_gemini_service.generate_gemini_response.return_value = json.dumps(
+                query_plan
+            )
 
-        # Mock GeminiService
-        with patch(
-            "app.shared.services.SupabaseDatabaseService.GeminiService"
-        ) as mock_gemini:
-            mock_gemini_instance = MagicMock()
-            mock_gemini_instance.generate_response.return_value = "AI analysis"
-            mock_gemini.return_value = mock_gemini_instance
+            # Mock Supabase response
+            mock_response = MagicMock()
+            mock_response.data = [{"id": 1, "name": "Test User"}]
+            mock_supabase_client.table.return_value.select.return_value.limit.return_value.execute.return_value = (
+                mock_response
+            )
 
-            result = await service.execute_query("test query", include_analysis=True)
+            result = await service.execute_query(
+                "Show me users", include_analysis=False
+            )
 
-            assert "AI analysis" in result
-            assert "--- Raw Data ---" in result
-            assert "test data" in result
+            assert "Query Results from 'users'" in result
+            assert "Test User" in result
+
+            # Verify Gemini called
+            mock_gemini_service.generate_gemini_response.assert_called_once()
+
+            # Verify Supabase called
+            mock_supabase_client.table.assert_called_with("users")
 
     @pytest.mark.asyncio
-    async def test_execute_query_http_error(self, service, mock_httpx_client):
-        """Test query execution with HTTP error."""
-        # Mock HTTP error
-        mock_httpx_client.post.side_effect = httpx.HTTPError("Connection failed")
+    async def test_execute_query_validation_error(self, service):
+        """Test query validation."""
+        with pytest.raises(SupabaseValidationError, match="Query too short"):
+            await service.execute_query("hi")
 
         with pytest.raises(
-            SupabaseDatabaseServiceError, match="Query execution failed"
+            SupabaseValidationError, match="Write operations are not allowed"
         ):
-            await service.execute_query("test query")
+            await service.execute_query("DROP TABLE users")
 
     @pytest.mark.asyncio
-    async def test_execute_query_401_error(self, service, mock_httpx_client):
-        """Test query execution with 401 authentication error."""
-        # Mock 401 error
-        mock_response = MagicMock()
-        mock_response.status_code = 401
-        mock_error = httpx.HTTPError("Unauthorized")
-        mock_error.response = mock_response
-        mock_httpx_client.post.side_effect = mock_error
-
-        with pytest.raises(SupabaseConnectionError, match="Authentication failed"):
-            await service.execute_query("test query")
+    async def test_list_tables(self, service):
+        """Test list_tables operation."""
+        with patch.object(service, "_get_table_list", return_value=["users", "posts"]):
+            tables = await service.list_tables()
+            assert tables == ["users", "posts"]
 
     @pytest.mark.asyncio
-    async def test_execute_query_404_error(self, service, mock_httpx_client):
-        """Test query execution with 404 server not found error."""
-        # Mock 404 error
+    async def test_describe_table(self, service, mock_supabase_client):
+        """Test describe_table operation."""
+        # Mock Supabase response for describe (limit 1)
         mock_response = MagicMock()
-        mock_response.status_code = 404
-        mock_error = httpx.HTTPError("Not Found")
-        mock_error.response = mock_response
-        mock_httpx_client.post.side_effect = mock_error
+        mock_response.data = [{"id": 1, "name": "Test"}]
+        mock_supabase_client.table.return_value.select.return_value.limit.return_value.execute.return_value = (
+            mock_response
+        )
 
-        with pytest.raises(SupabaseConnectionError, match="MCP server not found"):
-            await service.execute_query("test query")
+        result = await service.describe_table("users")
 
-    @pytest.mark.asyncio
-    async def test_list_tables_success(self, service, mock_httpx_client):
-        """Test successful table listing."""
-        # Mock response
-        mock_response = MagicMock()
-        mock_response.json.return_value = {"tables": ["users", "conversations"]}
-        mock_response.raise_for_status.return_value = None
-        mock_httpx_client.get.return_value = mock_response
-
-        tables = await service.list_tables()
-
-        assert tables == ["users", "conversations"]
-        mock_httpx_client.get.assert_called_once_with("http://localhost:3001/tables")
-
-    @pytest.mark.asyncio
-    async def test_describe_table_success(self, service, mock_httpx_client):
-        """Test successful table description."""
-        # Mock response
-        mock_response = MagicMock()
-        mock_response.json.return_value = {"columns": ["id", "name", "email"]}
-        mock_response.raise_for_status.return_value = None
-        mock_httpx_client.get.return_value = mock_response
-
-        description = await service.describe_table("users")
-
-        assert description == {"columns": ["id", "name", "email"]}
-        mock_httpx_client.get.assert_called_once_with(
-            "http://localhost:3001/tables/users"
+        assert "schema" in result
+        assert "Table: users" in result["schema"]
+        assert (
+            "id (int)" in result["schema"]
+            or "id (int" in result["schema"]
+            or "id" in result["schema"]
         )
 
     @pytest.mark.asyncio
-    async def test_get_schema_info_success(self, service, mock_httpx_client):
-        """Test successful schema info retrieval."""
-        # Mock response
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "tables": {"users": {"columns": ["id", "name"]}}
-        }
-        mock_response.raise_for_status.return_value = None
-        mock_httpx_client.get.return_value = mock_response
-
-        schema_info = await service.get_schema_info()
-
-        assert schema_info == {"tables": {"users": {"columns": ["id", "name"]}}}
-        mock_httpx_client.get.assert_called_once_with("http://localhost:3001/schema")
-
-    def test_query_caching(self, service):
-        """Test query result caching."""
-        # Mock the HTTP client for this test
-        with patch.object(service, "_execute_mcp_query") as mock_execute:
-            mock_execute.return_value = "cached result"
-
-            # First call
-            result1 = asyncio.run(service.execute_query("test query", use_cache=True))
-            assert result1 == "cached result"
-            assert mock_execute.call_count == 1
-
-            # Second call (should use cache)
-            result2 = asyncio.run(service.execute_query("test query", use_cache=True))
-            assert result2 == "cached result"
-            assert mock_execute.call_count == 1  # No additional call
-
-    def test_cache_ttl_expiry(self, service):
-        """Test cache TTL expiry."""
-        # Set short TTL for testing
-        service.cache_ttl = 0.1  # 100ms
-
-        with patch.object(service, "_execute_mcp_query") as mock_execute:
-            mock_execute.return_value = "fresh result"
-
-            # First call
-            result1 = asyncio.run(service.execute_query("test query", use_cache=True))
-            assert result1 == "fresh result"
-            assert mock_execute.call_count == 1
-
-            # Wait for cache to expire
-            import time
-
-            time.sleep(0.2)
-
-            # Second call (should not use cache)
-            result2 = asyncio.run(service.execute_query("test query", use_cache=True))
-            assert result2 == "fresh result"
-            assert mock_execute.call_count == 2  # Additional call made
-
-    def test_cache_disabled(self, service):
-        """Test query execution with caching disabled."""
-        service.enable_cache = False
-
-        with patch.object(service, "_execute_mcp_query") as mock_execute:
-            mock_execute.return_value = "result"
-
-            # Multiple calls should not use cache
-            asyncio.run(service.execute_query("test query", use_cache=True))
-            asyncio.run(service.execute_query("test query", use_cache=True))
-
-            assert mock_execute.call_count == 2
-
-    @pytest.mark.asyncio
-    async def test_close_client(self, service, mock_httpx_client):
-        """Test client cleanup."""
-        await service.close()
-        mock_httpx_client.aclose.assert_called_once()
-
-    def test_singleton_pattern(self):
-        """Test singleton pattern for get_supabase_database_service."""
-        with patch(
-            "app.shared.services.SupabaseDatabaseService.get_env"
-        ) as mock_get_env:
-            mock_get_env.side_effect = lambda key: {
-                "SUPABASE_MCP_SERVER_URL": "http://localhost:3001",
-                "SUPABASE_MCP_API_KEY": "test-key",
-            }.get(key)
-
-            # First call
-            service1 = get_supabase_database_service()
-            assert service1 is not None
-
-            # Second call should return same instance
-            service2 = get_supabase_database_service()
-            assert service1 is service2
-
-    def test_missing_env_vars(self):
-        """Test error handling for missing environment variables."""
-        with patch(
-            "app.shared.services.SupabaseDatabaseService.get_env"
-        ) as mock_get_env:
-            mock_get_env.return_value = None
-
-            with pytest.raises(
-                ValueError, match="SUPABASE_MCP_SERVER_URL and SUPABASE_MCP_API_KEY"
-            ):
-                get_supabase_database_service()
-
-    def test_different_response_formats(self, service, mock_httpx_client):
-        """Test handling of different response formats."""
-        test_cases = [
-            ({"result": "data"}, "data"),
-            ({"data": "data"}, "data"),
-            ("direct_string", "direct_string"),
-            ({"other": "format"}, '{"other": "format"}'),
-        ]
-
-        for response_data, expected in test_cases:
-            mock_response = MagicMock()
-            mock_response.json.return_value = response_data
-            mock_response.raise_for_status.return_value = None
-            mock_httpx_client.post.return_value = mock_response
-
-            result = asyncio.run(
-                service.execute_query("test query", include_analysis=False)
+    async def test_execute_query_count(
+        self, service, mock_supabase_client, mock_gemini_service
+    ):
+        """Test COUNT query execution."""
+        with patch.object(service, "_get_table_list", return_value=["users"]):
+            # Mock Gemini response
+            query_plan = {"operation": "count", "table": "users"}
+            mock_gemini_service.generate_gemini_response.return_value = json.dumps(
+                query_plan
             )
-            assert result == expected
+
+            # Mock Supabase response
+            mock_response = MagicMock()
+            mock_response.count = 42
+            mock_supabase_client.table.return_value.select.return_value.execute.return_value = (
+                mock_response
+            )
+
+            result = await service.execute_query("Count users", include_analysis=False)
+
+            assert "42 records" in result

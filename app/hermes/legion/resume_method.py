@@ -4,6 +4,13 @@ Resume method for LegionGraphService to continue from interrupts.
 Add this method to the LegionGraphService class.
 """
 
+import logging
+
+from app.hermes.models import UserIdentity
+from app.hermes.services import AIServiceError, GeminiResponse
+
+logger = logging.getLogger(__name__)
+
 
 def resume(
     self,

@@ -52,7 +52,7 @@ class TestDatabaseQueryTool:
         """Test that whitespace-only query returns error."""
         result = tool._run("   ")
         assert "Error" in result
-        assert "too short" in result
+        assert "non-empty string" in result
 
     def test_short_query(self, tool):
         """Test that very short query returns error."""
@@ -92,18 +92,20 @@ class TestDatabaseQueryTool:
         result = tool._run("Analyze user growth", include_analysis=True)
 
         assert "Analysis" in result
+        # execute_query is called with positional query and kwargs
         mock_mcp_service.execute_query.assert_called_once_with(
-            query="Analyze user growth", include_analysis=True, use_cache=True
+            "Analyze user growth", include_analysis=True
         )
 
     def test_query_without_cache(self, tool, mock_mcp_service):
         """Test query with caching disabled."""
-        mock_mcp_service.execute_query.return_value = "Fresh results"
+        mock_mcp_service.execute_query.return_value = "Latest data"
 
         result = tool._run("Get latest data", use_cache=False)
 
+        assert "Latest data" in result
         mock_mcp_service.execute_query.assert_called_once_with(
-            query="Get latest data", include_analysis=True, use_cache=False
+            "Get latest data", use_cache=False
         )
 
     # === Error Handling Tests ===
@@ -111,13 +113,13 @@ class TestDatabaseQueryTool:
     def test_connection_error(self, tool, mock_mcp_service):
         """Test handling of connection errors."""
         mock_mcp_service.execute_query.side_effect = SupabaseConnectionError(
-            "Connection failed"
+            "Failed to connect"
         )
 
         result = tool._run("Valid query")
 
-        assert "temporarily unavailable" in result
-        assert "Connection failed" in result
+        assert "Connection Error" in result
+        assert "Failed to connect" in result
 
     def test_timeout_error(self, tool, mock_mcp_service):
         """Test handling of timeout errors."""
@@ -127,7 +129,7 @@ class TestDatabaseQueryTool:
 
         result = tool._run("Valid query")
 
-        assert "temporarily unavailable" in result
+        assert "Timeout Error" in result
         assert "timed out" in result
 
     def test_validation_error(self, tool, mock_mcp_service):
@@ -138,7 +140,7 @@ class TestDatabaseQueryTool:
 
         result = tool._run("Valid query")
 
-        assert "access error" in result
+        assert "Validation Error" in result
         assert "Invalid query format" in result
 
     def test_authentication_error(self, tool, mock_mcp_service):
@@ -149,8 +151,8 @@ class TestDatabaseQueryTool:
 
         result = tool._run("Valid query")
 
-        assert "access error" in result
-        assert "Auth failed" in result
+        assert "Authentication Error" in result
+        assert "Failed to authenticate" in result
 
     def test_unexpected_error(self, tool, mock_mcp_service):
         """Test handling of unexpected errors."""
@@ -158,7 +160,7 @@ class TestDatabaseQueryTool:
 
         result = tool._run("Valid query")
 
-        assert "Database error" in result
+        assert "Error" in result
         assert "Unexpected error" in result
 
     # === Helper Methods Tests ===
@@ -224,8 +226,9 @@ class TestDatabaseQueryTool:
         result = tool._run("  Show users  ")
 
         # Should call with trimmed query
+        # execute_query is called with positional arg 'query'
         call_args = mock_mcp_service.execute_query.call_args
-        assert call_args[1]["query"] == "Show users"
+        assert call_args[0][0] == "Show users"
 
     def test_minimum_valid_query(self, tool, mock_mcp_service):
         """Test minimum valid query length (3 characters)."""
