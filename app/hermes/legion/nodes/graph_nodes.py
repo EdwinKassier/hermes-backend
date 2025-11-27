@@ -25,7 +25,7 @@ from ..utils import ToolAllocator
 logger = logging.getLogger(__name__)
 
 
-def orchestrator_node(state: OrchestratorState) -> OrchestratorState:
+async def orchestrator_node(state: OrchestratorState) -> OrchestratorState:
     """
     Main orchestrator node - analyzes request and routes to appropriate action.
 
@@ -67,14 +67,10 @@ def orchestrator_node(state: OrchestratorState) -> OrchestratorState:
         ),
     }
 
-    import asyncio
-
-    routing_decision = asyncio.run(
-        routing_intel.analyze(
-            message=user_message,
-            conversation_history=messages[:-1],  # Exclude current message
-            current_agent_context=agent_context,
-        )
+    routing_decision = await routing_intel.analyze(
+        message=user_message,
+        conversation_history=messages[:-1],  # Exclude current message
+        current_agent_context=agent_context,
     )
 
     # Store routing decision in metadata and decision rationale
@@ -220,12 +216,10 @@ def orchestrator_node(state: OrchestratorState) -> OrchestratorState:
             from ..utils.topic_change_detector import TopicChangeDetector
 
             detector = TopicChangeDetector()
-            detection_result = asyncio.run(
-                detector.detect_topic_change(
-                    current_task_description=task_info.description,
-                    new_user_message=user_message,
-                    conversation_history=messages,
-                )
+            detection_result = await detector.detect_topic_change(
+                current_task_description=task_info.description,
+                new_user_message=user_message,
+                conversation_history=messages,
             )
 
             # If topic changed with high confidence, trigger replan
@@ -640,7 +634,7 @@ def _handle_new_task(state, user_message, task_type, decision, rationale):
         }
 
 
-def information_gathering_node(state: OrchestratorState) -> OrchestratorState:
+async def information_gathering_node(state: OrchestratorState) -> OrchestratorState:
     """
     Multi-turn information gathering node.
 
@@ -663,10 +657,6 @@ def information_gathering_node(state: OrchestratorState) -> OrchestratorState:
     logger.info(f"Analyzing {len(context_window)} messages for context")
 
     required_info_dict = state.get("required_info", {})
-    collected_info = state.get("collected_info", {})
-
-    # Handle RequiredInfoField objects (they get serialized/deserialized)
-    from ..orchestrator import InformationExtractor
 
     # Convert back to RequiredInfoField if needed
     if required_info_dict and not isinstance(

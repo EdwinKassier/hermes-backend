@@ -48,7 +48,7 @@ class TestResearchAgent:
         """Test executing research task."""
         # Mock GeminiService
         mock_gemini = Mock()
-        mock_gemini.generate_gemini_response_with_rag.return_value = "Research result"
+        mock_gemini.generate_gemini_response.return_value = "Research result"
         mock_get_gemini.return_value = mock_gemini
 
         agent = ResearchAgent()
@@ -67,13 +67,13 @@ class TestResearchAgent:
 
         result = agent.execute_task(state)
         assert result == "Research result"
-        mock_gemini.generate_gemini_response_with_rag.assert_called_once()
+        mock_gemini.generate_gemini_response.assert_called_once()
 
     @patch("app.hermes.legion.agents.research_agent.get_gemini_service")
     def test_execute_task_with_defaults(self, mock_get_gemini):
         """Test executing task with default collected info."""
         mock_gemini = Mock()
-        mock_gemini.generate_gemini_response_with_rag.return_value = "Result"
+        mock_gemini.generate_gemini_response.return_value = "Result"
         mock_get_gemini.return_value = mock_gemini
 
         agent = ResearchAgent()
@@ -89,16 +89,14 @@ class TestResearchAgent:
         result = agent.execute_task(state)
         assert result == "Result"
         # Should use defaults
-        call_args = mock_gemini.generate_gemini_response_with_rag.call_args
+        call_args = mock_gemini.generate_gemini_response.call_args
         assert "all time" in call_args[1]["prompt"]  # Default time_period
 
     @patch("app.hermes.legion.agents.research_agent.get_gemini_service")
     def test_execute_task_error_handling(self, mock_get_gemini):
         """Test error handling in task execution."""
         mock_gemini = Mock()
-        mock_gemini.generate_gemini_response_with_rag.side_effect = Exception(
-            "API Error"
-        )
+        mock_gemini.generate_gemini_response.side_effect = Exception("API Error")
         mock_get_gemini.return_value = mock_gemini
 
         agent = ResearchAgent()
