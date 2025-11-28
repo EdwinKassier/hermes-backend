@@ -16,6 +16,13 @@ class TaskIdentifier:
 
     def __init__(self):
         """Initialize task identifier."""
+        import warnings
+
+        warnings.warn(
+            "TaskIdentifier is deprecated. Use RoutingIntelligence instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self._gemini_service = None
 
     @property
@@ -144,6 +151,13 @@ class IntentDetector:
 
     def __init__(self):
         """Initialize intent detector."""
+        import warnings
+
+        warnings.warn(
+            "IntentDetector is deprecated. Use RoutingIntelligence instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self._gemini_service = None
 
     @property

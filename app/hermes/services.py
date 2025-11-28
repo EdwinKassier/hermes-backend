@@ -254,7 +254,7 @@ class HermesService:
             logger.error(f"AI generation failed: {e}")
             raise AIServiceError(f"Failed to generate AI response: {str(e)}")
 
-    def generate_tts(self, text: str) -> tuple[str | None, str]:
+    def generate_tts(self, text: str) -> tuple[Optional[str], str]:
         """
         Generate Text-to-Speech audio (public method).
 

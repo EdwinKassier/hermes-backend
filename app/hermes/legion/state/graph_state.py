@@ -12,8 +12,24 @@ from ..models import RequiredInfoField
 
 
 def merge_dicts(a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]:
-    """Reducer to merge dictionaries."""
+    """Reducer to merge dictionaries (shallow)."""
     return {**a, **b}
+
+
+def deep_merge_dicts(a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Deep merge reducer for nested dictionaries.
+
+    Recursively merges nested dicts to prevent data loss when parallel
+    workers update different parts of the same nested structure.
+    """
+    result = {**a}
+    for key, value in b.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = deep_merge_dicts(result[key], value)
+        else:
+            result[key] = value
+    return result
 
 
 class TaskStatus(str, Enum):
@@ -123,8 +139,18 @@ class OrchestratorState(TypedDict):
 
     # Unified Legion Swarm State
     legion_strategy: Literal["council", "parallel", "intelligent"]
-    # Use merge_dicts reducer to allow parallel workers to update results concurrently
-    legion_results: Annotated[Dict[str, Any], merge_dicts]
+    # Use deep_merge_dicts reducer to allow parallel workers to update results concurrently
+    # Deep merge prevents data loss in nested structures
+    legion_results: Annotated[Dict[str, Any], deep_merge_dicts]
+
+    # Conversation memory management
+    conversation_summaries: List[Dict[str, Any]]  # Stored conversation summaries
+
+    # Execution level tracking for dependency-aware sequential execution
+    current_execution_level: int  # Which level is currently being processed (0-indexed)
+    total_execution_levels: int  # Total number of execution levels
+    level_results: Dict[int, Dict[str, Any]]  # Results stored per execution level
+    fail_on_level_error: bool  # If True, stop on any worker failure; if False, continue with partial results
 
     # Conversation continuation state
     awaiting_user_response: bool  # NEW: If True, pause and wait for next user message

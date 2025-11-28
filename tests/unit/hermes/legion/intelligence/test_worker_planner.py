@@ -62,7 +62,7 @@ async def test_plan_workers(mock_async_llm_service):
 
 
 @pytest.mark.asyncio
-async def test_optimize_worker_count():
+async def test_optimize_worker_count(mock_async_llm_service):
     planner = IntelligentWorkerPlanner()
 
     # Low complexity

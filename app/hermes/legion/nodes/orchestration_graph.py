@@ -1,7 +1,6 @@
 """LangGraph-based orchestration workflow."""
 
 import logging
-from typing import Literal
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
@@ -15,6 +14,9 @@ from .graph_nodes import (
     orchestrator_node,
 )
 from .legion_orchestrator import (
+    legion_dispatch_node,
+    legion_level_complete_node,
+    legion_level_routing_edge,
     legion_orchestrator_node,
     legion_routing_edge,
     legion_synthesis_node,
@@ -112,7 +114,9 @@ def create_orchestration_graph(checkpointer=None, interrupt_before=None) -> Stat
 
     # Add unified Legion nodes
     workflow.add_node("legion_orchestrator", legion_orchestrator_node)
+    workflow.add_node("legion_dispatch", legion_dispatch_node)
     workflow.add_node("legion_worker", legion_worker_node)
+    workflow.add_node("legion_level_complete", legion_level_complete_node)
     workflow.add_node("legion_synthesis", legion_synthesis_node)
 
     # Set entry point
@@ -134,12 +138,29 @@ def create_orchestration_graph(checkpointer=None, interrupt_before=None) -> Stat
     )
 
     # Legion Orchestrator -> Dynamic Workers (using Send API)
+    # This dispatches workers for level 0
     workflow.add_conditional_edges(
         "legion_orchestrator", legion_routing_edge, ["legion_worker"]
     )
 
-    # Legion Workers -> Synthesis
-    workflow.add_edge("legion_worker", "legion_synthesis")
+    # Legion Dispatch -> Dynamic Workers (for subsequent levels)
+    # This is the loop entry point for levels > 0
+    workflow.add_conditional_edges(
+        "legion_dispatch", legion_routing_edge, ["legion_worker"]
+    )
+
+    # Legion Workers -> Level Complete (process results and determine next step)
+    workflow.add_edge("legion_worker", "legion_level_complete")
+
+    # Level Complete -> Either dispatch next level or proceed to synthesis
+    workflow.add_conditional_edges(
+        "legion_level_complete",
+        legion_level_routing_edge,
+        {
+            "legion_dispatch": "legion_dispatch",  # More levels to process
+            "legion_synthesis": "legion_synthesis",  # All levels complete
+        },
+    )
 
     # Synthesis -> End
     workflow.add_edge("legion_synthesis", END)
@@ -195,13 +216,39 @@ def create_orchestration_graph(checkpointer=None, interrupt_before=None) -> Stat
     return app
 
 
-# Create singleton instance
-_orchestration_graph = None
+def get_orchestration_graph(checkpointer=None, interrupt_before=None):
+    """
+    Create an orchestration graph with the provided checkpointer.
 
+    Each call creates a fresh graph instance to ensure proper checkpointer
+    lifecycle management. This avoids issues with:
+    - Stale checkpointer references
+    - Race conditions in async environments
+    - Testing isolation
 
-def get_orchestration_graph(checkpointer=None):
-    """Get or create the orchestration graph singleton."""
-    global _orchestration_graph
-    if _orchestration_graph is None:
-        _orchestration_graph = create_orchestration_graph(checkpointer)
-    return _orchestration_graph
+    Args:
+        checkpointer: Checkpointer instance for state persistence.
+                     If None, a MemorySaver will be used (ephemeral storage).
+        interrupt_before: Optional list of nodes to interrupt before.
+
+    Returns:
+        Compiled StateGraph ready for execution
+
+    Usage:
+        # With async persistence (recommended for production)
+        async with persistence.get_checkpointer() as checkpointer:
+            graph = get_orchestration_graph(checkpointer=checkpointer)
+            result = await graph.astream(inputs, config)
+
+        # With MemorySaver for testing
+        graph = get_orchestration_graph()
+    """
+    if checkpointer is None:
+        checkpointer = MemorySaver()
+        logger.debug("Creating graph with default MemorySaver (ephemeral)")
+    else:
+        logger.debug("Creating graph with provided checkpointer")
+
+    return create_orchestration_graph(
+        checkpointer=checkpointer, interrupt_before=interrupt_before
+    )

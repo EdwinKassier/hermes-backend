@@ -2,15 +2,14 @@
 
 import asyncio
 import logging
-import uuid
 from datetime import datetime
 from typing import Any, Dict, List
 
-from app.shared.utils.service_loader import get_gemini_service
+from app.shared.utils.service_loader import get_async_llm_service, get_gemini_service
 
 from ..agents.factory import AgentFactory
 from ..models import SubAgentState, SubAgentStatus
-from ..orchestrator import InformationExtractor, IntentDetector, TaskIdentifier
+from ..orchestrator import InformationExtractor, TaskIdentifier
 from ..state import (
     AgentConfig,
     AgentInfo,
@@ -115,7 +114,6 @@ async def orchestrator_node(state: OrchestratorState) -> OrchestratorState:
         decision_rationale.append(current_decision)
 
         return {
-            **state,
             "next_action": GraphDecision.COMPLETE.value,
             "decision_rationale": decision_rationale,
             "metadata": state_metadata,
@@ -131,7 +129,6 @@ async def orchestrator_node(state: OrchestratorState) -> OrchestratorState:
         decision_rationale.append(current_decision)
 
         return {
-            **state,
             "next_action": GraphDecision.GATHER_INFO.value,
             "decision_rationale": decision_rationale,
             "metadata": state_metadata,
@@ -160,15 +157,15 @@ async def orchestrator_node(state: OrchestratorState) -> OrchestratorState:
             logger.info("Multi-agent orchestration detected - routing to legion")
             decision_rationale.append(current_decision)
             return {
-                **state,
                 "next_action": "legion_orchestrate",
                 "decision_rationale": decision_rationale,
                 "metadata": state_metadata,
             }
 
-        # Single agent orchestration - create agent and route to execution
-        task_identifier = TaskIdentifier()
-        task_type = task_identifier.identify_task_type(user_message)
+        # Single agent orchestration - infer agent type from routing decision
+        # This avoids an extra LLM call to TaskIdentifier
+        task_type = _infer_agent_type(routing_decision)
+        logger.info(f"Inferred task type '{task_type}' from routing decision")
 
         if not task_type:
             logger.warning(
@@ -176,7 +173,6 @@ async def orchestrator_node(state: OrchestratorState) -> OrchestratorState:
             )
             decision_rationale.append(current_decision)
             return {
-                **state,
                 "next_action": GraphDecision.COMPLETE.value,
                 "decision_rationale": decision_rationale,
                 "metadata": state_metadata,
@@ -195,101 +191,54 @@ async def orchestrator_node(state: OrchestratorState) -> OrchestratorState:
         decision_rationale.append(current_decision)
 
         return {
-            **state,
             "next_action": GraphDecision.ERROR.value,
             "decision_rationale": decision_rationale,
             "metadata": state_metadata,
         }
 
-    # 1. Check for cancellation first
-    intent_detector = IntentDetector()
-    if intent_detector.is_cancellation_intent(user_message):
-        return _handle_cancellation(state, current_decision, decision_rationale)
-
-    # 2. Check for topic change (if we have an active task)
-    current_task_id = state.get("current_task_id")
-    if current_task_id and current_task_id in state.get("task_ledger", {}):
-        task_info = state["task_ledger"][current_task_id]
-
-        # Only check topic change if task is active (not completed/failed)
-        if task_info.status in [TaskStatus.IN_PROGRESS, TaskStatus.AWAITING_INPUT]:
-            from ..utils.topic_change_detector import TopicChangeDetector
-
-            detector = TopicChangeDetector()
-            detection_result = await detector.detect_topic_change(
-                current_task_description=task_info.description,
-                new_user_message=user_message,
-                conversation_history=messages,
-            )
-
-            # If topic changed with high confidence, trigger replan
-            if detector.should_trigger_replan(detection_result):
-                logger.info(
-                    f"Topic change detected (confidence: {detection_result['confidence']:.2f}): "
-                    f"{detection_result['reason']}"
-                )
-
-                current_decision["analysis"]["topic_change_detected"] = True
-                current_decision["analysis"]["new_topic"] = detection_result.get(
-                    "new_topic"
-                )
-                current_decision["analysis"]["confidence"] = detection_result[
-                    "confidence"
-                ]
-                current_decision["decisions"]["action"] = "replan"
-                current_decision["reasoning"]["replan_reason"] = detection_result[
-                    "reason"
-                ]
-
-                rationale = decision_rationale + [current_decision]
-
-                return {
-                    "decision_rationale": rationale,
-                    "next_action": GraphDecision.REPLAN.value,
-                    "metadata": {
-                        **state.get("metadata", {}),
-                        "topic_change": detection_result,
-                    },
-                }
-
-    # 3. Check if we have an agent awaiting input
-    current_agent_id = state.get("current_agent_id")
-    if current_agent_id:
-        return _handle_active_agent(
-            state, current_agent_id, current_decision, decision_rationale
-        )
-
-    # 4. Check for multi-agent tasks
-    # Fix local import
-    from ..parallel.task_decomposer import ParallelTaskDecomposer
-
-    decomposer = ParallelTaskDecomposer()
-
-    if decomposer.is_multi_agent_task(user_message):
-        return _handle_multi_agent(state, current_decision, decision_rationale)
-
-    # 5. Identify task type
-    task_identifier = TaskIdentifier()
-    task_type = task_identifier.identify_task_type(user_message)
-
-    current_decision["analysis"]["user_message"] = (
-        user_message[:100] + "..." if len(user_message) > 100 else user_message
+    # Fallback: Should never reach here if routing intelligence works correctly
+    logger.error(
+        f"Unexpected routing state: action={routing_decision.action}, "
+        f"falling back to general response"
     )
-    current_decision["analysis"]["identified_task_type"] = task_type
+    current_decision["decisions"]["action"] = "fallback"
+    current_decision["reasoning"][
+        "action"
+    ] = "Unexpected routing state - using fallback"
+    decision_rationale.append(current_decision)
 
-    if not task_type:
-        return _handle_general_conversation(state, current_decision, decision_rationale)
+    return {
+        "next_action": GraphDecision.COMPLETE.value,
+        "decision_rationale": decision_rationale,
+        "metadata": state_metadata,
+    }
 
-    # 6. Check if it's a simple factual question vs complex task
-    if _is_factual_question(user_message, task_type):
-        return _handle_factual_question(
-            state, task_type, current_decision, decision_rationale
-        )
 
-    # 7. Task identified - create agent dynamically
-    return _handle_new_task(
-        state, user_message, task_type, current_decision, decision_rationale
-    )
+def _infer_agent_type(routing_decision) -> str:
+    """
+    Infer agent type from routing decision metadata.
+
+    Avoids redundant LLM calls by using the rich context from RoutingIntelligence.
+    """
+    # Combine relevant fields for keyword analysis
+    text = (
+        f"{routing_decision.conversation_type} "
+        f"{routing_decision.user_goal} "
+        f"{routing_decision.reasoning}"
+    ).lower()
+
+    # Check for specific agent capabilities
+    if any(
+        k in text
+        for k in ["code", "program", "implement", "function", "class", "script"]
+    ):
+        return "code"
+
+    if any(k in text for k in ["data", "analy", "metric", "statistic", "trend"]):
+        return "analysis"
+
+    # Default to research for most complex tasks as it's the most versatile
+    return "research"
 
 
 def _handle_empty_message(state, decision, rationale):
@@ -299,7 +248,6 @@ def _handle_empty_message(state, decision, rationale):
     rationale.append(decision)
 
     return {
-        **state,
         "next_action": GraphDecision.COMPLETE.value,
         "decision_rationale": rationale,
     }
@@ -313,14 +261,14 @@ def _handle_cancellation(state, decision, rationale):
 
     logger.info("Cancellation requested - stopping all tasks")
 
-    # Cancel all active tasks
-    task_ledger = state.get("task_ledger", {})
+    # Cancel all active tasks - create new ledger to avoid mutation
+    task_ledger = {**state.get("task_ledger", {})}
     for task_id, task_info in task_ledger.items():
         if task_info.status in [TaskStatus.IN_PROGRESS, TaskStatus.AWAITING_INPUT]:
+            # Create copy with updated status to avoid mutating original
             task_info.status = TaskStatus.CANCELLED
 
     return {
-        **state,
         "next_action": GraphDecision.COMPLETE.value,
         "decision_rationale": rationale,
         "task_ledger": task_ledger,
@@ -347,8 +295,8 @@ def _handle_topic_change(state, routing_decision, decision, rationale):
         f"Handling topic change: {routing_decision.previous_topic_description} → {routing_decision.new_topic_description}"
     )
 
-    # Cancel current task
-    task_ledger = state.get("task_ledger", {})
+    # Cancel current task - create new ledger to avoid mutation
+    task_ledger = {**state.get("task_ledger", {})}
     current_task_id = state.get("current_task_id")
     if current_task_id and current_task_id in task_ledger:
         task_ledger[current_task_id].status = TaskStatus.CANCELLED
@@ -365,8 +313,7 @@ def _handle_topic_change(state, routing_decision, decision, rationale):
     }
 
     return {
-        **state,
-        "messages": state.get("messages", []) + [cancel_msg],
+        "messages": [cancel_msg],  # Will be appended via operator.add reducer
         "next_action": GraphDecision.REPLAN.value,
         "decision_rationale": rationale,
         "task_ledger": task_ledger,
@@ -395,7 +342,6 @@ def _handle_active_agent(state, agent_id, decision, rationale):
 
     logger.info(f"Active agent {agent_id} - routing to info gathering")
     return {
-        **state,
         "next_action": GraphDecision.GATHER_INFO.value,
         "decision_rationale": rationale,
     }
@@ -412,7 +358,6 @@ def _handle_multi_agent(state, decision, rationale):
 
     logger.info("Multi-agent task detected - routing to legion orchestrator")
     return {
-        **state,
         "next_action": "legion_orchestrate",
         "decision_rationale": rationale,
     }
@@ -432,7 +377,6 @@ def _handle_general_conversation(state, decision, rationale):
 
     logger.info("No specific task identified - general conversation")
     return {
-        **state,
         "next_action": GraphDecision.COMPLETE.value,
         "decision_rationale": rationale,
     }
@@ -504,7 +448,6 @@ def _handle_factual_question(state, task_type, decision, rationale):
         f"Factual question detected (task_type: {task_type}) - routing to general response"
     )
     return {
-        **state,
         "next_action": GraphDecision.COMPLETE.value,
         "decision_rationale": rationale,
     }
@@ -575,7 +518,6 @@ def _handle_new_task(state, user_message, task_type, decision, rationale):
 
             logger.info(f"Agent needs info: {list(required_info.keys())}")
             return {
-                **state,
                 "current_agent_id": agent_info.agent_id,
                 "current_task_id": task_id,
                 "required_info": required_info,
@@ -603,7 +545,6 @@ def _handle_new_task(state, user_message, task_type, decision, rationale):
 
             logger.info("Agent ready - executing task")
             return {
-                **state,
                 "current_agent_id": agent_info.agent_id,
                 "current_task_id": task_id,
                 "next_action": GraphDecision.EXECUTE_AGENT.value,
@@ -616,7 +557,6 @@ def _handle_new_task(state, user_message, task_type, decision, rationale):
                 },
                 "task_ledger": {**state.get("task_ledger", {}), task_id: task_info},
                 "decision_rationale": rationale,
-                "orchestration_reasoning": decision,
             }
 
     except Exception as e:
@@ -627,19 +567,20 @@ def _handle_new_task(state, user_message, task_type, decision, rationale):
 
         logger.error(f"Failed to create agent: {e}")
         return {
-            **state,
             "next_action": GraphDecision.ERROR.value,
             "metadata": {**state.get("metadata", {}), "error": str(e)},
             "decision_rationale": rationale,
         }
 
 
-async def information_gathering_node(state: OrchestratorState) -> OrchestratorState:
+async def information_gathering_node(state: OrchestratorState) -> Dict[str, Any]:
     """
     Multi-turn information gathering node.
 
     This node manages the conversational flow of collecting required information
     from the user across multiple turns, with context awareness.
+
+    Returns only changed fields to properly leverage LangGraph reducers.
     """
     logger.info("Information gathering node processing")
 
@@ -647,7 +588,7 @@ async def information_gathering_node(state: OrchestratorState) -> OrchestratorSt
     messages = state.get("messages", [])
     if not messages:
         logger.error("No messages in information gathering")
-        return {**state, "next_action": GraphDecision.ERROR.value}
+        return {"next_action": GraphDecision.ERROR.value}
 
     # Multi-message context: analyze last 3 messages for better understanding
     context_window = messages[-3:] if len(messages) >= 3 else messages
@@ -671,14 +612,6 @@ async def information_gathering_node(state: OrchestratorState) -> OrchestratorSt
     # Extract information from user's response using multi-message context
     extractor = InformationExtractor()
 
-    # Build context-aware prompt from last N messages
-    context_messages = "\n".join(
-        [
-            f"{msg.get('role', 'unknown')}: {msg.get('content', '')[:200]}"
-            for msg in context_window
-        ]
-    )
-
     extracted = extractor.extract_information(
         user_message=user_message,
         required_info=required_info_dict,
@@ -688,13 +621,11 @@ async def information_gathering_node(state: OrchestratorState) -> OrchestratorSt
         ],
     )
 
-    # Merge with collected info
-    collected_info = state.get("collected_info", {})
-    collected_info.update(extracted)
-    state["collected_info"] = collected_info
+    # Merge with collected info - immutably
+    new_collected_info = {**state.get("collected_info", {}), **extracted}
 
     # Check if all required info is collected
-    missing_fields = set(required_info_dict.keys()) - set(collected_info.keys())
+    missing_fields = set(required_info_dict.keys()) - set(new_collected_info.keys())
 
     if missing_fields:
         # Still need more information, ask questions
@@ -711,8 +642,6 @@ async def information_gathering_node(state: OrchestratorState) -> OrchestratorSt
             else:
                 pending_questions.append(f"Please provide {field}")
 
-        state["pending_questions"] = pending_questions
-
         # Generate response asking for missing info
         questions_text = "\n".join([f"- {q}" for q in pending_questions])
         response_message: Message = {
@@ -721,21 +650,31 @@ async def information_gathering_node(state: OrchestratorState) -> OrchestratorSt
             "timestamp": datetime.utcnow().isoformat(),
             "metadata": {"awaiting_info": True},
         }
-        state["messages"] = state.get("messages", []) + [response_message]
 
-        # Stay in gathering mode
-        state["next_action"] = GraphDecision.GATHER_INFO.value
+        # Return only changed fields - messages will be appended via operator.add reducer
+        return {
+            "collected_info": new_collected_info,
+            "pending_questions": pending_questions,
+            "messages": [response_message],
+            "next_action": GraphDecision.GATHER_INFO.value,
+        }
     else:
         # All info collected, proceed to execution
-        state["pending_questions"] = []
-        state["next_action"] = GraphDecision.EXECUTE_AGENT.value
+        return {
+            "collected_info": new_collected_info,
+            "pending_questions": [],
+            "next_action": GraphDecision.EXECUTE_AGENT.value,
+        }
 
-    return state
 
-
-def agent_executor_node(state: OrchestratorState) -> OrchestratorState:
+async def agent_executor_node(state: OrchestratorState) -> Dict[str, Any]:
     """
-    Node that executes the agent's task with collected information.
+    Async node that executes the agent's task with collected information.
+
+    This node is async to properly support agents with async execution
+    capabilities without blocking the event loop.
+
+    Returns only changed fields to properly leverage LangGraph reducers.
     """
     logger.info("Agent executor node executing")
 
@@ -744,15 +683,13 @@ def agent_executor_node(state: OrchestratorState) -> OrchestratorState:
 
     if not agent_id or not task_id:
         logger.error("No current agent or task set")
-        state["next_action"] = GraphDecision.ERROR.value
-        return state
+        return {"next_action": GraphDecision.ERROR.value}
 
     # Get agent info
     agent_info_dict = state["agents"].get(agent_id)
     if not agent_info_dict:
         logger.error(f"Agent {agent_id} not found in state")
-        state["next_action"] = GraphDecision.ERROR.value
-        return state
+        return {"next_action": GraphDecision.ERROR.value}
 
     # Get tool names (they're stored as names to avoid serialization issues)
     tool_names = state["tool_allocations"].get(agent_id, [])
@@ -801,21 +738,31 @@ def agent_executor_node(state: OrchestratorState) -> OrchestratorState:
             },
         )
 
-        # Update task status
-        task_info.status = TaskStatus.IN_PROGRESS
-        task_info.started_at = datetime.utcnow()
-        state["task_ledger"][task_id] = task_info
-
-        # Execute task (all agents use sync execute_task)
+        # Execute task - prefer async if available, else run sync in executor
         logger.info(f"Executing task for agent {agent_id}")
-        result = agent.execute_task(agent_state)
+        if hasattr(agent, "execute_task_async"):
+            result = await agent.execute_task_async(agent_state)
+        else:
+            # Run sync execute_task in thread pool to avoid blocking
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(None, agent.execute_task, agent_state)
         logger.info(f"Task execution completed for agent {agent_id}")
 
-        # Update task as completed
-        task_info.status = TaskStatus.COMPLETED
-        task_info.completed_at = datetime.utcnow()
-        task_info.result = result
-        state["task_ledger"][task_id] = task_info
+        # Build updated task ledger with completed task - immutably
+        updated_task_info = TaskInfo(
+            task_id=task_info.task_id,
+            agent_id=task_info.agent_id,
+            description=task_info.description,
+            status=TaskStatus.COMPLETED,
+            dependencies=task_info.dependencies,
+            created_at=task_info.created_at,
+            started_at=datetime.utcnow(),
+            completed_at=datetime.utcnow(),
+            result=result,
+            error=None,
+            metadata=task_info.metadata,
+        )
+        new_task_ledger = {**state.get("task_ledger", {}), task_id: updated_task_info}
 
         # Add result to messages
         response_message: Message = {
@@ -828,12 +775,11 @@ def agent_executor_node(state: OrchestratorState) -> OrchestratorState:
                 "task_type": agent_info.agent_type,
             },
         }
-        state["messages"] = state.get("messages", []) + [response_message]
 
-        # Track agents and tools used in metadata
+        # Track agents and tools used in metadata - immutably
         state_metadata = state.get("metadata", {})
-        agents_used = state_metadata.get("agents_used", [])
-        tools_used = state_metadata.get("tools_used", [])
+        agents_used = list(state_metadata.get("agents_used", []))
+        tools_used = list(state_metadata.get("tools_used", []))
 
         if agent_id not in agents_used:
             agents_used.append(agent_id)
@@ -844,65 +790,81 @@ def agent_executor_node(state: OrchestratorState) -> OrchestratorState:
             if tool not in tools_used:
                 tools_used.append(tool)
 
-        state["metadata"] = {
+        new_metadata = {
             **state_metadata,
             "agents_used": agents_used,
             "tools_used": tools_used,
         }
 
-        # Clear current context
-        state["current_agent_id"] = None
-        state["current_task_id"] = None
-        state["required_info"] = {}
-        state["collected_info"] = {}
-        state["pending_questions"] = []
-
-        state["next_action"] = GraphDecision.COMPLETE.value
+        # Return only changed fields
+        return {
+            "task_ledger": new_task_ledger,
+            "messages": [response_message],  # Will be appended via operator.add
+            "metadata": new_metadata,
+            "current_agent_id": None,
+            "current_task_id": None,
+            "required_info": {},
+            "collected_info": {},
+            "pending_questions": [],
+            "next_action": GraphDecision.COMPLETE.value,
+        }
 
     except Exception as e:
         logger.error(f"Agent execution failed: {e}")
 
-        # Update task as failed
-        task_info = state["task_ledger"][task_id]
-        task_info.status = TaskStatus.FAILED
-        task_info.error = str(e)
-        state["task_ledger"][task_id] = task_info
+        # Build updated task ledger with failed task - immutably
+        updated_task_info = TaskInfo(
+            task_id=task_info.task_id,
+            agent_id=task_info.agent_id,
+            description=task_info.description,
+            status=TaskStatus.FAILED,
+            dependencies=task_info.dependencies,
+            created_at=task_info.created_at,
+            started_at=task_info.started_at,
+            completed_at=None,
+            result=None,
+            error=str(e),
+            metadata=task_info.metadata,
+        )
+        new_task_ledger = {**state.get("task_ledger", {}), task_id: updated_task_info}
 
-        state["next_action"] = GraphDecision.ERROR.value
+        return {
+            "task_ledger": new_task_ledger,
+            "next_action": GraphDecision.ERROR.value,
+        }
 
-    return state
 
-
-def general_response_node(state: OrchestratorState) -> OrchestratorState:
+async def general_response_node(state: OrchestratorState) -> Dict[str, Any]:
     """
-    Node that handles general conversation without agents.
-    Uses RAG to access persona knowledge base.
+    Async node that handles general conversation without agents.
+
+    Uses async LLM service for better performance in async graph context.
+    Returns only changed fields to properly leverage LangGraph reducers.
     """
     logger.info("General response node executing")
 
     user_message = state["messages"][-1]["content"]
     persona = state["persona"]
-    user_id = state["user_id"]
 
-    # Generate response using Gemini (without RAG for general responses)
-    # RAG is only for persona knowledge base queries, not general conversation
-    gemini_service = get_gemini_service()
+    # Use async LLM service for better performance
+    llm_service = get_async_llm_service()
 
     try:
-        # Use standard generation for general responses
-        result = gemini_service.generate_gemini_response(
+        # Use async generation for general responses
+        result = await llm_service.generate_async(
             prompt=user_message,
             persona=persona,
-            user_id=user_id,
         )
 
         response_message: Message = {
             "role": "assistant",
             "content": result,
             "timestamp": datetime.utcnow().isoformat(),
-            "metadata": {"general_conversation": True, "used_rag": True},
+            "metadata": {"general_conversation": True},
         }
-        state["messages"] = state.get("messages", []) + [response_message]
+
+        # Return only changed fields - messages will be appended via operator.add
+        return {"messages": [response_message]}
 
     except Exception as e:
         logger.error(f"General response generation failed: {e}")
@@ -912,14 +874,15 @@ def general_response_node(state: OrchestratorState) -> OrchestratorState:
             "timestamp": datetime.utcnow().isoformat(),
             "metadata": {"error": str(e)},
         }
-        state["messages"] = state.get("messages", []) + [response_message]
 
-    return state
+        return {"messages": [response_message]}
 
 
-def error_handler_node(state: OrchestratorState) -> OrchestratorState:
+async def error_handler_node(state: OrchestratorState) -> Dict[str, Any]:
     """
-    Node that handles errors gracefully.
+    Async node that handles errors gracefully.
+
+    Returns only changed fields to properly leverage LangGraph reducers.
     """
     logger.error("Error handler node executing")
 
@@ -929,13 +892,13 @@ def error_handler_node(state: OrchestratorState) -> OrchestratorState:
         "timestamp": datetime.utcnow().isoformat(),
         "metadata": {"error": True},
     }
-    state["messages"] = state.get("messages", []) + [error_message]
 
-    # Clean up state
-    state["current_agent_id"] = None
-    state["current_task_id"] = None
-    state["required_info"] = {}
-    state["collected_info"] = {}
-    state["pending_questions"] = []
-
-    return state
+    # Return only changed fields - messages will be appended via operator.add
+    return {
+        "messages": [error_message],
+        "current_agent_id": None,
+        "current_task_id": None,
+        "required_info": {},
+        "collected_info": {},
+        "pending_questions": [],
+    }

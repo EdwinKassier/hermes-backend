@@ -1,16 +1,24 @@
 """Unit tests for RoutingIntelligence service."""
 
+import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.hermes.legion.intelligence.routing_intelligence import (
+# Mock GeminiService before imports that depend on it
+mock_gemini_module = MagicMock()
+sys.modules["app.shared.services.GeminiService"] = mock_gemini_module
+mock_gemini_module.GeminiService = MagicMock()
+
+from app.hermes.legion.intelligence.routing_intelligence import (  # noqa: E402
     ConversationPhase,
     RiskLevel,
     RoutingAction,
     RoutingDecision,
 )
-from app.hermes.legion.intelligence.routing_service import RoutingIntelligence
+from app.hermes.legion.intelligence.routing_service import (  # noqa: E402
+    RoutingIntelligence,
+)
 
 
 @pytest.fixture

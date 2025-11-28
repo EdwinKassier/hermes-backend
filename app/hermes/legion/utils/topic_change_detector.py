@@ -91,6 +91,8 @@ class TopicChangeDetector:
                 ]
             )
 
+        context_section = f"RECENT CONVERSATION:\n{context}\n" if context else ""
+
         return f"""Analyze if the user's new message represents a topic change from their current task.
 
 CURRENT TASK:
@@ -99,7 +101,7 @@ CURRENT TASK:
 NEW USER MESSAGE:
 {new_message}
 
-{f"RECENT CONVERSATION:\\n{context}\\n" if context else ""}
+{context_section}
 
 Determine:
 1. Is this a topic change? (YES/NO)

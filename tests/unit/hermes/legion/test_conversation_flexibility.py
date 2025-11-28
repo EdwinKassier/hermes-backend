@@ -1,7 +1,7 @@
 """Unit tests for conversation flexibility features."""
 
 from datetime import datetime
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
@@ -12,6 +12,58 @@ from app.hermes.legion.state.graph_state import (
     TaskInfo,
     TaskStatus,
 )
+
+
+@pytest.fixture(autouse=True)
+def mock_dependencies():
+    """Mock all service dependencies to avoid import errors."""
+    with (
+        patch(
+            "app.hermes.legion.utils.conversation_memory.get_async_llm_service"
+        ) as mock_memory_llm,
+        patch(
+            "app.hermes.legion.intelligence.routing_service.get_async_llm_service"
+        ) as mock_get_llm,
+        patch(
+            "app.hermes.legion.parallel.task_decomposer.get_gemini_service"
+        ) as mock_decomposer_service,
+        patch(
+            "app.hermes.legion.nodes.graph_nodes.get_gemini_service"
+        ) as mock_nodes_service,
+        patch(
+            "app.hermes.legion.nodes.graph_nodes.get_async_llm_service"
+        ) as mock_nodes_async_service,
+        patch(
+            "app.hermes.legion.orchestrator.get_gemini_service"
+        ) as mock_orchestrator_service,
+        patch(
+            "app.hermes.legion.agents.research_agent.get_gemini_service"
+        ) as mock_research_service,
+        patch(
+            "app.hermes.legion.agents.code_agent.get_gemini_service"
+        ) as mock_code_service,
+        patch(
+            "app.hermes.legion.agents.analysis_agent.get_gemini_service"
+        ) as mock_analysis_service,
+        patch(
+            "app.hermes.legion.agents.data_agent.get_gemini_service"
+        ) as mock_data_service,
+    ):
+        mock_llm_service = AsyncMock()
+        mock_get_llm.return_value = mock_llm_service
+        mock_nodes_async_service.return_value = mock_llm_service
+        mock_memory_llm.return_value = mock_llm_service
+
+        mock_gemini = Mock()
+        mock_decomposer_service.return_value = mock_gemini
+        mock_nodes_service.return_value = mock_gemini
+        mock_orchestrator_service.return_value = mock_gemini
+        mock_research_service.return_value = mock_gemini
+        mock_code_service.return_value = mock_gemini
+        mock_analysis_service.return_value = mock_gemini
+        mock_data_service.return_value = mock_gemini
+
+        yield
 
 
 @pytest.fixture

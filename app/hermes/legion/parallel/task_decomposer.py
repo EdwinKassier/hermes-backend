@@ -2,7 +2,7 @@
 
 import logging
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from app.shared.utils.service_loader import get_gemini_service
 
@@ -265,18 +265,59 @@ Respond with ONLY the JSON, no other text."""
         self, subtasks: List[Dict[str, str]]
     ) -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
         """
-        Separate subtasks into parallel (independent) and sequential (dependent).
+        DEPRECATED: Use analyze_task_dependencies() for proper dependency detection.
 
-        Currently, all subtasks are treated as parallel since they work on
-        different aspects of the same query.
+        This method is kept for backwards compatibility but now delegates to
+        the synchronous fallback of dependency detection.
 
         Args:
             subtasks: List of decomposed subtasks
 
         Returns:
             Tuple of (parallel_tasks, sequential_tasks)
-            Currently sequential_tasks is always empty
         """
-        # For now, treat all as parallel
-        # Future enhancement: detect dependencies between tasks
-        return subtasks, []
+        # Use simple heuristic for sync context
+        parallel_tasks = []
+        sequential_tasks = []
+
+        for i, task in enumerate(subtasks):
+            desc_lower = task.get("description", "").lower()
+
+            # Detect sequential indicators
+            sequential_indicators = [
+                "then ",
+                "after ",
+                "based on ",
+                "using the ",
+                "with the results",
+                "from the previous",
+                "analyze the ",  # Often depends on data gathering
+            ]
+
+            is_sequential = any(ind in desc_lower for ind in sequential_indicators)
+
+            if is_sequential and parallel_tasks:
+                # This task depends on previous, make it sequential
+                sequential_tasks.append(task)
+            else:
+                parallel_tasks.append(task)
+
+        return parallel_tasks, sequential_tasks
+
+    async def analyze_task_dependencies(
+        self, subtasks: List[Dict[str, str]]
+    ) -> Dict[str, Any]:
+        """
+        Analyze task dependencies using AI-powered detection.
+
+        This is the recommended method for dependency-aware task execution.
+
+        Args:
+            subtasks: List of decomposed subtasks
+
+        Returns:
+            Dictionary with execution_levels, tasks, and dependency information
+        """
+        from .task_dependencies import analyze_and_structure_tasks
+
+        return await analyze_and_structure_tasks(subtasks)
