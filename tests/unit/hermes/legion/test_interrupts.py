@@ -170,7 +170,7 @@ class TestLegionInterrupts:
         # Verify execution continued
         assert response.content == "Task completed successfully"
         assert response.metadata["legion_mode"] is True
-        assert response.metadata["interrupted"] is False
+        assert response.metadata["status"]["interrupted"] is False
 
     async def test_resume_with_modification(self, user_identity, legion_graph_service):
         """Test resuming with modified worker plan."""

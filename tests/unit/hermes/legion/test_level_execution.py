@@ -445,8 +445,10 @@ class TestLegionDispatchNode:
 
         result = await legion_dispatch_node(state)
 
-        # Should return empty dict (pass-through)
-        assert result == {}
+        # Should return execution_path (minimal update)
+        assert "execution_path" in result
+        assert len(result["execution_path"]) == 1
+        assert result["execution_path"][0]["node"] == "legion_dispatch"
 
 
 @pytest.mark.unit

@@ -117,6 +117,9 @@ async def orchestrator_node(state: OrchestratorState) -> OrchestratorState:
             "next_action": GraphDecision.COMPLETE.value,
             "decision_rationale": decision_rationale,
             "metadata": state_metadata,
+            "execution_path": [
+                {"node": "orchestrator", "timestamp": datetime.now().isoformat()}
+            ],
         }
 
     # Handle GATHER_INFO action from routing intelligence
@@ -132,6 +135,9 @@ async def orchestrator_node(state: OrchestratorState) -> OrchestratorState:
             "next_action": GraphDecision.GATHER_INFO.value,
             "decision_rationale": decision_rationale,
             "metadata": state_metadata,
+            "execution_path": [
+                {"node": "orchestrator", "timestamp": datetime.now().isoformat()}
+            ],
         }
 
     # Handle ORCHESTRATE action from routing intelligence
@@ -160,6 +166,9 @@ async def orchestrator_node(state: OrchestratorState) -> OrchestratorState:
                 "next_action": "legion_orchestrate",
                 "decision_rationale": decision_rationale,
                 "metadata": state_metadata,
+                "execution_path": [
+                    {"node": "orchestrator", "timestamp": datetime.now().isoformat()}
+                ],
             }
 
         # Single agent orchestration - infer agent type from routing decision
@@ -176,6 +185,9 @@ async def orchestrator_node(state: OrchestratorState) -> OrchestratorState:
                 "next_action": GraphDecision.COMPLETE.value,
                 "decision_rationale": decision_rationale,
                 "metadata": state_metadata,
+                "execution_path": [
+                    {"node": "orchestrator", "timestamp": datetime.now().isoformat()}
+                ],
             }
 
         # Create agent for single-agent orchestration
@@ -194,6 +206,9 @@ async def orchestrator_node(state: OrchestratorState) -> OrchestratorState:
             "next_action": GraphDecision.ERROR.value,
             "decision_rationale": decision_rationale,
             "metadata": state_metadata,
+            "execution_path": [
+                {"node": "orchestrator", "timestamp": datetime.now().isoformat()}
+            ],
         }
 
     # Fallback: Should never reach here if routing intelligence works correctly
@@ -211,6 +226,9 @@ async def orchestrator_node(state: OrchestratorState) -> OrchestratorState:
         "next_action": GraphDecision.COMPLETE.value,
         "decision_rationale": decision_rationale,
         "metadata": state_metadata,
+        "execution_path": [
+            {"node": "orchestrator", "timestamp": datetime.now().isoformat()}
+        ],
     }
 
 
@@ -533,6 +551,9 @@ def _handle_new_task(state, user_message, task_type, decision, rationale):
                 },
                 "task_ledger": {**state.get("task_ledger", {}), task_id: task_info},
                 "decision_rationale": rationale,
+                "execution_path": [
+                    {"node": "orchestrator", "timestamp": datetime.now().isoformat()}
+                ],
             }
         else:
             # Can execute directly
@@ -557,6 +578,9 @@ def _handle_new_task(state, user_message, task_type, decision, rationale):
                 },
                 "task_ledger": {**state.get("task_ledger", {}), task_id: task_info},
                 "decision_rationale": rationale,
+                "execution_path": [
+                    {"node": "orchestrator", "timestamp": datetime.now().isoformat()}
+                ],
             }
 
     except Exception as e:
@@ -570,6 +594,9 @@ def _handle_new_task(state, user_message, task_type, decision, rationale):
             "next_action": GraphDecision.ERROR.value,
             "metadata": {**state.get("metadata", {}), "error": str(e)},
             "decision_rationale": rationale,
+            "execution_path": [
+                {"node": "orchestrator", "timestamp": datetime.now().isoformat()}
+            ],
         }
 
 
@@ -657,6 +684,12 @@ async def information_gathering_node(state: OrchestratorState) -> Dict[str, Any]
             "pending_questions": pending_questions,
             "messages": [response_message],
             "next_action": GraphDecision.GATHER_INFO.value,
+            "execution_path": [
+                {
+                    "node": "information_gathering",
+                    "timestamp": datetime.now().isoformat(),
+                }
+            ],
         }
     else:
         # All info collected, proceed to execution
@@ -664,6 +697,12 @@ async def information_gathering_node(state: OrchestratorState) -> Dict[str, Any]
             "collected_info": new_collected_info,
             "pending_questions": [],
             "next_action": GraphDecision.EXECUTE_AGENT.value,
+            "execution_path": [
+                {
+                    "node": "information_gathering",
+                    "timestamp": datetime.now().isoformat(),
+                }
+            ],
         }
 
 
@@ -799,8 +838,11 @@ async def agent_executor_node(state: OrchestratorState) -> Dict[str, Any]:
         # Return only changed fields
         return {
             "task_ledger": new_task_ledger,
-            "messages": [response_message],  # Will be appended via operator.add
+            "messages": [response_message],
             "metadata": new_metadata,
+            "execution_path": [
+                {"node": "agent_executor", "timestamp": datetime.now().isoformat()}
+            ],
             "current_agent_id": None,
             "current_task_id": None,
             "required_info": {},

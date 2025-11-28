@@ -187,6 +187,12 @@ async def legion_orchestrator_node(state: OrchestratorState) -> Dict[str, Any]:
                     )
                 ],
                 "metadata": {**state.get("metadata", {}), "legion_cancelled": True},
+                "execution_path": [
+                    {
+                        "node": "legion_orchestrator",
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                ],
             }
 
         elif action == "modify":
@@ -221,7 +227,11 @@ async def legion_orchestrator_node(state: OrchestratorState) -> Dict[str, Any]:
         "total_execution_levels": total_levels,
         "level_results": {},  # Initialize per-level results storage
         "fail_on_level_error": fail_on_level_error,
+        "fail_on_level_error": fail_on_level_error,
         "metadata": {**state.get("metadata", {}), "legion_worker_plans": workers},
+        "execution_path": [
+            {"node": "legion_orchestrator", "timestamp": datetime.now().isoformat()}
+        ],
     }
 
 
@@ -256,7 +266,11 @@ async def legion_dispatch_node(state: OrchestratorState) -> Dict[str, Any]:
     )
 
     # Return minimal update - the routing edge will handle actual dispatch
-    return {}
+    return {
+        "execution_path": [
+            {"node": "legion_dispatch", "timestamp": datetime.now().isoformat()}
+        ],
+    }
 
 
 # --- Legion Worker Node ---
@@ -511,7 +525,14 @@ async def legion_level_complete_node(state: OrchestratorState) -> Dict[str, Any]
                 "stopped_at_level": current_level,
                 "failed_workers": failed_workers,
                 "dispatched_worker_ids": dispatched_ids,
+                "dispatched_worker_ids": dispatched_ids,
             },
+            "execution_path": [
+                {
+                    "node": "legion_level_complete",
+                    "timestamp": datetime.now().isoformat(),
+                }
+            ],
         }
 
     # If not all workers in this level are complete, stay at this level
@@ -529,7 +550,14 @@ async def legion_level_complete_node(state: OrchestratorState) -> Dict[str, Any]
                 **state.get("metadata", {}),
                 "dispatched_worker_ids": dispatched_ids,
                 "pending_workers_in_level": True,
+                "pending_workers_in_level": True,
             },
+            "execution_path": [
+                {
+                    "node": "legion_level_complete",
+                    "timestamp": datetime.now().isoformat(),
+                }
+            ],
         }
 
     # All workers in level complete - increment to next level
@@ -542,7 +570,11 @@ async def legion_level_complete_node(state: OrchestratorState) -> Dict[str, Any]
             **state.get("metadata", {}),
             "dispatched_worker_ids": [],  # Reset for next level
             "pending_workers_in_level": False,
+            "pending_workers_in_level": False,
         },
+        "execution_path": [
+            {"node": "legion_level_complete", "timestamp": datetime.now().isoformat()}
+        ],
     }
 
 
@@ -621,6 +653,9 @@ async def legion_synthesis_node(state: OrchestratorState) -> Dict[str, Any]:
                     metadata={"legion_strategy": strategy_name, "no_results": True},
                 )
             ],
+            "execution_path": [
+                {"node": "legion_synthesis", "timestamp": datetime.now().isoformat()}
+            ],
         }
 
     # Validate results before synthesis
@@ -649,6 +684,9 @@ async def legion_synthesis_node(state: OrchestratorState) -> Dict[str, Any]:
                         "issues": validation_issues,
                     },
                 )
+            ],
+            "execution_path": [
+                {"node": "legion_synthesis", "timestamp": datetime.now().isoformat()}
             ],
         }
 
@@ -697,6 +735,9 @@ async def legion_synthesis_node(state: OrchestratorState) -> Dict[str, Any]:
     return {
         "messages": [response_message],
         "next_action": GraphDecision.COMPLETE.value,
+        "execution_path": [
+            {"node": "legion_synthesis", "timestamp": datetime.now().isoformat()}
+        ],
     }
 
 

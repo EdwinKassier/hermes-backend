@@ -191,6 +191,7 @@ class TestLegionGraphService:
                 {"role": "assistant", "content": "Response"},
             ],
             "decision_rationale": mock_rationale,
+            "legion_strategy": "parallel",  # Add strategy to trigger parallel mode
             "metadata": {
                 "agents_used": ["agent1", "agent2"],
                 "tools_used": ["tool1"],
@@ -210,12 +211,15 @@ class TestLegionGraphService:
             "Test message", user_identity
         )
 
-        # Verify rationale in metadata
-        assert "orchestration_rationale" in result.metadata
-        rationale = result.metadata["orchestration_rationale"]
-        assert rationale["execution_mode"] == "parallel"
-        assert len(rationale["agents"]) == 2
-        assert "Multi-agent parallel execution" in rationale["orchestration_structure"]
+        # Verify rationale in metadata - now in 'rationale' block
+        assert "rationale" in result.metadata
+        rationale = result.metadata["rationale"]
+        assert "Multi-agent parallel execution" in rationale["summary"]
+
+        # Verify execution block
+        assert "execution" in result.metadata
+        execution = result.metadata["execution"]
+        assert execution["mode"] == "parallel"
 
     async def test_error_handling(self, legion_graph_service, user_identity):
         """Test error handling during graph execution."""

@@ -156,6 +156,141 @@ class LegionGraphService:
 
         return toolset_info
 
+    def _build_structured_metadata(
+        self, result: dict, start_time: float, duration_ms: float
+    ) -> dict:
+        """Build structured metadata in hierarchical format for UI rendering.
+
+        Args:
+            result: Final graph state
+            start_time: Orchestration start time
+            duration_ms: Total duration in milliseconds
+
+        Returns:
+            Structured metadata dictionary
+        """
+        from datetime import datetime
+
+        state_metadata = result.get("metadata", {})
+        agents_used = state_metadata.get("agents_used", [])
+        tools_used = state_metadata.get("tools_used", [])
+        execution_path = result.get("execution_path", [])
+        level_results = result.get("level_results", {})
+        legion_strategy = result.get("legion_strategy")
+        decision_rationale = result.get("decision_rationale", [])
+
+        # Determine execution mode
+        if legion_strategy:
+            mode = "parallel"
+        elif agents_used:
+            mode = "single-agent"
+        else:
+            mode = "direct"
+
+        # Build status block
+        status = {
+            "code": "completed",
+            "duration_ms": duration_ms,
+            "timestamp": datetime.now().isoformat(),
+            "interrupted": False,
+            "timed_out": False,
+        }
+
+        # Build execution block
+        execution = {
+            "mode": mode,
+            "trace": execution_path,
+        }
+
+        # Add strategy for parallel execution
+        if legion_strategy:
+            execution["strategy"] = legion_strategy
+
+        # Add levels for parallel execution
+        if level_results:
+            levels = []
+            for level_id in sorted(level_results.keys()):
+                level_data = level_results[level_id]
+                level_workers = level_data.get("workers", {})
+
+                workers = []
+                for worker_id, worker_data in level_workers.items():
+                    workers.append(
+                        {
+                            "id": worker_id,
+                            "role": worker_data.get("role", "unknown"),
+                            "status": worker_data.get("status", "unknown"),
+                            "result_summary": (
+                                worker_data.get("result", "")[:200] + "..."
+                                if len(worker_data.get("result", "")) > 200
+                                else worker_data.get("result", "")
+                            ),
+                            "tools_used": [],  # Could extract from worker metadata if available
+                            "duration_ms": int(
+                                worker_data.get("duration_seconds", 0) * 1000
+                            ),
+                        }
+                    )
+
+                levels.append(
+                    {
+                        "level_id": level_id,
+                        "status": (
+                            "completed"
+                            if level_data.get("failed_count", 0) == 0
+                            else "partial"
+                        ),
+                        "workers": workers,
+                    }
+                )
+
+            execution["levels"] = levels
+
+            # Calculate parallel execution metrics
+            total_duration = sum(
+                worker.get("duration_seconds", 0)
+                for level in level_results.values()
+                for worker in level.get("workers", {}).values()
+            )
+            wall_time = duration_ms / 1000.0
+            total_workers = sum(
+                len(level.get("workers", {})) for level in level_results.values()
+            )
+
+            if wall_time > 0 and total_workers > 0:
+                efficiency = min(1.0, total_duration / (wall_time * total_workers))
+                execution["metrics"] = {
+                    "total_duration_seconds": total_duration,
+                    "wall_time_seconds": wall_time,
+                    "parallel_efficiency": round(efficiency, 2),
+                    "worker_count": total_workers,
+                }
+
+        # Build rationale block
+        rationale = {}
+        if decision_rationale:
+            latest_decision = decision_rationale[-1] if decision_rationale else {}
+            analysis = latest_decision.get("analysis", {})
+            decisions = latest_decision.get("decisions", {})
+
+            rationale["summary"] = self._get_orchestration_structure(
+                analysis, decisions
+            )
+            rationale["decisions"] = decision_rationale
+
+        # Build usage block
+        usage = {
+            "agents": agents_used,
+            "tools": tools_used,
+        }
+
+        return {
+            "status": status,
+            "execution": execution,
+            "rationale": rationale,
+            "usage": usage,
+        }
+
     async def process_request(
         self,
         text: str,
@@ -465,6 +600,8 @@ class LegionGraphService:
                         "fail_on_level_error": False,
                         # Conversation memory
                         "conversation_summaries": conversation_summaries,
+                        # Execution path tracking
+                        "execution_path": [],
                     }
 
                 # Create graph with this checkpointer
@@ -569,51 +706,13 @@ class LegionGraphService:
                     if last_message["role"] == "assistant":
                         response_content = last_message["content"]
 
-                        # Create metadata - extract from state metadata
-                        state_metadata = result.get("metadata", {})
-                        metadata = {
-                            "interrupted": False,
-                            "timed_out": False,
-                            "agents_used": state_metadata.get("agents_used", []),
-                            "tools_used": state_metadata.get("tools_used", []),
-                            "execution_path": result.get("execution_path", []),
-                        }
-
-                        # Add single unified orchestration rationale
-                        if (
-                            "decision_rationale" in result
-                            and result["decision_rationale"]
-                        ):
-                            decision_rationale = result["decision_rationale"]
-
-                            # Build orchestration rationale
-                            orchestration_rationale = (
-                                self._build_orchestration_rationale(
-                                    decision_rationale,
-                                    metadata.get("agents_used", []),
-                                    metadata.get("tools_used", []),
-                                    result.get("metadata", {}).get(
-                                        "parallel_execution_metrics"
-                                    ),
-                                )
-                            )
-
-                            metadata["orchestration_rationale"] = (
-                                orchestration_rationale
-                            )
-
-                        # Add performance metrics if available
-                        if "parallel_execution_metrics" in result.get("metadata", {}):
-                            metadata["parallel_execution_metrics"] = result["metadata"][
-                                "parallel_execution_metrics"
-                            ]
-
-                        # Add level execution info if available
-                        if "level_results" in result and result["level_results"]:
-                            metadata["level_execution"] = {
-                                "levels_completed": len(result["level_results"]),
-                                "total_levels": result.get("total_execution_levels", 1),
-                            }
+                        # Create structured metadata
+                        duration_ms = (time.time() - start_time) * 1000
+                        metadata = self._build_structured_metadata(
+                            result=result,
+                            start_time=start_time,
+                            duration_ms=duration_ms,
+                        )
 
                         # Log successful completion
                         duration_ms = (time.time() - start_time) * 1000

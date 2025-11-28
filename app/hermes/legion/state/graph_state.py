@@ -158,6 +158,9 @@ class OrchestratorState(TypedDict):
 
     # Metadata (execution metrics, etc.)
     metadata: Dict[str, Any]
+    execution_path: Annotated[
+        List[Dict[str, Any]], operator.add
+    ]  # Track execution flow
 
 
 class GraphDecision(str, Enum):
