@@ -76,6 +76,13 @@ class SubAgentState(BaseModel):
     conversation_message_index: Optional[int] = Field(
         default=None, description="Index of triggering message in conversation"
     )
+
+    # Judge Feedback
+    judge_feedback: Optional[str] = Field(
+        default=None, description="Feedback from the LLM Judge"
+    )
+    retry_count: int = Field(default=0, description="Number of retries attempted")
+
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:

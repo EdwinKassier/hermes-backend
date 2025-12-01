@@ -10,8 +10,12 @@ ENV PYTHONUNBUFFERED=1 \
     PORT=8080
 
 # Install system dependencies (optimized for TTS operations)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    redis-server \
+# Fix GPG signature issues by refreshing package lists
+RUN apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    apt-get update --allow-releaseinfo-change && \
+    apt-get install -y --no-install-recommends \
+        redis-server \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user

@@ -516,7 +516,11 @@ def _handle_new_task(state, user_message, task_type, decision, rationale):
             agent_id=agent_info.agent_id,
             description=user_message,
             status=TaskStatus.PENDING,
-            metadata={"task_type": task_type},
+            metadata={
+                "task_type": task_type,
+                "judge_strictness": 0.7,
+                "judge_persona": "critic",
+            },
         )
 
         decision["decisions"]["task_created"] = True
@@ -775,6 +779,8 @@ async def agent_executor_node(state: OrchestratorState) -> Dict[str, Any]:
                 "user_id": state["user_id"],
                 "persona": state["persona"],
             },
+            judge_feedback=task_info.judge_feedback,
+            retry_count=task_info.retry_count,
         )
 
         # Execute task - prefer async if available, else run sync in executor
@@ -880,12 +886,31 @@ async def general_response_node(state: OrchestratorState) -> Dict[str, Any]:
     """
     Async node that handles general conversation without agents.
 
+    If an agent has already generated a response, this node will skip
+    generation to avoid overwriting the agent's result.
+
     Uses async LLM service for better performance in async graph context.
     Returns only changed fields to properly leverage LangGraph reducers.
     """
     logger.info("General response node executing")
 
-    user_message = state["messages"][-1]["content"]
+    messages = state.get("messages", [])
+    if not messages:
+        logger.error("No messages in general response node")
+        return {}
+
+    last_message = messages[-1]
+
+    # Check if last message is already an assistant response from an agent
+    if last_message.get("role") == "assistant" and last_message.get("metadata", {}).get(
+        "agent_id"
+    ):
+        logger.info("Agent result already in messages, skipping generation")
+        # Agent has already responded, no need to generate
+        return {}
+
+    # Generate response for simple conversations without agents
+    user_message = last_message.get("content", "")
     persona = state["persona"]
 
     # Use async LLM service for better performance

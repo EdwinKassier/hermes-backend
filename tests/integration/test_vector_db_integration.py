@@ -208,7 +208,7 @@ class TestRAGPipeline:
         query = "Where did Edwin Kassier study?"
         user_id = "test_user_rag"
 
-        response = gemini_service.generate_gemini_response_with_rag(
+        response = gemini_service.generate_gemini_response(
             prompt=query, user_id=user_id, persona="hermes"
         )
 
@@ -225,7 +225,7 @@ class TestRAGPipeline:
         user_id = "test_user_comparison"
 
         # RAG response
-        rag_response = gemini_service.generate_gemini_response_with_rag(
+        rag_response = gemini_service.generate_gemini_response(
             prompt=query, user_id=user_id, persona="hermes"
         )
 
@@ -247,7 +247,7 @@ class TestRAGPipeline:
         query = "What is the capital of Atlantis?"
         user_id = "test_user_no_context"
 
-        response = gemini_service.generate_gemini_response_with_rag(
+        response = gemini_service.generate_gemini_response(
             prompt=query, user_id=user_id, persona="hermes"
         )
 
@@ -263,12 +263,12 @@ class TestRAGPipeline:
         user_id = "test_user_context"
 
         # First query
-        response1 = gemini_service.generate_gemini_response_with_rag(
+        response1 = gemini_service.generate_gemini_response(
             prompt="Who is Edwin Kassier?", user_id=user_id, persona="hermes"
         )
 
         # Follow-up query (should use context)
-        response2 = gemini_service.generate_gemini_response_with_rag(
+        response2 = gemini_service.generate_gemini_response(
             prompt="What is his education background?",
             user_id=user_id,
             persona="hermes",
@@ -299,7 +299,7 @@ class TestRAGQuality:
     )
     def test_rag_answer_quality(self, gemini_service, query, expected_keywords):
         """Test that RAG responses contain relevant keywords"""
-        response = gemini_service.generate_gemini_response_with_rag(
+        response = gemini_service.generate_gemini_response(
             prompt=query, user_id="test_quality", persona="hermes"
         )
 
@@ -323,7 +323,7 @@ class TestRAGQuality:
         """Test that RAG doesn't hallucinate obvious fake facts"""
         query = "What programming languages does Edwin Kassier know?"
 
-        response = gemini_service.generate_gemini_response_with_rag(
+        response = gemini_service.generate_gemini_response(
             prompt=query, user_id="test_accuracy", persona="hermes"
         )
 
@@ -341,7 +341,7 @@ class TestRAGQuality:
         # Ask about something clearly not in Edwin's portfolio
         query = "What is Edwin Kassier's favorite ice cream flavor?"
 
-        response = gemini_service.generate_gemini_response_with_rag(
+        response = gemini_service.generate_gemini_response(
             prompt=query, user_id="test_dont_know", persona="hermes"
         )
 

@@ -24,8 +24,40 @@ class TestResearchAgent:
         assert "investigation" in agent.task_types
         assert "analysis" in agent.task_types
 
-    def test_identify_required_info(self):
-        """Test identifying required information."""
+    @patch("app.hermes.legion.agents.research_agent.get_gemini_service")
+    def test_identify_required_info(self, mock_get_gemini):
+        """Test identifying required information with intelligent inference."""
+        # Mock LLM to say it needs clarification
+        mock_gemini = Mock()
+        mock_gemini.generate_gemini_response.return_value = """
+        {
+            "needs_info": true,
+            "required_fields": [
+                {
+                    "field_name": "time_period",
+                    "field_type": "string",
+                    "question": "What time period?",
+                    "description": "Time period"
+                },
+                {
+                    "field_name": "topics",
+                    "field_type": "list",
+                    "question": "What topics?",
+                    "description": "Topics"
+                },
+                {
+                    "field_name": "depth",
+                    "field_type": "enum",
+                    "question": "What depth?",
+                    "description": "Depth",
+                    "options": ["brief", "moderate", "comprehensive"]
+                }
+            ],
+            "reasoning": "Genuinely ambiguous request"
+        }
+        """
+        mock_get_gemini.return_value = mock_gemini
+
         agent = ResearchAgent()
         required_info = agent.identify_required_info(
             "Research quantum computing", "User message"
@@ -34,8 +66,40 @@ class TestResearchAgent:
         assert "topics" in required_info
         assert "depth" in required_info
 
-    def test_identify_required_info_fields(self):
-        """Test required info fields are correct."""
+    @patch("app.hermes.legion.agents.research_agent.get_gemini_service")
+    def test_identify_required_info_fields(self, mock_get_gemini):
+        """Test required info fields are correct when clarification is needed."""
+        # Mock LLM to return specific field types
+        mock_gemini = Mock()
+        mock_gemini.generate_gemini_response.return_value = """
+        {
+            "needs_info": true,
+            "required_fields": [
+                {
+                    "field_name": "time_period",
+                    "field_type": "string",
+                    "question": "What time period?",
+                    "description": "Time period"
+                },
+                {
+                    "field_name": "topics",
+                    "field_type": "list",
+                    "question": "What topics?",
+                    "description": "Topics"
+                },
+                {
+                    "field_name": "depth",
+                    "field_type": "enum",
+                    "question": "What depth?",
+                    "description": "Depth",
+                    "options": ["brief", "moderate", "comprehensive"]
+                }
+            ],
+            "reasoning": "Need clarification"
+        }
+        """
+        mock_get_gemini.return_value = mock_gemini
+
         agent = ResearchAgent()
         required_info = agent.identify_required_info("Test task", "User message")
         assert required_info["time_period"].field_type == "string"

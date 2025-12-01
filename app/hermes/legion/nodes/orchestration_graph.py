@@ -13,6 +13,7 @@ from .graph_nodes import (
     information_gathering_node,
     orchestrator_node,
 )
+from .judge_node import judge_node
 from .legion_orchestrator import (
     legion_dispatch_node,
     legion_level_complete_node,
@@ -111,6 +112,7 @@ def create_orchestration_graph(checkpointer=None, interrupt_before=None) -> Stat
     workflow.add_node("agent_executor", agent_executor_node)
     workflow.add_node("general_response", general_response_node)
     workflow.add_node("error_handler", error_handler_node)
+    workflow.add_node("judge", judge_node)
 
     # Add unified Legion nodes
     workflow.add_node("legion_orchestrator", legion_orchestrator_node)
@@ -134,6 +136,7 @@ def create_orchestration_graph(checkpointer=None, interrupt_before=None) -> Stat
             "agent_executor": "agent_executor",
             "general_response": "general_response",
             "error_handler": "error_handler",
+            "orchestrator": "orchestrator",  # Support replanning/topic changes
         },
     )
 
@@ -176,8 +179,21 @@ def create_orchestration_graph(checkpointer=None, interrupt_before=None) -> Stat
         },
     )
 
-    # From agent executor -> general response (after execution)
-    workflow.add_edge("agent_executor", "general_response")
+    # From agent executor -> judge (evaluate result)
+    workflow.add_edge("agent_executor", "judge")
+
+    # From judge -> conditional (retry or complete)
+    def route_judge(state: OrchestratorState) -> str:
+        return state.get("next_action", "general_response")
+
+    workflow.add_conditional_edges(
+        "judge",
+        route_judge,
+        {
+            "agent_executor": "agent_executor",  # Retry
+            "general_response": "general_response",  # Success or Clarification
+        },
+    )
 
     # Terminal nodes -> Conditional continuation or END
     # This allows multi-turn conversations and topic changes

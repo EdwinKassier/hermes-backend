@@ -83,7 +83,7 @@ class TestTTSCloudURLErrorHandling:
 
         # Mock Gemini service
         mock_gemini = Mock()
-        mock_gemini.generate_gemini_response_with_rag.return_value = "AI response text"
+        mock_gemini.generate_gemini_response.return_value = "AI response text"
         service._gemini_service = mock_gemini
 
         # Mock TTS service - returns result without cloud_url
@@ -142,7 +142,7 @@ class TestTTSCloudURLErrorHandling:
 
         # Mock Gemini service
         mock_gemini = Mock()
-        mock_gemini.generate_gemini_response_with_rag.return_value = "AI response"
+        mock_gemini.generate_gemini_response.return_value = "AI response"
         service._gemini_service = mock_gemini
 
         # Mock TTS service - returns complete result
@@ -264,7 +264,7 @@ class TestProductionLogErrors:
 
         # Mock successful Gemini response
         mock_gemini = Mock()
-        mock_gemini.generate_gemini_response_with_rag.return_value = (
+        mock_gemini.generate_gemini_response.return_value = (
             "Edwin Kassier attended the University of Cape Town..."
         )
         service._gemini_service = mock_gemini
@@ -310,7 +310,7 @@ class TestProductionLogErrors:
         service = HermesService()
 
         mock_gemini = Mock()
-        mock_gemini.generate_gemini_response_with_rag.return_value = "Response"
+        mock_gemini.generate_gemini_response.return_value = "Response"
         service._gemini_service = mock_gemini
 
         # TTS works but no cloud storage available

@@ -37,9 +37,7 @@ def legion_service_with_db():
             mock_gemini = Mock()
             conversation_state = ConversationState(db_path=db_path)
             mock_gemini.conversation_state = conversation_state
-            mock_gemini.generate_gemini_response_with_rag = Mock(
-                return_value="AI Response"
-            )
+            mock_gemini.generate_gemini_response = Mock(return_value="AI Response")
             mock_gemini.generate_gemini_response = Mock(return_value="AI Response")
             mock_gemini_getter.return_value = mock_gemini
             mock_tts_getter.return_value = Mock()

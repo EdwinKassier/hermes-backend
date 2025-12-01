@@ -78,7 +78,7 @@ class TestVectorSearchPerformance:
         query = "What is Edwin Kassier's background?"
 
         # Warm up
-        gemini_service.generate_gemini_response_with_rag(
+        gemini_service.generate_gemini_response(
             prompt=query, user_id="warmup", persona="hermes"
         )
 
@@ -88,7 +88,7 @@ class TestVectorSearchPerformance:
         latencies = []
         for i in range(5):
             start = time.time()
-            response = gemini_service.generate_gemini_response_with_rag(
+            response = gemini_service.generate_gemini_response(
                 prompt=query, user_id=f"perf_test_{i}", persona="hermes"
             )
             latency = time.time() - start

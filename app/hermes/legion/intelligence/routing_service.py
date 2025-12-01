@@ -73,12 +73,28 @@ Analyze what the user wants and decide how to route this message. Consider:
 5. **Risk Assessment**: Does this require sensitive data access or expensive operations?
 6. **Multi-Turn Flow**: Are we in the middle of gathering information or refining a task?
 
+**CRITICAL: Intelligent Inference Philosophy**
+- **Strongly prefer inference over asking questions**
+- Use conversation history, domain knowledge, and reasonable assumptions to fill in missing details
+- Only use GATHER_INFO when information is **genuinely ambiguous, contradictory, or missing critical details** that cannot be reasonably inferred
+- When in doubt, make an intelligent inference and proceed
+
 **Routing Actions Available:**
 - **SIMPLE_RESPONSE**: Can be answered directly without agents
   (greetings, thanks, factual questions, meta questions about the system)
 
 - **GATHER_INFO**: Need more information from user before proceeding
-  (ambiguous requests, missing required details)
+  **USE SPARINGLY** - Only when:
+  • Request is genuinely ambiguous with no context (e.g., "research it", "do that thing")
+  • Requirements are contradictory or conflicting
+  • Sensitive operations requiring explicit confirmation (data deletion, access to private info)
+  • Cannot reasonably infer critical parameters from context
+
+  **DO NOT use for**:
+  • Missing time periods (infer from context: "trends" = recent, "history" = comprehensive)
+  • Missing programming languages (infer from context or use widely-applicable defaults)
+  • Missing depth/scope (infer from query complexity and user expertise level)
+  • Missing specific details that can be reasonably assumed
 
 - **ORCHESTRATE**: Complex task requiring agents/research/analysis
   (research requests, coding tasks, data analysis, multi-step work)
@@ -140,7 +156,14 @@ Analyze what the user wants and decide how to route this message. Consider:
 - "clarification providing requested information"
 - "topic shift to new area while task is active"
 
-Be thoughtful and context-aware. The same words can mean different things in different contexts."""
+**Inference Examples:**
+✅ "Research AI trends" → Infer: recent/current trends (last 6 months), moderate depth
+✅ "Write a sorting function" → Infer: Python (widely applicable), standard implementation
+✅ "Analyze the data" → Infer: comprehensive analysis, all relevant metrics
+❌ "Research it" → Cannot infer what "it" refers to → GATHER_INFO
+❌ "Delete all my data" → Sensitive operation → Seek explicit confirmation
+
+Be thoughtful and context-aware. The same words can mean different things in different contexts. **Prioritize intelligent inference to create fluid, natural conversations.**"""
 
         try:
             response = await self.llm_service.generate_async(prompt, persona="hermes")

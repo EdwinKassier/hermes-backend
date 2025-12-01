@@ -58,6 +58,16 @@ class TaskInfo(BaseModel):
     completed_at: Optional[datetime] = None
     result: Optional[str] = None
     error: Optional[str] = None
+
+    # Judge Feedback
+    judge_feedback: Optional[str] = None
+    judge_criteria: Optional[str] = None  # Criteria used for evaluation
+    retry_count: int = 0
+    max_retries: int = 3
+    judgment_history: List[Dict[str, Any]] = Field(
+        default_factory=list, description="History of judge evaluations"
+    )
+
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
     def is_ready(self, ledger: Dict[str, "TaskInfo"]) -> bool:
@@ -109,7 +119,8 @@ class OrchestratorState(TypedDict):
     messages: Annotated[List[Dict[str, Any]], operator.add]
 
     # Task management
-    task_ledger: Dict[str, TaskInfo]  # task_id -> TaskInfo
+    # Task management
+    task_ledger: Annotated[Dict[str, TaskInfo], merge_dicts]  # task_id -> TaskInfo
 
     # Agent management
     agents: Dict[str, AgentInfo]  # agent_id -> AgentInfo

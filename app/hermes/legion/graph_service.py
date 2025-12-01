@@ -156,6 +156,75 @@ class LegionGraphService:
 
         return toolset_info
 
+    def _extract_judge_metadata(self, task_ledger: dict) -> dict:
+        """Extract judge evaluation metadata from task ledger.
+
+        Args:
+            task_ledger: Dictionary of task_id -> TaskInfo
+
+        Returns:
+            Dictionary with judge evaluation summary
+        """
+        if not task_ledger:
+            return {}
+
+        judge_summary = {
+            "enabled": False,
+            "evaluations_performed": 0,
+            "tasks_evaluated": 0,
+            "retries_triggered": 0,
+            "average_score": 0.0,
+            "tasks": [],
+        }
+
+        total_score = 0.0
+        score_count = 0
+
+        for task_id, task_info in task_ledger.items():
+            # Check if this task has judgment history
+            judgment_history = getattr(task_info, "judgment_history", [])
+
+            if judgment_history:
+                judge_summary["enabled"] = True
+                judge_summary["tasks_evaluated"] += 1
+                judge_summary["evaluations_performed"] += len(judgment_history)
+
+                # Count retries (evaluations - 1, since first eval is not a retry)
+                if len(judgment_history) > 1:
+                    judge_summary["retries_triggered"] += len(judgment_history) - 1
+
+                # Calculate scores
+                for judgment in judgment_history:
+                    score = judgment.get("score", 0.0)
+                    total_score += score
+                    score_count += 1
+
+                # Add task-level summary
+                final_judgment = judgment_history[-1]
+                task_summary = {
+                    "task_id": task_id,
+                    "evaluations": len(judgment_history),
+                    "final_score": final_judgment.get("score", 0.0),
+                    "final_status": (
+                        "accepted"
+                        if final_judgment.get("is_valid")
+                        else "rejected_max_retries"
+                    ),
+                    "retry_count": getattr(task_info, "retry_count", 0),
+                    "criteria": getattr(task_info, "judge_criteria", None),
+                }
+                judge_summary["tasks"].append(task_summary)
+
+        # Calculate average score
+        if score_count > 0:
+            judge_summary["average_score"] = round(total_score / score_count, 2)
+
+        # Return empty dict if judge was not used
+        if not judge_summary["enabled"]:
+            return {}
+
+        return judge_summary
+
     def _build_structured_metadata(
         self, result: dict, start_time: float, duration_ms: float
     ) -> dict:
@@ -278,11 +347,19 @@ class LegionGraphService:
             )
             rationale["decisions"] = decision_rationale
 
+        # Extract judge information from task ledger
+        task_ledger = result.get("task_ledger", {})
+        judge_info = self._extract_judge_metadata(task_ledger)
+
         # Build usage block
         usage = {
             "agents": agents_used,
             "tools": tools_used,
         }
+
+        # Add judge info if present
+        if judge_info:
+            usage["quality_assurance"] = judge_info
 
         return {
             "status": status,

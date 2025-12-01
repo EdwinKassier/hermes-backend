@@ -1,5 +1,6 @@
 """Hermes Business Logic Services - Orchestrates domain operations."""
 
+import asyncio
 import logging
 import uuid
 from typing import Optional
@@ -75,8 +76,6 @@ class HermesService:
         # Route to legion service if requested
         if legion_mode:
             try:
-                import asyncio
-
                 from .legion.graph_service import LegionGraphService
 
                 legion_service = LegionGraphService()
@@ -87,7 +86,7 @@ class HermesService:
                         text=text,
                         user_identity=user_identity,
                         response_mode=response_mode,
-                        persona=persona,
+                        persona="legion",
                     )
                 )
             except Exception as e:
@@ -170,8 +169,6 @@ class HermesService:
         # Route to legion service if requested
         if legion_mode:
             try:
-                import asyncio
-
                 from .legion.graph_service import LegionGraphService
 
                 legion_service = LegionGraphService()
@@ -179,7 +176,7 @@ class HermesService:
 
                 return asyncio.run(
                     legion_service.chat(
-                        message=message, user_identity=user_identity, persona=persona
+                        message=message, user_identity=user_identity, persona="legion"
                     )
                 )
             except Exception as e:
@@ -238,8 +235,8 @@ class HermesService:
             AIServiceError: If AI generation fails
         """
         try:
-            result = self.gemini_service.generate_gemini_response_with_rag(
-                prompt=prompt, user_id=user_id, persona=persona
+            result = self.gemini_service.generate_gemini_response(
+                prompt=prompt, persona=persona, user_id=user_id
             )
 
             return GeminiResponse(

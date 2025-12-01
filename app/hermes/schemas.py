@@ -48,8 +48,8 @@ class ProcessRequestSchema(BaseModel):
     @classmethod
     def validate_persona(cls, v: Optional[str]) -> str:
         """Validate persona."""
-        if v is not None and v not in ["hermes", "prisma"]:
-            raise ValueError("Persona must be 'hermes' or 'prisma'")
+        if v is not None and v not in ["hermes", "prisma", "legion"]:
+            raise ValueError("Persona must be 'hermes', 'prisma', or 'legion'")
         return v or "hermes"
 
     @field_validator("legion_mode", mode="before")
@@ -108,8 +108,8 @@ class ChatMessageSchema(BaseModel):
     @classmethod
     def validate_persona(cls, v: Optional[str]) -> str:
         """Validate persona."""
-        if v is not None and v not in ["hermes", "prisma"]:
-            raise ValueError("Persona must be 'hermes' or 'prisma'")
+        if v is not None and v not in ["hermes", "prisma", "legion"]:
+            raise ValueError("Persona must be 'hermes', 'prisma', or 'legion'")
         return v or "hermes"
 
     @field_validator("legion_mode", mode="before")

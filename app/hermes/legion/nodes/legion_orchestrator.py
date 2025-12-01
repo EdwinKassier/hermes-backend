@@ -323,10 +323,22 @@ async def legion_worker_node(state: LegionWorkerState) -> Dict[str, Any]:
                 task_description=state["task_description"],
             )
 
-        # Create Agent
+        # Create Agent using the worker's role as the agent type
         from ..state import AgentConfig
 
-        config = AgentConfig(agent_type="legion_worker", required_tools=[])
+        # Map worker role to agent type
+        # Roles like "researcher", "coder" should map to "research", "code"
+        role = state["role"].lower()
+        agent_type_map = {
+            "researcher": "research",
+            "coder": "code",
+            "programmer": "code",
+            "analyst": "analysis",
+            "data_analyst": "data",
+        }
+        agent_type = agent_type_map.get(role, role)  # Default to role if not in map
+
+        config = AgentConfig(agent_type=agent_type, required_tools=[])
         agent = AgentFactory.create_agent(config, tools)
 
         # Create SubAgentState
@@ -334,7 +346,7 @@ async def legion_worker_node(state: LegionWorkerState) -> Dict[str, Any]:
             agent_id=worker_id,
             status=SubAgentStatus.PROCESSING,
             task=state["task_description"],
-            task_type="legion_worker",
+            task_type=agent_type,  # Use mapped agent_type
             triggering_message=state["task_description"],
             collected_info=state["context"],
             metadata={"user_id": state["user_id"], "persona": state["persona"]},

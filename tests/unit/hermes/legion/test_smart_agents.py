@@ -11,19 +11,23 @@ def research_agent():
 
 
 @patch("app.hermes.legion.agents.research_agent.get_gemini_service")
-def test_smart_info_short_message(mock_get_service, research_agent):
+def test_smart_info_can_infer(mock_get_service, research_agent):
+    """Test that agent can infer and proceed without asking."""
     # Setup
-    # Short message should bypass LLM check
+    mock_service = Mock()
+    mock_get_service.return_value = mock_service
+
+    # Mock LLM response saying it can infer everything
+    mock_service.generate_gemini_response.return_value = '{"needs_info": false, "inferred_values": {"time_period": "recent", "topics": "AI", "depth": "moderate"}, "reasoning": "Can infer from context"}'
+
     message = "research AI"
 
     # Execute
     required = research_agent.identify_required_info("research AI", message)
 
-    # Verify
-    assert "time_period" in required
-    assert "topics" in required
-    assert "depth" in required
-    mock_get_service.assert_not_called()
+    # Verify - should return empty dict when can infer
+    assert len(required) == 0
+    mock_service.generate_gemini_response.assert_called_once()
 
 
 @patch("app.hermes.legion.agents.research_agent.get_gemini_service")
@@ -32,10 +36,8 @@ def test_smart_info_all_present(mock_get_service, research_agent):
     mock_service = Mock()
     mock_get_service.return_value = mock_service
 
-    # Mock LLM response saying everything is present
-    mock_service.generate_gemini_response.return_value = (
-        '{"time_period": true, "topics": true, "depth": true}'
-    )
+    # Mock LLM response saying everything can be inferred
+    mock_service.generate_gemini_response.return_value = '{"needs_info": false, "inferred_values": {"time_period": "2023", "topics": "LLMs", "depth": "comprehensive"}, "reasoning": "All details present in request"}'
 
     message = "Research AI developments in 2023 with a focus on LLMs, provide a comprehensive report."
 
@@ -48,30 +50,42 @@ def test_smart_info_all_present(mock_get_service, research_agent):
 
 
 @patch("app.hermes.legion.agents.research_agent.get_gemini_service")
-def test_smart_info_partial_missing(mock_get_service, research_agent):
+def test_smart_info_needs_clarification(mock_get_service, research_agent):
+    """Test that agent asks for clarification when genuinely needed."""
     # Setup
     mock_service = Mock()
     mock_get_service.return_value = mock_service
 
-    # Mock LLM response saying depth is missing
-    mock_service.generate_gemini_response.return_value = (
-        '{"time_period": true, "topics": true, "depth": false}'
-    )
+    # Mock LLM response saying clarification is needed
+    mock_service.generate_gemini_response.return_value = """
+    {
+        "needs_info": true,
+        "required_fields": [
+            {
+                "field_name": "research_subject",
+                "field_type": "string",
+                "question": "What would you like me to research?",
+                "description": "The subject of research"
+            }
+        ],
+        "reasoning": "Request is too vague - 'research it' with no context"
+    }
+    """
 
-    message = "Research AI developments in 2023 with a focus on LLMs."
+    message = "research it"
 
     # Execute
     required = research_agent.identify_required_info(message, message)
 
-    # Verify
+    # Verify - should ask for clarification
     assert len(required) == 1
-    assert "depth" in required
-    assert "time_period" not in required
+    assert "research_subject" in required
     mock_service.generate_gemini_response.assert_called_once()
 
 
 @patch("app.hermes.legion.agents.research_agent.get_gemini_service")
 def test_smart_info_llm_failure(mock_get_service, research_agent):
+    """Test that agent fails open (proceeds without asking) on LLM errors."""
     # Setup
     mock_service = Mock()
     mock_get_service.return_value = mock_service
@@ -84,7 +98,5 @@ def test_smart_info_llm_failure(mock_get_service, research_agent):
     # Execute
     required = research_agent.identify_required_info(message, message)
 
-    # Verify fallback to asking all questions
-    assert "time_period" in required
-    assert "topics" in required
-    assert "depth" in required
+    # Verify - should fail open (return empty dict, proceed without asking)
+    assert len(required) == 0

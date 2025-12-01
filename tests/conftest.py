@@ -154,7 +154,7 @@ def mock_gemini_service():
     """Mock Gemini service"""
     mock = Mock()
     mock.generate_gemini_response.return_value = "Mock AI response"
-    mock.generate_gemini_response_with_rag.return_value = "Mock RAG response"
+    mock.generate_gemini_response.return_value = "Mock response"
     return mock
 
 
