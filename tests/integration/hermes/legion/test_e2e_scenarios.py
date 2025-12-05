@@ -69,7 +69,6 @@ def user_identity():
 class TestE2EScenarios:
     """End-to-end scenario tests."""
 
-    @patch("app.hermes.legion.orchestrator.get_gemini_service")
     def test_complete_research_scenario(
         self, mock_orch_gemini, legion_service_with_db, user_identity
     ):
@@ -87,10 +86,6 @@ class TestE2EScenarios:
                 return "ANSWERING"
             return "AI Response"
 
-        mock_orch_gemini.return_value.generate_gemini_response.side_effect = (
-            gemini_side_effect
-        )
-
         # Step 1: User requests research
         response1 = legion_service_with_db.chat(
             "Research quantum computing advances", user_identity
@@ -107,13 +102,10 @@ class TestE2EScenarios:
         # Should extract info and either ask for more or execute
         assert response2 is not None
 
-    @patch("app.hermes.legion.orchestrator.get_gemini_service")
     def test_cancellation_scenario(
         self, mock_orch_gemini, legion_service_with_db, user_identity
     ):
         """Test cancellation scenario."""
-        # Mock task identification
-        mock_orch_gemini.return_value.generate_gemini_response.return_value = "research"
 
         # Step 1: Request task
         response1 = legion_service_with_db.chat(

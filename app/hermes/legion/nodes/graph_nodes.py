@@ -8,8 +8,8 @@ from typing import Any, Dict, List
 from app.shared.utils.service_loader import get_async_llm_service, get_gemini_service
 
 from ..agents.factory import AgentFactory
+from ..intelligence.information_extractor import InformationExtractor
 from ..models import SubAgentState, SubAgentStatus
-from ..orchestrator import InformationExtractor, TaskIdentifier
 from ..state import (
     AgentConfig,
     AgentInfo,

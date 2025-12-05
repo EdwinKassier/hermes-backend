@@ -19,7 +19,6 @@ def reset_singleton():
 @patch("app.hermes.legion.nodes.graph_nodes.get_gemini_service")
 @patch("app.hermes.legion.agents.research_agent.get_gemini_service")
 @patch("app.hermes.legion.utils.tool_allocator.get_gemini_service")
-@patch("app.hermes.legion.orchestrator.get_gemini_service")
 def test_full_conversation_flow(
     mock_orch_service,
     mock_allocator_service,
@@ -33,7 +32,6 @@ def test_full_conversation_flow(
     mock_node_service.return_value = mock_gemini
     mock_agent_service.return_value = mock_gemini
     mock_allocator_service.return_value = mock_gemini
-    mock_orch_service.return_value = mock_gemini
 
     # Configure all_tools to be a list
     mock_tool = Mock()

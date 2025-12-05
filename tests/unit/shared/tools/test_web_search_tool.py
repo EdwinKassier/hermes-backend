@@ -6,23 +6,23 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from app.shared.utils.tools.web_search_tool import WebSearchTool
+from app.shared.utils.tools.web_search_tool import FirecrawlTool
 
 
-class TestWebSearchTool:
-    """Test suite for WebSearchTool."""
+class TestFirecrawlTool:
+    """Test suite for FirecrawlTool."""
 
     @pytest.fixture
     def tool_with_api_key(self):
-        """Create WebSearchTool with mocked API key."""
+        """Create FirecrawlTool with mocked API key."""
         with patch.dict("os.environ", {"FIRECRAWL_API_KEY": "test_api_key"}):
-            return WebSearchTool()
+            return FirecrawlTool()
 
     @pytest.fixture
     def tool_without_api_key(self):
-        """Create WebSearchTool without API key."""
+        """Create FirecrawlTool without API key."""
         with patch.dict("os.environ", {}, clear=True):
-            return WebSearchTool()
+            return FirecrawlTool()
 
     # === Initialization Tests ===
 
@@ -38,10 +38,10 @@ class TestWebSearchTool:
 
     def test_no_api_key_returns_error(self, tool_without_api_key):
         """Test that missing API key returns error message."""
-        result = tool_without_api_key._run("test query")
+        result = tool_without_api_key._run(query="test query")
 
-        assert "unavailable" in result
-        assert "FIRECRAWL_API_KEY" in result
+        assert "FIRECRAWL_API_KEY environment variable not set" in result
+        assert "Error" in result
 
     # === Successful Search Tests ===
 
@@ -69,7 +69,7 @@ class TestWebSearchTool:
             ]
             mock_app.search.return_value = mock_result
 
-            result = tool_with_api_key._run("test query", max_results=5)
+            result = tool_with_api_key._run(query="test query", max_results=5)
 
             assert "Test Result 1" in result
             assert "Test Result 2" in result
@@ -94,7 +94,7 @@ class TestWebSearchTool:
             ]
             mock_app.search.return_value = mock_result
 
-            result = tool_with_api_key._run("test query", max_results=3)
+            result = tool_with_api_key._run(query="test query", max_results=3)
 
             # Should only show first 3 results
             assert "Result 0" in result
@@ -113,7 +113,7 @@ class TestWebSearchTool:
             mock_result.web = []
             mock_app.search.return_value = mock_result
 
-            tool_with_api_key._run("test query", max_results=20)
+            tool_with_api_key._run(query="test query", max_results=20)
 
             # Should call with limit=10 (capped)
             call_args = mock_app.search.call_args
@@ -137,7 +137,7 @@ class TestWebSearchTool:
             ]
             mock_app.search.return_value = mock_result
 
-            result = tool_with_api_key._run("test query")
+            result = tool_with_api_key._run(query="test query")
 
             assert "Search results for: test query" in result
             assert "1. Test Title" in result
@@ -162,7 +162,7 @@ class TestWebSearchTool:
             ]
             mock_app.search.return_value = mock_result
 
-            result = tool_with_api_key._run("test query")
+            result = tool_with_api_key._run(query="test query")
 
             # Should truncate to 200 chars
             assert "Test Title" in result
@@ -180,7 +180,7 @@ class TestWebSearchTool:
             ]
             mock_app.search.return_value = mock_result
 
-            result = tool_with_api_key._run("test query")
+            result = tool_with_api_key._run(query="test query")
 
             assert "No description available" in result
 
@@ -196,7 +196,7 @@ class TestWebSearchTool:
             mock_result.web = []
             mock_app.search.return_value = mock_result
 
-            result = tool_with_api_key._run("test query")
+            result = tool_with_api_key._run(query="test query")
 
             assert "No results found" in result
 
@@ -207,7 +207,7 @@ class TestWebSearchTool:
             mock_fc.return_value = mock_app
             mock_app.search.return_value = None
 
-            result = tool_with_api_key._run("test query")
+            result = tool_with_api_key._run(query="test query")
 
             assert "No results found" in result
 
@@ -218,7 +218,7 @@ class TestWebSearchTool:
             mock_fc.return_value = mock_app
             mock_app.search.side_effect = Exception("API Error")
 
-            result = tool_with_api_key._run("test query")
+            result = tool_with_api_key._run(query="test query")
 
             assert "Error" in result
             assert "API Error" in result
@@ -230,10 +230,9 @@ class TestWebSearchTool:
                 "builtins.__import__",
                 side_effect=ImportError("No module named 'firecrawl'"),
             ):
-                result = tool_with_api_key._run("test query")
+                result = tool_with_api_key._run(query="test query")
 
-                assert "unavailable" in result
-                assert "firecrawl-py" in result
+                assert "firecrawl-py package not installed" in result
 
     # === Input Validation Tests ===
 
@@ -247,7 +246,7 @@ class TestWebSearchTool:
             mock_result.web = []
             mock_app.search.return_value = mock_result
 
-            result = tool_with_api_key._run("")
+            result = tool_with_api_key._run(query="")
 
             # Should still attempt search (Firecrawl handles validation)
             assert isinstance(result, str)
@@ -262,7 +261,7 @@ class TestWebSearchTool:
             mock_result.web = []
             mock_app.search.return_value = mock_result
 
-            result = tool_with_api_key._run("test @#$% query")
+            result = tool_with_api_key._run(query="test @#$% query")
 
             # Should handle special characters
             assert isinstance(result, str)
@@ -279,7 +278,7 @@ class TestWebSearchTool:
             mock_result.web = []
             mock_app.search.return_value = mock_result
 
-            result = tool_with_api_key._run("test query", max_results=0)
+            result = tool_with_api_key._run(query="test query", max_results=0)
 
             # Should handle gracefully (min will make it 1)
             assert isinstance(result, str)
@@ -297,7 +296,7 @@ class TestWebSearchTool:
             mock_result.web = []
             mock_app.search.return_value = mock_result
 
-            result = tool_with_api_key._run("test query", max_results=-1)
+            result = tool_with_api_key._run(query="test query", max_results=-1)
 
             # Should handle gracefully (min will make it 1)
             assert isinstance(result, str)

@@ -70,7 +70,6 @@ def user_identity():
 class TestFullConversationFlow:
     """Test full conversation flows with sub-agents."""
 
-    @patch("app.hermes.legion.orchestrator.get_gemini_service")
     @patch("app.hermes.legion.service.get_gemini_service")
     def test_multi_step_research_conversation(
         self,
@@ -81,7 +80,6 @@ class TestFullConversationFlow:
     ):
         """Test complete multi-step research conversation."""
         # Mock task identification
-        mock_orch_gemini.return_value.generate_gemini_response.return_value = "research"
 
         # Mock information extraction
         import json
@@ -90,10 +88,6 @@ class TestFullConversationFlow:
             if "Extract" in str(kwargs.get("prompt", "")):
                 return json.dumps({"time_period": "last 6 months"})
             return "ANSWERING"
-
-        mock_orch_gemini.return_value.generate_gemini_response.side_effect = (
-            extract_side_effect
-        )
 
         # First message: Request research
         response1 = legion_service_with_db.chat(
@@ -115,13 +109,11 @@ class TestFullConversationFlow:
         # Should execute task or ask for more info
         assert response2 is not None
 
-    @patch("app.hermes.legion.orchestrator.get_gemini_service")
     def test_cancellation_flow(
         self, mock_orch_gemini, legion_service_with_db, user_identity
     ):
         """Test cancellation flow."""
         # Mock task identification
-        mock_orch_gemini.return_value.generate_gemini_response.return_value = "research"
 
         # First message: Request research
         response1 = legion_service_with_db.chat(
@@ -140,13 +132,11 @@ class TestFullConversationFlow:
         assert response2 is not None
         assert "cancel" in response2.content.lower()
 
-    @patch("app.hermes.legion.orchestrator.get_gemini_service")
     def test_new_question_while_awaiting(
         self, mock_orch_gemini, legion_service_with_db, user_identity
     ):
         """Test asking new question while awaiting input."""
         # Mock task identification
-        mock_orch_gemini.return_value.generate_gemini_response.return_value = "research"
 
         # First message: Request research
         response1 = legion_service_with_db.chat(
@@ -161,10 +151,6 @@ class TestFullConversationFlow:
             if "NEW_QUESTION" in str(kwargs.get("prompt", "")):
                 return "NEW_QUESTION"
             return "research"
-
-        mock_orch_gemini.return_value.generate_gemini_response.side_effect = (
-            intent_side_effect
-        )
 
         # Second message: New question
         response2 = legion_service_with_db.chat(

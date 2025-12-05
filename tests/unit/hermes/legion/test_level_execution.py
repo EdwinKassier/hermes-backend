@@ -42,9 +42,6 @@ def legion_graph_service():
             "app.hermes.legion.nodes.graph_nodes.get_async_llm_service"
         ) as mock_nodes_async_service,
         patch(
-            "app.hermes.legion.orchestrator.get_gemini_service"
-        ) as mock_orchestrator_service,
-        patch(
             "app.hermes.legion.agents.research_agent.get_gemini_service"
         ) as mock_research_service,
         patch(
@@ -71,7 +68,7 @@ def legion_graph_service():
         mock_gemini = Mock()
         mock_decomposer_service.return_value = mock_gemini
         mock_nodes_service.return_value = mock_gemini
-        mock_orchestrator_service.return_value = mock_gemini
+
         mock_research_service.return_value = mock_gemini
         mock_code_service.return_value = mock_gemini
         mock_analysis_service.return_value = mock_gemini

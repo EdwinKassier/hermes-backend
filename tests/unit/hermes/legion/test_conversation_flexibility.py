@@ -34,9 +34,6 @@ def mock_dependencies():
             "app.hermes.legion.nodes.graph_nodes.get_async_llm_service"
         ) as mock_nodes_async_service,
         patch(
-            "app.hermes.legion.orchestrator.get_gemini_service"
-        ) as mock_orchestrator_service,
-        patch(
             "app.hermes.legion.agents.research_agent.get_gemini_service"
         ) as mock_research_service,
         patch(
@@ -57,7 +54,7 @@ def mock_dependencies():
         mock_gemini = Mock()
         mock_decomposer_service.return_value = mock_gemini
         mock_nodes_service.return_value = mock_gemini
-        mock_orchestrator_service.return_value = mock_gemini
+
         mock_research_service.return_value = mock_gemini
         mock_code_service.return_value = mock_gemini
         mock_analysis_service.return_value = mock_gemini
@@ -210,20 +207,33 @@ class TestConversationFlexibility:
             "task_ledger": {"task_1": task_info},
         }
 
-        # Mock detector to return low confidence (clarification, not topic change)
+        # Mock RoutingIntelligence to return GATHER_INFO (clarification) instead of topic change
+        from app.hermes.legion.intelligence.routing_intelligence import (
+            ConversationPhase,
+            RoutingAction,
+            RoutingDecision,
+        )
+
         with patch(
-            "app.hermes.legion.utils.topic_change_detector.TopicChangeDetector"
-        ) as MockDetector:
-            mock_instance = MockDetector.return_value
-            mock_instance.detect_topic_change = AsyncMock(
-                return_value={
-                    "is_topic_change": False,
-                    "confidence": 0.2,
-                    "reason": "User providing clarification for current task",
-                    "new_topic": None,
-                }
+            "app.hermes.legion.intelligence.routing_service.RoutingIntelligence"
+        ) as MockRoutingIntelligence:
+            mock_routing = MockRoutingIntelligence.return_value
+            mock_decision = RoutingDecision(
+                action=RoutingAction.GATHER_INFO,
+                reasoning="User providing clarification",
+                confidence=0.9,
+                requires_agents=False,
+                conversation_type="clarification",
+                complexity_estimate=0.1,
+                user_goal="clarify_requirements",
+                conversation_phase=ConversationPhase.GATHERING_INFO,
+                topic_change_detected=False,
+                topic_change_confidence=0.1,
+                should_abandon_current_task=False,
+                previous_topic_description="Write code for web scraper",
+                new_topic_description=None,
             )
-            mock_instance.should_trigger_replan = Mock(return_value=False)
+            mock_routing.analyze = AsyncMock(return_value=mock_decision)
 
             # Execute
             result = await orchestrator_node(state)
@@ -251,8 +261,8 @@ class TestConversationFlexibility:
 
     async def test_multi_turn_conversation_context(self, base_state):
         """Test that information gathering uses multi-message context."""
+        from app.hermes.legion.models import RequiredInfoField
         from app.hermes.legion.nodes.graph_nodes import information_gathering_node
-        from app.hermes.legion.orchestrator import RequiredInfoField
 
         state = {
             **base_state,

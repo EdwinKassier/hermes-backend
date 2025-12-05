@@ -94,17 +94,14 @@ Legion is a production-ready implementation of the **Microsoft Magentic Orchestr
                         ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                   HermesService                              │
-│  (Routes legion_mode=true to LegionServiceAdapter)          │
+│  (Routes legion_mode=true to LegionGraphService)            │
 └───────────────────────┬─────────────────────────────────────┘
                         │
                         ▼
 ┌─────────────────────────────────────────────────────────────┐
-│              LegionServiceAdapter                            │
-│  Feature Flag: LEGION_USE_LANGGRAPH=true/false               │
-├──────────────────────┬──────────────────────────────────────┤
-│ false: LegionService │ true: LegionGraphService             │
-│ (Procedural)         │ (LangGraph)                          │
-└──────────────────────┴──────────────────────────────────────┘
+│              LegionGraphService                              │
+│  (LangGraph-based multi-agent orchestration)                │
+└──────────────────────┬──────────────────────────────────────┘
                         │
                         ▼ (LangGraph Path)
 ┌─────────────────────────────────────────────────────────────┐
@@ -188,13 +185,10 @@ print(result.message)
 print(f"Agents used: {result.metadata.get('agents_used', [])}")
 ```
 
-### With Feature Flags
+### API Request
 
 ```bash
-# Enable LangGraph globally
-export LEGION_USE_LANGGRAPH=true
-
-# Use via API
+# Use via API with legion_mode parameter
 curl -X POST http://localhost:5000/api/process_request \
   -H "Content-Type: application/json" \
   -d '{
@@ -282,8 +276,7 @@ tool_allocation:
 ### Environment Variables
 
 ```bash
-# Feature flags
-LEGION_USE_LANGGRAPH=true          # Enable LangGraph service
+# LangGraph configuration
 LANGGRAPH_VERBOSE_LOGGING=false    # Enable verbose logging
 LEGION_CHECKPOINT_DB=conversations.db  # Checkpoint database path
 ```
@@ -489,7 +482,6 @@ pytest --cov=app/hermes/legion tests/
 
 ### Production Checklist
 
-- [ ] Set `LEGION_USE_LANGGRAPH=true`
 - [ ] Configure persistent checkpointing (PostgreSQL/SQLite)
 - [ ] Set appropriate timeouts in `agents.yaml`
 - [ ] Enable monitoring and alerting

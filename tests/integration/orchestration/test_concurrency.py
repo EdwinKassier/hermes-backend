@@ -15,8 +15,8 @@ sys.path.insert(
     0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 )
 
-from app.hermes.legion.graph_service import LegionGraphService
-from app.hermes.models import UserIdentity
+from app.hermes.legion.graph_service import LegionGraphService  # noqa: E402
+from app.hermes.models import UserIdentity  # noqa: E402
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)

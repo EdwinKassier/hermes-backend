@@ -12,7 +12,7 @@ import time
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
-from app.shared.services.GeminiService import GeminiService
+from app.shared.services.GeminiService import GeminiService  # noqa: E402
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)

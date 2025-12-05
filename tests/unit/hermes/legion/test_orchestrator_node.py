@@ -113,11 +113,9 @@ async def test_multi_agent_orchestration(
 @pytest.mark.asyncio
 @patch("app.hermes.legion.intelligence.routing_service.RoutingIntelligence")
 @patch("app.hermes.legion.parallel.task_decomposer.ParallelTaskDecomposer")
-@patch("app.hermes.legion.nodes.graph_nodes.TaskIdentifier")
 @patch("app.hermes.legion.nodes.graph_nodes.AgentFactory")
 async def test_single_agent_orchestration(
     MockAgentFactory,
-    MockTaskIdentifier,
     MockDecomposer,
     MockRoutingIntelligence,
     mock_state,
@@ -139,9 +137,6 @@ async def test_single_agent_orchestration(
 
     # Setup decomposer to deny multi-agent
     MockDecomposer.return_value.is_multi_agent_task.return_value = False
-
-    # Setup task identifier
-    MockTaskIdentifier.return_value.identify_task_type.return_value = "research"
 
     # Setup agent factory
     mock_agent = Mock()

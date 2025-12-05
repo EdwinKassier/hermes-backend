@@ -112,7 +112,12 @@ class TestResearchAgent:
         """Test executing research task."""
         # Mock GeminiService
         mock_gemini = Mock()
-        mock_gemini.generate_gemini_response.return_value = "Research result"
+        # Mock 3 phases: Search, Scrape, Synthesize
+        mock_gemini.generate_gemini_response.side_effect = [
+            "Search results: URL1, URL2",  # Phase 1
+            "Scraped content from URL1, URL2",  # Phase 2
+            "Research result",  # Phase 3
+        ]
         mock_get_gemini.return_value = mock_gemini
 
         agent = ResearchAgent()
@@ -131,13 +136,18 @@ class TestResearchAgent:
 
         result = agent.execute_task(state)
         assert result == "Research result"
-        mock_gemini.generate_gemini_response.assert_called_once()
+        assert mock_gemini.generate_gemini_response.call_count == 3
 
     @patch("app.hermes.legion.agents.research_agent.get_gemini_service")
     def test_execute_task_with_defaults(self, mock_get_gemini):
         """Test executing task with default collected info."""
         mock_gemini = Mock()
-        mock_gemini.generate_gemini_response.return_value = "Result"
+        # Mock 3 phases
+        mock_gemini.generate_gemini_response.side_effect = [
+            "Search results",
+            "Scraped content",
+            "Result",
+        ]
         mock_get_gemini.return_value = mock_gemini
 
         agent = ResearchAgent()
@@ -152,8 +162,8 @@ class TestResearchAgent:
 
         result = agent.execute_task(state)
         assert result == "Result"
-        # Should use defaults
-        call_args = mock_gemini.generate_gemini_response.call_args
+        # Should use defaults in first call (Search phase)
+        call_args = mock_gemini.generate_gemini_response.call_args_list[0]
         assert "all time" in call_args[1]["prompt"]  # Default time_period
 
     @patch("app.hermes.legion.agents.research_agent.get_gemini_service")
