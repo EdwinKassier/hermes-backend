@@ -184,7 +184,11 @@ def create_orchestration_graph(checkpointer=None, interrupt_before=None) -> Stat
 
     # From judge -> conditional (retry or complete)
     def route_judge(state: OrchestratorState) -> str:
-        return state.get("next_action", "general_response")
+        next_action = state.get("next_action", "general_response")
+        # Handle error case by routing to error_handler
+        if next_action == GraphDecision.ERROR.value:
+            return "error_handler"
+        return next_action
 
     workflow.add_conditional_edges(
         "judge",
@@ -192,6 +196,7 @@ def create_orchestration_graph(checkpointer=None, interrupt_before=None) -> Stat
         {
             "agent_executor": "agent_executor",  # Retry
             "general_response": "general_response",  # Success or Clarification
+            "error_handler": "error_handler",  # Error case
         },
     )
 

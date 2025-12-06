@@ -36,7 +36,7 @@ class LangfuseConfig:
     def _initialize_client(self):
         """Initialize the Langfuse client if credentials are available."""
         if not LANGFUSE_AVAILABLE:
-            logging.info("Langfuse SDK not installed. Observability disabled.")
+            logging.warning("Langfuse SDK not installed. Observability disabled.")
             return
 
         public_key = os.environ.get("LANGFUSE_PUBLIC_KEY")
@@ -45,6 +45,16 @@ class LangfuseConfig:
         base_url = os.environ.get(
             "LANGFUSE_BASE_URL",
             os.environ.get("LANGFUSE_HOST", "https://cloud.langfuse.com"),
+        )
+
+        # Log what we found (without exposing secrets)
+        has_public = bool(public_key)
+        has_secret = bool(secret_key)
+        logging.info(
+            "Langfuse initialization check: public_key=%s, secret_key=%s, base_url=%s",
+            "set" if has_public else "missing",
+            "set" if has_secret else "missing",
+            base_url,
         )
 
         if public_key and secret_key:
@@ -56,13 +66,21 @@ class LangfuseConfig:
                     secret_key=secret_key,
                     host=base_url,
                 )
-                logging.info("Langfuse observability initialized successfully")
+                # Verify client was created
+                client = get_client()
+                if client:
+                    logging.info("Langfuse observability initialized successfully")
+                else:
+                    logging.error("Langfuse client initialization returned None")
             except Exception as e:
-                logging.error(f"Failed to initialize Langfuse client: {e}")
+                logging.error(
+                    "Failed to initialize Langfuse client: %s", e, exc_info=True
+                )
         else:
-            logging.info(
+            logging.warning(
                 "LANGFUSE_PUBLIC_KEY or LANGFUSE_SECRET_KEY not set. "
-                "Langfuse observability disabled."
+                "Langfuse observability disabled. "
+                "Set these environment variables to enable Langfuse tracking."
             )
 
     @property
@@ -72,8 +90,12 @@ class LangfuseConfig:
             return False
         try:
             client = get_client()
-            return client is not None
-        except Exception:
+            enabled = client is not None
+            if not enabled:
+                logging.debug("Langfuse client is None - not enabled")
+            return enabled
+        except Exception as e:
+            logging.debug("Error checking Langfuse client: %s", e)
             return False
 
     def get_callback_handler(self) -> Optional[Any]:

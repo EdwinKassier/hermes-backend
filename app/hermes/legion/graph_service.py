@@ -579,6 +579,40 @@ class LegionGraphService:
         start_time = time.time()
         obs.log_orchestration_start(user_id, prompt, strategy=None)
 
+        # Create explicit Langfuse trace for the entire graph execution
+        langfuse_trace = None
+        if langfuse_config.is_enabled:
+            try:
+                from langfuse import get_client
+
+                client = get_client()
+                if client:
+                    langfuse_trace = client.trace(
+                        name="legion_graph_execution",
+                        user_id=user_id,
+                        metadata={
+                            "persona": persona,
+                            "prompt": prompt[:200],  # Truncate for metadata
+                            "langgraph_enabled": True,
+                        },
+                    )
+                    if trace_id:
+                        langfuse_trace.id = trace_id
+                    logger.info("Created Langfuse trace for graph execution")
+                else:
+                    logger.warning("Langfuse client is None - cannot create trace")
+            except ImportError:
+                logger.warning(
+                    "Langfuse not available for trace creation (ImportError)"
+                )
+            except Exception as e:
+                logger.warning("Failed to create Langfuse trace: %s", e, exc_info=True)
+        else:
+            logger.warning(
+                "Langfuse is not enabled - skipping trace creation. "
+                "Check LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY environment variables."
+            )
+
         # Use provided timeout or default
         timeout = orchestration_timeout or DEFAULT_ORCHESTRATION_TIMEOUT
         logger.info(
@@ -801,6 +835,14 @@ class LegionGraphService:
                         timeout,
                     )
 
+                    # Flush Langfuse events on timeout
+                    try:
+                        langfuse_config.flush()
+                    except Exception as flush_error:
+                        logger.warning(
+                            "Failed to flush Langfuse events: %s", flush_error
+                        )
+
                     return timeout_message, {
                         "interrupted": False,
                         "timed_out": True,
@@ -845,6 +887,29 @@ class LegionGraphService:
                             success=True,
                         )
 
+                        # Complete and flush Langfuse trace
+                        if langfuse_trace:
+                            try:
+                                langfuse_trace.update(
+                                    output=response_content[:500],  # Truncate output
+                                    metadata={"status": "completed", **metadata},
+                                )
+                            except Exception as trace_error:
+                                logger.warning(
+                                    "Failed to update Langfuse trace: %s", trace_error
+                                )
+
+                        # Flush Langfuse events to ensure they're sent
+                        try:
+                            langfuse_config.flush()
+                            logger.debug(
+                                "Langfuse events flushed after successful completion"
+                            )
+                        except Exception as flush_error:
+                            logger.warning(
+                                "Failed to flush Langfuse events: %s", flush_error
+                            )
+
                         return response_content, metadata
 
                 # Fallback
@@ -855,6 +920,11 @@ class LegionGraphService:
                     worker_count=0,
                     success=False,
                 )
+                # Flush Langfuse events even on fallback
+                try:
+                    langfuse_config.flush()
+                except Exception as flush_error:
+                    logger.warning("Failed to flush Langfuse events: %s", flush_error)
                 return "I apologize, but I couldn't generate a proper response.", {}
 
         except Exception as e:
@@ -865,6 +935,26 @@ class LegionGraphService:
                 worker_count=0,
                 success=False,
             )
+            # Complete Langfuse trace with error
+            if langfuse_trace:
+                try:
+                    langfuse_trace.update(
+                        output=None,
+                        level="ERROR",
+                        status_message=str(e)[:500],
+                        metadata={"status": "error", "error_type": type(e).__name__},
+                    )
+                except Exception as trace_error:
+                    logger.warning(
+                        "Failed to update Langfuse trace with error: %s", trace_error
+                    )
+
+            # Flush Langfuse events even on error
+            try:
+                langfuse_config.flush()
+                logger.debug("Langfuse events flushed after error")
+            except Exception as flush_error:
+                logger.warning("Failed to flush Langfuse events: %s", flush_error)
             logger.error("Error executing orchestration graph: %s", e)
             raise AIServiceError(f"Graph execution failed: {str(e)}") from e
 
@@ -889,6 +979,25 @@ class LegionGraphService:
         langfuse_handler = langfuse_config.get_callback_handler()
         callbacks = [langfuse_handler] if langfuse_handler else []
 
+        # Log Langfuse status for debugging (use info level so it's visible)
+        if langfuse_handler:
+            logger.info("Langfuse callback handler created successfully")
+        else:
+            # Check if Langfuse is available
+            try:
+                from app.shared.config.langfuse_config import (
+                    LANGFUSE_AVAILABLE as LF_AVAILABLE,
+                )
+
+                available_str = str(LF_AVAILABLE)
+            except ImportError:
+                available_str = "unknown"
+            logger.warning(
+                "Langfuse callback handler not available (enabled=%s, available=%s)",
+                langfuse_config.is_enabled,
+                available_str,
+            )
+
         # Build metadata for Langfuse trace attributes (v3 pattern)
         metadata = {
             "langfuse_user_id": user_id,
@@ -898,11 +1007,19 @@ class LegionGraphService:
         if trace_id:
             metadata["langfuse_trace_id"] = trace_id
 
-        return {
+        config = {
             "configurable": {"thread_id": user_id},
             "callbacks": callbacks,
             "metadata": metadata,
         }
+
+        logger.debug(
+            "LangGraph config built: callbacks=%d, metadata=%s",
+            len(callbacks),
+            list(metadata.keys()),
+        )
+
+        return config
 
     def _build_timeout_response(
         self,

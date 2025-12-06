@@ -31,13 +31,23 @@ async def judge_node(state: OrchestratorState) -> Dict[str, Any]:
     logger.info("Judge node evaluating result")
 
     task_id = state.get("current_task_id")
-    agent_id = state.get("current_agent_id")
-
-    if not task_id or not agent_id:
-        logger.error("No current task or agent for judgment")
-        return {"next_action": GraphDecision.ERROR.value}
-
     task_ledger = state.get("task_ledger", {})
+
+    # If current_task_id is not set, try to find the most recent task with a result
+    if not task_id:
+        # Look for the most recent task that has a result (may be IN_PROGRESS or COMPLETED)
+        for tid, task in task_ledger.items():
+            if task.result:
+                task_id = tid
+                logger.info("Found task %s in ledger for judgment", task_id)
+                break
+
+    if not task_id or not task_ledger.get(task_id):
+        logger.warning(
+            "No task found for judgment - skipping judge and proceeding to response"
+        )
+        return {"next_action": "general_response"}
+
     task_info = task_ledger.get(task_id)
 
     if not task_info or not task_info.result:
