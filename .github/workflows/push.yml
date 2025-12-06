@@ -347,6 +347,8 @@ jobs:
           EOF
 
           # Parse .env and append to YAML (matches deploy.sh logic)
+          # Note: All environment variables from .env are included automatically,
+          # including Langfuse variables (LANGFUSE_SECRET_KEY, LANGFUSE_PUBLIC_KEY, LANGFUSE_BASE_URL)
           while IFS='=' read -r key value; do
             # Skip comments and empty lines
             [[ "$key" =~ ^#.*$ ]] && continue

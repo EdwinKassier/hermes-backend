@@ -76,14 +76,20 @@ jobs:
     - name: Run integration tests
       if: steps.check_secrets.outputs.skip_tests == 'false'
       env:
+        # Required secrets
         GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
         SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
         SUPABASE_PROJECT_URL: ${{ secrets.SUPABASE_URL }}
         SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        # Optional secrets (tests will work without these)
         FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
         SUPABASE_MCP_SERVER_URL: ${{ secrets.SUPABASE_MCP_SERVER_URL }}
         SUPABASE_MCP_API_KEY: ${{ secrets.SUPABASE_MCP_API_KEY }}
         ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+        # Langfuse observability (optional - gracefully disabled if not set)
+        LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+        LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+        LANGFUSE_BASE_URL: ${{ secrets.LANGFUSE_BASE_URL }}
       run: |
         python -m pytest tests/integration/ -v --run-integration --cov=app --cov-report=xml
 
