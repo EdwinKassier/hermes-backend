@@ -128,10 +128,45 @@ jobs:
         if: env.SKIP_INTEGRATION_TESTS == 'false'
         run: |
           echo "🧪 Running integration tests..."
+
+          # Validate .env file format before sourcing
+          echo "🔍 Validating .env file format..."
+          LINE_NUM=0
+          while IFS= read -r line || [ -n "$line" ]; do
+            LINE_NUM=$((LINE_NUM + 1))
+            # Skip comments and empty lines
+            [[ "$line" =~ ^[[:space:]]*# ]] && continue
+            [[ -z "${line// }" ]] && continue
+            # Check if line has = sign (required for env vars)
+            if [[ ! "$line" =~ = ]]; then
+              echo "❌ ERROR: Line $LINE_NUM in .env is invalid (missing = sign):"
+              echo "   $line"
+              echo "   All non-comment lines must be in format: KEY=value"
+              exit 1
+            fi
+            # Check for spaces around = (can cause issues)
+            if [[ "$line" =~ [[:space:]]=[[:space:]] ]]; then
+              echo "⚠️  WARNING: Line $LINE_NUM has spaces around = sign (may cause issues):"
+              echo "   $line"
+            fi
+          done < .env
+          echo "✅ .env file format validation passed"
+
           # Export all variables from .env file for integration tests
+          # Use a safer method that handles .env file format correctly
           set -a
-          source .env
+          # Filter out comments and empty lines, then export each variable
+          while IFS= read -r line || [ -n "$line" ]; do
+            # Skip comments and empty lines
+            [[ "$line" =~ ^[[:space:]]*# ]] && continue
+            [[ -z "${line// }" ]] && continue
+            # Only process lines with = sign
+            if [[ "$line" =~ = ]]; then
+              export "$line"
+            fi
+          done < .env
           set +a
+
           python -m pytest tests/integration/ --run-integration -v --tb=short --no-cov
 
       - name: Run integration tests (skip if no environment)
