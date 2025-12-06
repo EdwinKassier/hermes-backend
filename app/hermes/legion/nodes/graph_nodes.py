@@ -40,6 +40,27 @@ def _track_orchestrator_agent(state_metadata: Dict[str, Any]) -> None:
     state_metadata["agents_used"] = agents_used
 
 
+def _set_orchestrator_only_agent(state_metadata: Dict[str, Any]) -> None:
+    """
+    Helper function to set orchestrator as the ONLY agent for direct responses.
+
+    For direct responses, only the orchestrator should be tracked, not any
+    specialized sub-agents. This ensures consistency with the metadata description.
+    Filters out any specialized sub-agents that might persist from previous requests.
+
+    Note: This function only modifies agents_used. tools_used is preserved to ensure
+    tools are tracked correctly even in direct responses (e.g., if LLM uses tools).
+
+    Args:
+        state_metadata: Metadata dictionary from state (will be mutated)
+    """
+    # For direct responses, only orchestrator should be in agents_used
+    # tools_used is preserved to maintain accurate tool tracking
+    state_metadata["agents_used"] = ["orchestrator"]
+    # Note: tools_used is intentionally NOT modified - tools may still be used
+    # during direct responses and should be tracked separately
+
+
 async def orchestrator_node(state: OrchestratorState) -> OrchestratorState:
     """
     Main orchestrator node - analyzes request and routes to appropriate action.
@@ -130,7 +151,8 @@ async def orchestrator_node(state: OrchestratorState) -> OrchestratorState:
         decision_rationale.append(current_decision)
 
         # Track orchestrator agent as providing the response
-        _track_orchestrator_agent(state_metadata)
+        # For direct responses, only orchestrator should be tracked (no specialized sub-agents)
+        _set_orchestrator_only_agent(state_metadata)
 
         # Return new dict to ensure proper merging (LangGraph may replace dicts without reducer)
         return {
@@ -419,8 +441,9 @@ def _handle_general_conversation(state, decision, rationale):
     rationale.append(decision)
 
     # Track orchestrator agent as providing the response
+    # For direct responses, only orchestrator should be tracked (no specialized sub-agents)
     state_metadata = state.get("metadata", {})
-    _track_orchestrator_agent(state_metadata)
+    _set_orchestrator_only_agent(state_metadata)
 
     logger.info(
         "No specific task identified - orchestrator agent will handle general conversation"
@@ -496,8 +519,9 @@ def _handle_factual_question(state, task_type, decision, rationale):
     rationale.append(decision)
 
     # Track orchestrator agent as providing the response
+    # For direct responses, only orchestrator should be tracked (no specialized sub-agents)
     state_metadata = state.get("metadata", {})
-    _track_orchestrator_agent(state_metadata)
+    _set_orchestrator_only_agent(state_metadata)
 
     logger.info(
         f"Factual question detected (task_type: {task_type}) - orchestrator agent will provide answer"
@@ -966,8 +990,9 @@ async def general_response_node(state: OrchestratorState) -> Dict[str, Any]:
         )
 
         # Track orchestrator agent as providing the response
+        # For direct responses, only orchestrator should be tracked (no specialized sub-agents)
         state_metadata = state.get("metadata", {})
-        _track_orchestrator_agent(state_metadata)
+        _set_orchestrator_only_agent(state_metadata)
 
         response_message: Message = {
             "role": "assistant",
