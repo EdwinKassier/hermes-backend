@@ -97,11 +97,16 @@ Analyze the output and provide your judgment in JSON format.
 """
 
     try:
+        # Get user_id from state for proper Langfuse tracing linkage
+        user_id = state.get("user_id")
+
         # Call LLM
+        # Note: temperature parameter not supported in generate_gemini_response
+        # Persona config should handle temperature settings
         response = gemini_service.generate_gemini_response(
             prompt=judge_prompt,
             persona=persona,  # Use configured persona
-            temperature=0.1,  # Low temperature for consistent judgment
+            user_id=user_id,  # Pass user_id for Langfuse tracing
         )
 
         # Parse JSON

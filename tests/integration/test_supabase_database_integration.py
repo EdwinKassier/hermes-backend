@@ -41,15 +41,16 @@ class TestMCPDatabaseIntegration:
     async def test_service_initialization(self, service):
         """Test that service initializes correctly."""
         assert service is not None
-        assert service.mcp_server_url is not None
-        assert service.api_key is not None
+        assert service.supabase_url is not None
+        assert service.supabase_key is not None
+        assert service.client is not None
 
     @pytest.mark.asyncio
     async def test_tool_initialization(self, tool):
         """Test that LangChain tool initializes correctly."""
         assert tool is not None
         assert tool.name == "database_query"
-        assert tool.mcp_service is not None
+        assert tool.db_service is not None
 
     @pytest.mark.asyncio
     async def test_simple_query_execution(self, service):

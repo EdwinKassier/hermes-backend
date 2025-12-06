@@ -5,6 +5,7 @@ These tests verify that Prism sessions can be created without signal registratio
 particularly in multi-threaded environments like Cloud Run.
 """
 
+import os
 import threading
 import time
 from unittest.mock import MagicMock, patch
@@ -16,9 +17,23 @@ from app.prism.services import PrismService, get_prism_service
 from app.prism.session_store import PrismSession
 
 
+def check_redis_available():
+    """Check if Redis is available for testing."""
+    try:
+        import redis
+
+        redis_url = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
+        client = redis.from_url(redis_url, socket_connect_timeout=1, socket_timeout=1)
+        client.ping()
+        return True
+    except Exception:
+        return False
+
+
 class TestPrismSessionCreation:
     """Test Prism session creation in various contexts."""
 
+    @pytest.mark.skipif(not check_redis_available(), reason="Redis not available")
     def test_prism_service_instantiation_integration(self):
         """Test that PrismService can be instantiated without signal errors."""
         # This should work without any signal registration errors
@@ -39,6 +54,7 @@ class TestPrismSessionCreation:
         # Cleanup
         service.cleanup()
 
+    @pytest.mark.skipif(not check_redis_available(), reason="Redis not available")
     def test_get_prism_service_singleton_integration(self):
         """Test that get_prism_service returns singleton without signal errors."""
         # First call should create the service
@@ -53,6 +69,7 @@ class TestPrismSessionCreation:
         health_metrics = service1.get_health_metrics()
         assert isinstance(health_metrics, dict)
 
+    @pytest.mark.skipif(not check_redis_available(), reason="Redis not available")
     def test_prism_session_creation_integration(self):
         """Test that PrismSession can be created without signal errors."""
         service = get_prism_service()
@@ -86,6 +103,7 @@ class TestPrismSessionCreation:
         session.status = "closed"
         assert session.status.value == "closed"
 
+    @pytest.mark.skipif(not check_redis_available(), reason="Redis not available")
     def test_multiple_threads_create_sessions(self):
         """Test that multiple threads can create sessions simultaneously."""
         service = get_prism_service()
@@ -125,6 +143,7 @@ class TestPrismSessionCreation:
         for result in results:
             assert result["success"], f"Thread {result['thread_id']} failed"
 
+    @pytest.mark.skipif(not check_redis_available(), reason="Redis not available")
     def test_prism_service_operations_thread_safety(self):
         """Test that PrismService operations are thread-safe."""
         service = get_prism_service()
@@ -164,6 +183,7 @@ class TestPrismSessionCreation:
         assert len(exceptions) == 0, f"Exceptions in worker threads: {exceptions}"
         assert len(results) == 5, f"Expected 5 successful results, got {len(results)}"
 
+    @pytest.mark.skipif(not check_redis_available(), reason="Redis not available")
     def test_signal_registration_error_simulation(self):
         """Test that the service works even when signal registration would fail."""
         # This test simulates the original error condition
@@ -189,6 +209,7 @@ class TestPrismSessionCreation:
 
             service.cleanup()
 
+    @pytest.mark.skipif(not check_redis_available(), reason="Redis not available")
     def test_gunicorn_worker_context_simulation(self):
         """Test that the service works in a simulated Gunicorn worker context."""
         # Simulate the conditions that caused the original error
@@ -227,6 +248,7 @@ class TestPrismSessionCreation:
         assert len(results) == 1, f"Expected 1 successful result, got {len(results)}"
         assert results[0]["success"]
 
+    @pytest.mark.skipif(not check_redis_available(), reason="Redis not available")
     def test_cleanup_after_signal_error_simulation(self):
         """Test that cleanup works even after signal registration errors."""
         service = PrismService()
@@ -241,6 +263,7 @@ class TestPrismSessionCreation:
         # Verify executor was shut down
         assert service.executor._shutdown
 
+    @pytest.mark.skipif(not check_redis_available(), reason="Redis not available")
     def test_concurrent_service_instantiation(self):
         """Test concurrent service instantiation from multiple threads."""
         results = []

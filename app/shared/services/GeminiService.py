@@ -21,9 +21,9 @@ except ImportError:
     HumanMessage = None
     LANGCHAIN_AVAILABLE = False
 
-
+from app.shared.config.langfuse_config import langfuse_config
 from app.shared.config.posthog_config import posthog_config
-from app.shared.utils.conversation_state import ConversationState, State
+from app.shared.utils.conversation_state import ConversationState
 
 # Import tools and services
 from app.shared.utils.toolhub import get_all_tools
@@ -345,7 +345,11 @@ IMPORTANT: Ensure you fully address the Original User Query requirements, includ
         )
 
     def generate_gemini_response(
-        self, prompt: str, persona: str = "hermes", user_id: Optional[str] = None
+        self,
+        prompt: str,
+        persona: str = "hermes",
+        user_id: Optional[str] = None,
+        trace_id: Optional[str] = None,
     ) -> str:
         """
         Generate a response using Gemini with optional tool execution.
@@ -358,6 +362,7 @@ IMPORTANT: Ensure you fully address the Original User Query requirements, includ
             prompt: User input prompt to process
             persona: Persona name for response style and configuration (default: "hermes")
             user_id: Optional user ID for analytics tracking
+            trace_id: Optional trace ID for distributed tracing
 
         Returns:
             Generated response string from the AI model
@@ -384,11 +389,27 @@ IMPORTANT: Ensure you fully address the Original User Query requirements, includ
         full_prompt = f"{prompt_prefix}User Input: {prompt}" if base_prompt else prompt
 
         # Setup callbacks
-        callback_handler = self._create_callback_handler(
+        posthog_handler = self._create_callback_handler(
             user_id=user_id, persona=persona, operation_type="standard"
         )
-        callbacks = [callback_handler] if callback_handler else []
-        config = {"callbacks": callbacks}
+        langfuse_handler = langfuse_config.get_callback_handler()
+
+        # Combine all available callbacks
+        callbacks = []
+        if posthog_handler:
+            callbacks.append(posthog_handler)
+        if langfuse_handler:
+            callbacks.append(langfuse_handler)
+
+        # Add metadata for Langfuse trace attributes (v3 pattern)
+        # Langfuse v3 supports trace attributes via metadata in config
+        metadata = {}
+        if user_id:
+            metadata["langfuse_user_id"] = user_id
+        if trace_id:
+            metadata["langfuse_trace_id"] = trace_id
+
+        config = {"callbacks": callbacks, "metadata": metadata}
 
         try:
             logging.info(
@@ -416,7 +437,7 @@ IMPORTANT: Ensure you fully address the Original User Query requirements, includ
                 # Reuse callbacks for the follow-up generation
                 follow_up_message = model.invoke(
                     [HumanMessage(content=follow_up_prompt)],
-                    config={"callbacks": callbacks},
+                    config={"callbacks": callbacks, "metadata": metadata},
                 )
                 response = follow_up_message.content.strip()
 

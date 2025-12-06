@@ -1,8 +1,10 @@
+import asyncio
 from unittest.mock import Mock, patch
 
 import pytest
 
 from app.hermes.legion.graph_service import LegionGraphService
+from app.hermes.legion.nodes.orchestration_graph import get_orchestration_graph
 from app.hermes.legion.state.graph_state import GraphDecision
 
 
@@ -15,23 +17,11 @@ def reset_singleton():
     orchestration_graph._orchestration_graph = None
 
 
-@patch("app.hermes.legion.graph_service.get_gemini_service")
-@patch("app.hermes.legion.nodes.graph_nodes.get_gemini_service")
-@patch("app.hermes.legion.agents.research_agent.get_gemini_service")
-@patch("app.hermes.legion.utils.tool_allocator.get_gemini_service")
-def test_full_conversation_flow(
-    mock_orch_service,
-    mock_allocator_service,
-    mock_agent_service,
-    mock_node_service,
-    mock_service,
-):
+@patch("app.shared.utils.service_loader.get_gemini_service")
+async def test_full_conversation_flow(mock_service):
     # Setup mocks
     mock_gemini = Mock()
     mock_service.return_value = mock_gemini
-    mock_node_service.return_value = mock_gemini
-    mock_agent_service.return_value = mock_gemini
-    mock_allocator_service.return_value = mock_gemini
 
     # Configure all_tools to be a list
     mock_tool = Mock()
@@ -47,9 +37,11 @@ def test_full_conversation_flow(
         "Hello! How can I help you today?",
     ]
 
-    # Initialize service
-    service = LegionGraphService(checkpoint_db_path=":memory:")
-    graph = service.graph
+    # Get the graph directly for testing
+    from langgraph.checkpoint.memory import MemorySaver
+
+    checkpointer = MemorySaver()
+    graph = get_orchestration_graph(checkpointer=checkpointer)
 
     # --- Single Turn: Simple greeting ---
     config = {"configurable": {"thread_id": "e2e-test"}}
@@ -59,8 +51,8 @@ def test_full_conversation_flow(
         "persona": "hermes",
     }
 
-    # Run graph
-    result = graph.invoke(initial_state, config=config)
+    # Run graph (async)
+    result = await graph.ainvoke(initial_state, config=config)
 
     # Verify we got a response
     assert "messages" in result
@@ -72,6 +64,6 @@ def test_full_conversation_flow(
     assert len(last_message["content"]) > 0
 
     # Verify state was saved (checkpointer works)
-    state_snapshot = graph.get_state(config)
+    state_snapshot = await graph.aget_state(config)
     assert state_snapshot is not None
     assert len(state_snapshot.values["messages"]) > 0

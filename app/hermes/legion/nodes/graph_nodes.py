@@ -912,15 +912,18 @@ async def general_response_node(state: OrchestratorState) -> Dict[str, Any]:
     # Generate response for simple conversations without agents
     user_message = last_message.get("content", "")
     persona = state["persona"]
+    user_id = state.get("user_id")
 
     # Use async LLM service for better performance
     llm_service = get_async_llm_service()
 
     try:
         # Use async generation for general responses
+        # Pass user_id to ensure proper Langfuse tracing linkage
         result = await llm_service.generate_async(
             prompt=user_message,
             persona=persona,
+            user_id=user_id,
         )
 
         response_message: Message = {

@@ -34,7 +34,7 @@ jobs:
 
     - name: Run unit tests with coverage
       run: |
-        pytest tests/unit/ -v -m "not redis" --cov=app --cov-report=xml --cov-report=term-missing
+        python -m pytest tests/unit/ -v -m "not redis" --cov=app --cov-report=xml --cov-report=term-missing
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3
@@ -62,15 +62,39 @@ jobs:
         python -m pip install --upgrade pip
         pip install -e ".[test]"
 
+    - name: Check for required secrets
+      id: check_secrets
+      run: |
+        if [ -z "${{ secrets.GOOGLE_API_KEY }}" ] || [ -z "${{ secrets.SUPABASE_URL }}" ] || [ -z "${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" ]; then
+          echo "⚠️  Required secrets not found - integration tests will be skipped"
+          echo "skip_tests=true" >> $GITHUB_OUTPUT
+        else
+          echo "✅ Required secrets found"
+          echo "skip_tests=false" >> $GITHUB_OUTPUT
+        fi
+
     - name: Run integration tests
+      if: steps.check_secrets.outputs.skip_tests == 'false'
       env:
         GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
         SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        SUPABASE_PROJECT_URL: ${{ secrets.SUPABASE_URL }}
         SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+        SUPABASE_MCP_SERVER_URL: ${{ secrets.SUPABASE_MCP_SERVER_URL }}
+        SUPABASE_MCP_API_KEY: ${{ secrets.SUPABASE_MCP_API_KEY }}
+        ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
       run: |
-        pytest tests/integration/ -v --run-integration --cov=app --cov-report=xml
+        python -m pytest tests/integration/ -v --run-integration --cov=app --cov-report=xml
+
+    - name: Skip integration tests
+      if: steps.check_secrets.outputs.skip_tests == 'true'
+      run: |
+        echo "⏭️  Skipping integration tests - required secrets not configured"
+        echo "This is expected if GOOGLE_API_KEY, SUPABASE_URL, or SUPABASE_SERVICE_ROLE_KEY are not set"
 
     - name: Upload coverage
+      if: steps.check_secrets.outputs.skip_tests == 'false'
       uses: codecov/codecov-action@v3
       with:
         file: ./coverage.xml
@@ -93,6 +117,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install flake8 black
+        pip install -e ".[test]"
 
     - name: Lint with flake8
       run: |
@@ -128,10 +153,13 @@ jobs:
           exit 1
         fi
 
-        # Integration tests are allowed to be skipped
+        # Integration tests are allowed to be skipped or cancelled
         if [ "${{ needs.integration-tests.result }}" == "failure" ]; then
           echo "❌ Integration tests failed"
           exit 1
+        fi
+        if [ "${{ needs.integration-tests.result }}" == "skipped" ] || [ "${{ needs.integration-tests.result }}" == "cancelled" ]; then
+          echo "⏭️  Integration tests were skipped (expected if secrets not configured)"
         fi
 
         echo "✅ All checks passed!"

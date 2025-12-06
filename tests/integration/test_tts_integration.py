@@ -334,9 +334,19 @@ class TestGoogleTTS:
         text = "Hello, this is a test of the Google Cloud text to speech system."
         output_path = os.path.join(temp_audio_dir, "google_test.wav")
 
-        result = google_service.generate_audio(
-            text_input=text, output_filepath=output_path, upload_to_cloud=False
-        )
+        try:
+            result = google_service.generate_audio(
+                text_input=text, output_filepath=output_path, upload_to_cloud=False
+            )
+        except RuntimeError as e:
+            error_msg = str(e).lower()
+            if (
+                "billing" in error_msg
+                or "403" in error_msg
+                or "billing_disabled" in error_msg
+            ):
+                pytest.skip(f"Google TTS billing not enabled: {e}")
+            raise
 
         # Verify result structure
         assert isinstance(result, dict)
@@ -358,16 +368,26 @@ class TestGoogleTTS:
         text = "Testing custom voice parameters with Google Cloud TTS."
         output_path = os.path.join(temp_audio_dir, "google_voice_params.wav")
 
-        result = google_service.generate_audio(
-            text_input=text,
-            output_filepath=output_path,
-            upload_to_cloud=False,
-            google_voice_params={
-                "language_code": "en-US",
-                "name": "en-US-Neural2-F",  # Female voice
-                "ssml_gender": "FEMALE",
-            },
-        )
+        try:
+            result = google_service.generate_audio(
+                text_input=text,
+                output_filepath=output_path,
+                upload_to_cloud=False,
+                google_voice_params={
+                    "language_code": "en-US",
+                    "name": "en-US-Neural2-F",  # Female voice
+                    "ssml_gender": "FEMALE",
+                },
+            )
+        except RuntimeError as e:
+            error_msg = str(e).lower()
+            if (
+                "billing" in error_msg
+                or "403" in error_msg
+                or "billing_disabled" in error_msg
+            ):
+                pytest.skip(f"Google TTS billing not enabled: {e}")
+            raise
 
         # Validate
         assert result["local_path"] is not None
@@ -399,6 +419,15 @@ class TestGoogleTTS:
                 assert audio_info["exists"]
                 logger.info(f"✓ Google TTS {lang_code}: {audio_info}")
 
+            except RuntimeError as e:
+                error_msg = str(e).lower()
+                if (
+                    "billing" in error_msg
+                    or "403" in error_msg
+                    or "billing_disabled" in error_msg
+                ):
+                    pytest.skip(f"Google TTS billing not enabled: {e}")
+                raise
             except Exception as e:
                 logger.warning(f"Language {lang_code} test skipped: {e}")
                 # Some voices might not be available in all projects
@@ -409,12 +438,22 @@ class TestGoogleTTS:
         text = "Testing high quality audio generation with Google TTS."
         output_path = os.path.join(temp_audio_dir, "google_quality.wav")
 
-        result = google_service.generate_audio(
-            text_input=text,
-            output_filepath=output_path,
-            upload_to_cloud=False,
-            google_audio_config={"sample_rate_hertz": 24000},  # Higher quality
-        )
+        try:
+            result = google_service.generate_audio(
+                text_input=text,
+                output_filepath=output_path,
+                upload_to_cloud=False,
+                google_audio_config={"sample_rate_hertz": 24000},  # Higher quality
+            )
+        except RuntimeError as e:
+            error_msg = str(e).lower()
+            if (
+                "billing" in error_msg
+                or "403" in error_msg
+                or "billing_disabled" in error_msg
+            ):
+                pytest.skip(f"Google TTS billing not enabled: {e}")
+            raise
 
         audio_info = validate_audio_file(result["local_path"])
         assert audio_info["exists"]

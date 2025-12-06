@@ -15,6 +15,7 @@ import time
 from datetime import datetime
 
 import pytest
+from google.api_core import exceptions as google_exceptions
 
 from app.shared.services.GeminiService import GeminiService, PersonaConfig
 
@@ -50,14 +51,39 @@ class TestGeminiToolExecution:
 
         self.service.add_persona(test_persona)
 
+    def _call_api_safely(self, func, *args, **kwargs):
+        """Helper method to call API methods with error handling."""
+        try:
+            return func(*args, **kwargs)
+        except google_exceptions.ResourceExhausted as e:
+            pytest.skip(f"API quota exceeded: {e}")
+        except google_exceptions.PermissionDenied as e:
+            error_msg = str(e).lower()
+            if "billing" in error_msg or "403" in error_msg:
+                pytest.skip(f"Billing/permission issue: {e}")
+            raise
+        except Exception as e:
+            error_msg = str(e).lower()
+            if (
+                "quota" in error_msg
+                or "429" in error_msg
+                or "resourceexhausted" in error_msg
+            ):
+                pytest.skip(f"API quota exceeded: {e}")
+            elif "billing" in error_msg or "403" in error_msg:
+                pytest.skip(f"Billing not enabled: {e}")
+            raise
+
     def test_time_tool_execution_with_real_llm(self):
         """Test that the service correctly executes the time tool with real LLM."""
         # Test prompt that should trigger time tool usage
         test_prompt = "What is the current time?"
 
         # Get response from real LLM
-        response = self.service.generate_gemini_response(
-            prompt=test_prompt, persona="test_tool_execution"
+        response = self._call_api_safely(
+            self.service.generate_gemini_response,
+            prompt=test_prompt,
+            persona="test_tool_execution",
         )
 
         # Verify response is not empty
@@ -95,8 +121,10 @@ class TestGeminiToolExecution:
         ]
 
         for prompt in test_prompts:
-            response = self.service.generate_gemini_response(
-                prompt=prompt, persona="test_tool_execution"
+            response = self._call_api_safely(
+                self.service.generate_gemini_response,
+                prompt=prompt,
+                persona="test_tool_execution",
             )
 
             # Verify response is meaningful
@@ -131,8 +159,10 @@ class TestGeminiToolExecution:
         self.service.add_persona(no_tools_persona)
 
         # Test with a prompt that might request tools
-        response = self.service.generate_gemini_response(
-            prompt="What time is it?", persona="no_tools_persona"
+        response = self._call_api_safely(
+            self.service.generate_gemini_response,
+            prompt="What time is it?",
+            persona="no_tools_persona",
         )
 
         # Should still get a response (even if it can't use tools)
@@ -145,8 +175,10 @@ class TestGeminiToolExecution:
         """Test tool execution with conversational context."""
         # First, establish some context
         context_prompt = "Hi, I'm working on a project and need to track time."
-        context_response = self.service.generate_gemini_response(
-            prompt=context_prompt, persona="test_tool_execution"
+        context_response = self._call_api_safely(
+            self.service.generate_gemini_response,
+            prompt=context_prompt,
+            persona="test_tool_execution",
         )
 
         assert context_response is not None
@@ -154,8 +186,10 @@ class TestGeminiToolExecution:
 
         # Then ask for time with context
         time_prompt = "What's the current time so I can log it?"
-        time_response = self.service.generate_gemini_response(
-            prompt=time_prompt, persona="test_tool_execution"
+        time_response = self._call_api_safely(
+            self.service.generate_gemini_response,
+            prompt=time_prompt,
+            persona="test_tool_execution",
         )
 
         # Should get time information
@@ -177,8 +211,10 @@ class TestGeminiToolExecution:
 
         responses = []
         for prompt in prompts:
-            response = self.service.generate_gemini_response(
-                prompt=prompt, persona="test_tool_execution"
+            response = self._call_api_safely(
+                self.service.generate_gemini_response,
+                prompt=prompt,
+                persona="test_tool_execution",
             )
 
             assert response is not None
@@ -204,8 +240,10 @@ class TestGeminiToolExecution:
         """Test tool execution performance and timing."""
         start_time = time.time()
 
-        response = self.service.generate_gemini_response(
-            prompt="What is the current time?", persona="test_tool_execution"
+        response = self._call_api_safely(
+            self.service.generate_gemini_response,
+            prompt="What is the current time?",
+            persona="test_tool_execution",
         )
 
         end_time = time.time()
@@ -246,8 +284,10 @@ class TestGeminiToolExecution:
         personas_to_test = ["test_tool_execution", "alternative_tool_persona"]
 
         for persona in personas_to_test:
-            response = self.service.generate_gemini_response(
-                prompt="What time is it?", persona=persona
+            response = self._call_api_safely(
+                self.service.generate_gemini_response,
+                prompt="What time is it?",
+                persona=persona,
             )
 
             assert response is not None
@@ -264,15 +304,18 @@ class TestGeminiToolExecution:
         # This test verifies that even if there are issues, the service continues to work
 
         # First, get a successful response
-        response1 = self.service.generate_gemini_response(
-            prompt="What time is it?", persona="test_tool_execution"
+        response1 = self._call_api_safely(
+            self.service.generate_gemini_response,
+            prompt="What time is it?",
+            persona="test_tool_execution",
         )
 
         assert response1 is not None
         print(f"✅ First response successful: {response1}")
 
         # Then try another request to ensure service is still working
-        response2 = self.service.generate_gemini_response(
+        response2 = self._call_api_safely(
+            self.service.generate_gemini_response,
             prompt="Can you tell me the current time again?",
             persona="test_tool_execution",
         )
@@ -302,19 +345,44 @@ class TestGeminiToolExecutionEdgeCases:
 
         self.service = GeminiService()
 
+    def _call_api_safely(self, func, *args, **kwargs):
+        """Helper method to call API methods with error handling."""
+        try:
+            return func(*args, **kwargs)
+        except google_exceptions.ResourceExhausted as e:
+            pytest.skip(f"API quota exceeded: {e}")
+        except google_exceptions.PermissionDenied as e:
+            error_msg = str(e).lower()
+            if "billing" in error_msg or "403" in error_msg:
+                pytest.skip(f"Billing/permission issue: {e}")
+            raise
+        except Exception as e:
+            error_msg = str(e).lower()
+            if (
+                "quota" in error_msg
+                or "429" in error_msg
+                or "resourceexhausted" in error_msg
+            ):
+                pytest.skip(f"API quota exceeded: {e}")
+            elif "billing" in error_msg or "403" in error_msg:
+                pytest.skip(f"Billing not enabled: {e}")
+            raise
+
     def test_tool_execution_with_empty_prompt(self):
         """Test tool execution with empty or minimal prompts."""
         test_persona = PersonaConfig(
             name="edge_case_persona",
             base_prompt="You are a helpful assistant.",
-            allowed_tools=["time_tool"],
+            allowed_tools=["time_info"],
         )
 
         self.service.add_persona(test_persona)
 
         # Test with minimal prompt
-        response = self.service.generate_gemini_response(
-            prompt="time", persona="edge_case_persona"
+        response = self._call_api_safely(
+            self.service.generate_gemini_response,
+            prompt="time",
+            persona="edge_case_persona",
         )
 
         assert response is not None
@@ -325,7 +393,7 @@ class TestGeminiToolExecutionEdgeCases:
         test_persona = PersonaConfig(
             name="long_prompt_persona",
             base_prompt="You are a helpful assistant that can use tools.",
-            allowed_tools=["time_tool"],
+            allowed_tools=["time_info"],
         )
 
         self.service.add_persona(test_persona)
@@ -337,8 +405,10 @@ class TestGeminiToolExecutionEdgeCases:
             + "and I need to schedule them properly. What time is it?"
         )
 
-        response = self.service.generate_gemini_response(
-            prompt=long_prompt, persona="long_prompt_persona"
+        response = self._call_api_safely(
+            self.service.generate_gemini_response,
+            prompt=long_prompt,
+            persona="long_prompt_persona",
         )
 
         assert response is not None
@@ -351,7 +421,7 @@ class TestGeminiToolExecutionEdgeCases:
         test_persona = PersonaConfig(
             name="special_chars_persona",
             base_prompt="You are a helpful assistant.",
-            allowed_tools=["time_tool"],
+            allowed_tools=["time_info"],
         )
 
         self.service.add_persona(test_persona)
@@ -364,8 +434,10 @@ class TestGeminiToolExecutionEdgeCases:
         ]
 
         for prompt in special_prompts:
-            response = self.service.generate_gemini_response(
-                prompt=prompt, persona="special_chars_persona"
+            response = self._call_api_safely(
+                self.service.generate_gemini_response,
+                prompt=prompt,
+                persona="special_chars_persona",
             )
 
             assert response is not None

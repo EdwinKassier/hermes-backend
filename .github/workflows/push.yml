@@ -38,14 +38,28 @@ jobs:
         - name: Install dependencies
           run: |
             python -m pip install --upgrade pip
-            pip install pylint
+            pip install flake8 black pylint
             pip install umsgpack
             pip install pylint-fail-under
 
-        - name: Code review
+        - name: Lint with flake8 (syntax errors)
+          run: |
+            # Stop the build if there are Python syntax errors or undefined names
+            flake8 app tests --count --select=E9,F63,F7,F82 --show-source --statistics
+
+        - name: Lint with flake8 (warnings)
+          run: |
+            # Exit-zero treats all errors as warnings
+            flake8 app tests --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+        - name: Check formatting with black
+          run: |
+            black --check app tests
+
+        - name: Code review (pylint - optional)
           run: find . -name '*.py' -print -exec pylint {} \; || true
 
-        - name: Analyze code
+        - name: Analyze code (pylint - optional)
           run: |
             for file in */*.py; do
               pylint "$file" --fail-under=0.0 || true
@@ -108,12 +122,16 @@ jobs:
       - name: Run unit tests
         run: |
           echo "🧪 Running unit tests..."
-          python -m pytest tests/unit/ -v --tb=short --no-cov
+          python -m pytest tests/unit/ -v -m "not redis" --tb=short --no-cov
 
       - name: Run integration tests (if environment available)
         if: env.SKIP_INTEGRATION_TESTS == 'false'
         run: |
           echo "🧪 Running integration tests..."
+          # Export all variables from .env file for integration tests
+          set -a
+          source .env
+          set +a
           python -m pytest tests/integration/ --run-integration -v --tb=short --no-cov
 
       - name: Run integration tests (skip if no environment)

@@ -1,10 +1,11 @@
 import asyncio
 import logging
 import time
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from app.hermes.exceptions import AIServiceError
 from app.hermes.models import GeminiResponse, ProcessRequestResult, UserIdentity
+from app.shared.config.langfuse_config import langfuse_config
 from app.shared.services.TTSService import TTSService
 
 from .nodes.orchestration_graph import get_orchestration_graph
@@ -550,6 +551,7 @@ class LegionGraphService:
         persona: str = "hermes",
         resume_value=None,
         orchestration_timeout: Optional[float] = None,
+        trace_id: Optional[str] = None,
     ) -> tuple[str, dict]:
         """
         Generate AI response using LangGraph orchestration.
@@ -563,6 +565,7 @@ class LegionGraphService:
             persona: AI persona
             resume_value: Optional value to pass when resuming from interrupt
             orchestration_timeout: Optional timeout in seconds (default: 300s / 5 min)
+            trace_id: Optional trace ID for distributed tracing
 
         Returns:
             Tuple of (response_content, metadata)
@@ -590,7 +593,10 @@ class LegionGraphService:
         total_workers = 0
 
         try:
-            config = {"configurable": {"thread_id": user_id}}
+            # Build config with Langfuse callbacks and metadata
+            config = self._build_langgraph_config(
+                user_id=user_id, persona=persona, trace_id=trace_id
+            )
 
             # Use async persistence context manager - must wrap all checkpointer usage
             async with self._persistence.get_checkpointer() as checkpointer:
@@ -824,6 +830,42 @@ class LegionGraphService:
             logger.error("Error executing orchestration graph: %s", e)
             raise AIServiceError(f"Graph execution failed: {str(e)}") from e
 
+    def _build_langgraph_config(
+        self,
+        user_id: str,
+        persona: str = "hermes",
+        trace_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Build LangGraph config with Langfuse callbacks and metadata.
+
+        Args:
+            user_id: User identifier
+            persona: AI persona name
+            trace_id: Optional trace ID for distributed tracing
+
+        Returns:
+            Config dictionary with callbacks and metadata for LangGraph execution
+        """
+        # Setup Langfuse callback handler for observability
+        langfuse_handler = langfuse_config.get_callback_handler()
+        callbacks = [langfuse_handler] if langfuse_handler else []
+
+        # Build metadata for Langfuse trace attributes (v3 pattern)
+        metadata = {
+            "langfuse_user_id": user_id,
+            "persona": persona,
+            "langgraph_enabled": True,
+        }
+        if trace_id:
+            metadata["langfuse_trace_id"] = trace_id
+
+        return {
+            "configurable": {"thread_id": user_id},
+            "callbacks": callbacks,
+            "metadata": metadata,
+        }
+
     def _build_timeout_response(
         self,
         partial_result: Optional[dict],
@@ -999,7 +1041,8 @@ class LegionGraphService:
             List of messages from most recent checkpoint
         """
         try:
-            config = {"configurable": {"thread_id": user_id}}
+            # Build config with Langfuse callbacks and metadata
+            config = self._build_langgraph_config(user_id=user_id)
 
             # Use persistence to get state
             async with self._persistence.get_checkpointer() as checkpointer:
