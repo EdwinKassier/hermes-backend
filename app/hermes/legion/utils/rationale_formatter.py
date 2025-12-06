@@ -62,7 +62,7 @@ class DecisionRationaleFormatter:
         agent_needed = decisions.get("agent_needed", False)
 
         if not agent_needed:
-            return "Simple question - answered directly using knowledge base"
+            return "Orchestrator agent determined simple question and is providing the answer directly using knowledge base"
 
         # Agent needed
         agent_type = decisions.get("agent_type") or decisions.get("selected_task_type")
@@ -154,9 +154,9 @@ class DecisionRationaleFormatter:
 
             # Determine what happened
             if analysis.get("multi_agent_task_detected"):
-                step += "Detected multi-part request - planning parallel execution"
+                step += "Orchestrator agent detected multi-part request - planning parallel execution"
             elif decs.get("agent_needed") == False:
-                step += "Simple question - answering directly from knowledge"
+                step += "Orchestrator agent determined simple question and is providing the answer directly from knowledge base"
             elif decs.get("action") == "gather_info":
                 agent = decs.get("agent_type", "specialist")
                 step += (

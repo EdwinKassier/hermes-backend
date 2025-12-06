@@ -101,14 +101,14 @@ class LegionGraphService:
             subtask_count = analysis.get(
                 "subtasks_count", len(analysis.get("parallel_tasks", []))
             )
-            return f"Multi-agent parallel execution: Task decomposed into {subtask_count} independent subtasks for concurrent processing"
+            return f"Multi-agent parallel execution: Orchestrator agent decomposed task into {subtask_count} independent subtasks for concurrent processing with specialized sub-agents"
 
         if decisions.get("agent_needed"):
             agent_type = decisions.get("agent_type", "specialist")
             task_type = analysis.get("identified_task_type", agent_type)
-            return f"Single-agent execution: {task_type.title()} task requiring specialized {agent_type} agent"
+            return f"Single-agent execution: Orchestrator agent routed to specialized {agent_type} sub-agent for {task_type.title()} task"
 
-        return "Direct response: Simple question answerable from knowledge base without agent"
+        return "Direct response: Orchestrator agent determined simple question answerable from knowledge base and is providing the answer directly without specialized sub-agents"
 
     def _get_agents_explanation(self, agents_used: list) -> list:
         """Explain which agents were used and why."""
@@ -132,6 +132,7 @@ class LegionGraphService:
     def _get_agent_role(self, agent_type: str) -> str:
         """Get human-readable role description for agent type."""
         roles = {
+            "orchestrator": "Request routing, decision-making, and direct response generation",
             "research": "Information gathering and research",
             "code": "Code generation and programming",
             "analysis": "Data analysis and evaluation",

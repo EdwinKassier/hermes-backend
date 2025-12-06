@@ -24,6 +24,22 @@ from ..utils import ToolAllocator
 logger = logging.getLogger(__name__)
 
 
+def _track_orchestrator_agent(state_metadata: Dict[str, Any]) -> None:
+    """
+    Helper function to track orchestrator agent in metadata.
+
+    Ensures "orchestrator" is added to agents_used list if not already present.
+    Mutates the input dict in place.
+
+    Args:
+        state_metadata: Metadata dictionary from state (will be mutated)
+    """
+    agents_used = list(state_metadata.get("agents_used", []))
+    if "orchestrator" not in agents_used:
+        agents_used.append("orchestrator")
+    state_metadata["agents_used"] = agents_used
+
+
 async def orchestrator_node(state: OrchestratorState) -> OrchestratorState:
     """
     Main orchestrator node - analyzes request and routes to appropriate action.
@@ -113,10 +129,14 @@ async def orchestrator_node(state: OrchestratorState) -> OrchestratorState:
         current_decision["reasoning"]["action"] = routing_decision.reasoning
         decision_rationale.append(current_decision)
 
+        # Track orchestrator agent as providing the response
+        _track_orchestrator_agent(state_metadata)
+
+        # Return new dict to ensure proper merging (LangGraph may replace dicts without reducer)
         return {
             "next_action": GraphDecision.COMPLETE.value,
             "decision_rationale": decision_rationale,
-            "metadata": state_metadata,
+            "metadata": {**state_metadata},
             "execution_path": [
                 {"node": "orchestrator", "timestamp": datetime.now().isoformat()}
             ],
@@ -131,10 +151,11 @@ async def orchestrator_node(state: OrchestratorState) -> OrchestratorState:
         current_decision["reasoning"]["action"] = routing_decision.reasoning
         decision_rationale.append(current_decision)
 
+        # Return new dict to ensure proper merging (LangGraph may replace dicts without reducer)
         return {
             "next_action": GraphDecision.GATHER_INFO.value,
             "decision_rationale": decision_rationale,
-            "metadata": state_metadata,
+            "metadata": {**state_metadata},
             "execution_path": [
                 {"node": "orchestrator", "timestamp": datetime.now().isoformat()}
             ],
@@ -162,10 +183,11 @@ async def orchestrator_node(state: OrchestratorState) -> OrchestratorState:
         if decomposer.is_multi_agent_task(user_message):
             logger.info("Multi-agent orchestration detected - routing to legion")
             decision_rationale.append(current_decision)
+            # Return new dict to ensure proper merging (LangGraph may replace dicts without reducer)
             return {
                 "next_action": "legion_orchestrate",
                 "decision_rationale": decision_rationale,
-                "metadata": state_metadata,
+                "metadata": {**state_metadata},
                 "execution_path": [
                     {"node": "orchestrator", "timestamp": datetime.now().isoformat()}
                 ],
@@ -181,10 +203,11 @@ async def orchestrator_node(state: OrchestratorState) -> OrchestratorState:
                 "Orchestration needed but no task type identified, falling back to general response"
             )
             decision_rationale.append(current_decision)
+            # Return new dict to ensure proper merging (LangGraph may replace dicts without reducer)
             return {
                 "next_action": GraphDecision.COMPLETE.value,
                 "decision_rationale": decision_rationale,
-                "metadata": state_metadata,
+                "metadata": {**state_metadata},
                 "execution_path": [
                     {"node": "orchestrator", "timestamp": datetime.now().isoformat()}
                 ],
@@ -202,10 +225,11 @@ async def orchestrator_node(state: OrchestratorState) -> OrchestratorState:
         current_decision["reasoning"]["action"] = routing_decision.reasoning
         decision_rationale.append(current_decision)
 
+        # Return new dict to ensure proper merging (LangGraph may replace dicts without reducer)
         return {
             "next_action": GraphDecision.ERROR.value,
             "decision_rationale": decision_rationale,
-            "metadata": state_metadata,
+            "metadata": {**state_metadata},
             "execution_path": [
                 {"node": "orchestrator", "timestamp": datetime.now().isoformat()}
             ],
@@ -222,10 +246,11 @@ async def orchestrator_node(state: OrchestratorState) -> OrchestratorState:
     ] = "Unexpected routing state - using fallback"
     decision_rationale.append(current_decision)
 
+    # Return new dict to ensure proper merging (LangGraph may replace dicts without reducer)
     return {
         "next_action": GraphDecision.COMPLETE.value,
         "decision_rationale": decision_rationale,
-        "metadata": state_metadata,
+        "metadata": {**state_metadata},
         "execution_path": [
             {"node": "orchestrator", "timestamp": datetime.now().isoformat()}
         ],
@@ -382,21 +407,29 @@ def _handle_multi_agent(state, decision, rationale):
 
 
 def _handle_general_conversation(state, decision, rationale):
-    """Handle general conversation without agents."""
+    """Handle general conversation without specialized sub-agents."""
     decision["decisions"]["action"] = "complete"
     decision["decisions"]["agent_needed"] = False
     decision["reasoning"][
         "action"
-    ] = "User message appears to be general conversation, not requiring specialized agent"
+    ] = "User message appears to be general conversation, orchestrator agent will provide response"
     decision["reasoning"][
         "task_analysis"
     ] = "No specific task keywords detected (research, code, analysis, data)"
     rationale.append(decision)
 
-    logger.info("No specific task identified - general conversation")
+    # Track orchestrator agent as providing the response
+    state_metadata = state.get("metadata", {})
+    _track_orchestrator_agent(state_metadata)
+
+    logger.info(
+        "No specific task identified - orchestrator agent will handle general conversation"
+    )
+    # Return new dict to ensure proper merging (LangGraph may replace dicts without reducer)
     return {
         "next_action": GraphDecision.COMPLETE.value,
         "decision_rationale": rationale,
+        "metadata": {**state_metadata},
     }
 
 
@@ -456,18 +489,24 @@ def _handle_factual_question(state, task_type, decision, rationale):
     decision["decisions"]["task_type_detected"] = task_type
     decision["reasoning"][
         "action"
-    ] = f"Factual question detected (task_type: {task_type}), using persona knowledge instead of agent"
+    ] = f"Factual question detected (task_type: {task_type}), orchestrator agent will provide answer using persona knowledge"
     decision["reasoning"][
         "analysis"
-    ] = "Simple factual queries should be answered directly rather than through agent orchestration"
+    ] = "Simple factual queries should be answered directly by orchestrator agent rather than through specialized sub-agent orchestration"
     rationale.append(decision)
 
+    # Track orchestrator agent as providing the response
+    state_metadata = state.get("metadata", {})
+    _track_orchestrator_agent(state_metadata)
+
     logger.info(
-        f"Factual question detected (task_type: {task_type}) - routing to general response"
+        f"Factual question detected (task_type: {task_type}) - orchestrator agent will provide answer"
     )
+    # Return new dict to ensure proper merging (LangGraph may replace dicts without reducer)
     return {
         "next_action": GraphDecision.COMPLETE.value,
         "decision_rationale": rationale,
+        "metadata": {**state_metadata},
     }
 
 
@@ -926,15 +965,27 @@ async def general_response_node(state: OrchestratorState) -> Dict[str, Any]:
             user_id=user_id,
         )
 
+        # Track orchestrator agent as providing the response
+        state_metadata = state.get("metadata", {})
+        _track_orchestrator_agent(state_metadata)
+
         response_message: Message = {
             "role": "assistant",
             "content": result,
             "timestamp": datetime.utcnow().isoformat(),
-            "metadata": {"general_conversation": True},
+            "metadata": {
+                "general_conversation": True,
+                "agent_id": "orchestrator",
+                "agent_type": "orchestrator",
+            },
         }
 
         # Return only changed fields - messages will be appended via operator.add
-        return {"messages": [response_message]}
+        # Return new dict to ensure proper merging (LangGraph may replace dicts without reducer)
+        return {
+            "messages": [response_message],
+            "metadata": {**state_metadata},
+        }
 
     except Exception as e:
         logger.error(f"General response generation failed: {e}")
@@ -945,7 +996,12 @@ async def general_response_node(state: OrchestratorState) -> Dict[str, Any]:
             "metadata": {"error": str(e)},
         }
 
-        return {"messages": [response_message]}
+        # Preserve existing metadata even on error
+        state_metadata = state.get("metadata", {})
+        return {
+            "messages": [response_message],
+            "metadata": {**state_metadata},
+        }
 
 
 async def error_handler_node(state: OrchestratorState) -> Dict[str, Any]:

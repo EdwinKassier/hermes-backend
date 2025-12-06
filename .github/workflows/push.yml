@@ -162,7 +162,17 @@ jobs:
             [[ -z "${line// }" ]] && continue
             # Only process lines with = sign
             if [[ "$line" =~ = ]]; then
-              export "$line"
+              # Normalize the line: remove spaces around = and trim
+              # Split on = and trim both key and value
+              key="${line%%=*}"
+              value="${line#*=}"
+              # Trim whitespace from key and value
+              key=$(echo "$key" | xargs)
+              value=$(echo "$value" | xargs)
+              # Remove quotes from value if present
+              value=$(echo "$value" | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")
+              # Export the normalized variable
+              export "${key}=${value}"
             fi
           done < .env
           set +a
