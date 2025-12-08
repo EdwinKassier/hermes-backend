@@ -312,6 +312,91 @@ IMPORTANT: Ensure you fully address the Original User Query requirements, includ
 
         return follow_up_prompt
 
+    def _extract_text_content(self, content: Any, fallback: str = "") -> str:
+        """
+        Extract text content from various LangChain message content types.
+
+        Handles:
+        - String content (direct return, stripped)
+        - List of content blocks (extracts text elements, filters non-text)
+        - None/empty (returns fallback)
+        - Dict objects (attempts to extract text from common keys)
+        - Other types (attempts string conversion)
+
+        Args:
+            content: The content from AIMessage.content (can be any type)
+            fallback: Default string to return if content cannot be extracted
+
+        Returns:
+            str: Extracted text content, or fallback if extraction fails
+
+        Examples:
+            >>> service._extract_text_content("Hello world")
+            'Hello world'
+            >>> service._extract_text_content(["Hello", "world"])
+            'Hello world'
+            >>> service._extract_text_content(None)
+            ''
+            >>> service._extract_text_content([{"type": "text", "text": "Hello"}])
+            'Hello'
+        """
+        # Handle None/empty
+        if content is None:
+            return fallback
+
+        # Handle string (most common case - optimize first)
+        if isinstance(content, str):
+            return content.strip() or fallback
+
+        # Handle list (the problematic case)
+        if isinstance(content, list):
+            logging.debug(
+                f"Extracting text from list content with {len(content)} items"
+            )
+            text_parts = []
+            for item in content:
+                if isinstance(item, str):
+                    text_parts.append(item)
+                elif isinstance(item, dict):
+                    # Extract text from dict (check common LangChain content keys)
+                    text = (
+                        item.get("text") or item.get("content") or item.get("message")
+                    )
+                    if text and isinstance(text, str):
+                        text_parts.append(text)
+                else:
+                    # Try string conversion for other types
+                    try:
+                        str_item = str(item)
+                        if str_item and str_item.strip():
+                            text_parts.append(str_item)
+                    except Exception:
+                        pass  # Skip items that can't be converted
+
+            result = " ".join(text_parts).strip()
+            return result or fallback
+
+        # Handle dict (less common but possible)
+        if isinstance(content, dict):
+            text = (
+                content.get("text") or content.get("content") or content.get("message")
+            )
+            if text:
+                return str(text).strip() or fallback
+
+        # Fallback for other types
+        try:
+            result = str(content).strip()
+            if result:
+                return result
+        except Exception as e:
+            logging.warning(
+                f"Unexpected content type {type(content)} in message.content: {e}. "
+                f"Attempting fallback conversion."
+            )
+
+        return fallback
+
     def _create_callback_handler(
         self,
         user_id: Optional[str] = None,
@@ -418,7 +503,7 @@ IMPORTANT: Ensure you fully address the Original User Query requirements, includ
             message = model.invoke([HumanMessage(content=full_prompt)], config=config)
             logging.info("Gemini model invocation successful")
 
-            content = message.content
+            content = self._extract_text_content(message.content)
 
             # Handle tool calls
             if hasattr(message, "tool_calls") and message.tool_calls:
@@ -439,7 +524,7 @@ IMPORTANT: Ensure you fully address the Original User Query requirements, includ
                     [HumanMessage(content=follow_up_prompt)],
                     config={"callbacks": callbacks, "metadata": metadata},
                 )
-                response = follow_up_message.content.strip()
+                response = self._extract_text_content(follow_up_message.content)
 
                 if not response or "error" in response.lower():
                     logging.warning(
@@ -451,7 +536,7 @@ IMPORTANT: Ensure you fully address the Original User Query requirements, includ
                 return response
 
             # Handle regular text response
-            response = message.content.strip()
+            response = self._extract_text_content(message.content)
             if not response:
                 logging.warning("Gemini returned empty response")
                 return persona_config.error_message_template

@@ -3,10 +3,10 @@
 import operator
 from datetime import datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, TypedDict
+from typing import Any, Dict, List, Literal, Optional, TypedDict
 
 from pydantic import BaseModel, Field
-from typing_extensions import Annotated
+from typing_extensions import Annotated, NotRequired
 
 from ..models import RequiredInfoField
 
@@ -119,13 +119,14 @@ class OrchestratorState(TypedDict):
     messages: Annotated[List[Dict[str, Any]], operator.add]
 
     # Task management
-    # Task management
-    task_ledger: Annotated[Dict[str, TaskInfo], merge_dicts]  # task_id -> TaskInfo
+    task_ledger: NotRequired[
+        Annotated[Dict[str, TaskInfo], merge_dicts]
+    ]  # task_id -> TaskInfo
 
     # Agent management
-    agents: Dict[str, AgentInfo]  # agent_id -> AgentInfo
-    tool_allocations: Dict[
-        str, List[str]
+    agents: NotRequired[Dict[str, AgentInfo]]  # agent_id -> AgentInfo
+    tool_allocations: NotRequired[
+        Dict[str, List[str]]
     ]  # agent_id -> tool names (not objects, for serialization)
 
     # User context
@@ -133,44 +134,53 @@ class OrchestratorState(TypedDict):
     persona: str
 
     # Current execution context
-    current_agent_id: Optional[str]
-    current_task_id: Optional[str]
-    next_action: str  # GraphDecision or routing target
+    current_agent_id: NotRequired[Optional[str]]
+    current_task_id: NotRequired[Optional[str]]
+    next_action: NotRequired[str]  # GraphDecision or routing target
 
     # Information gathering state
-    # Type hint uses forward reference to avoid circular import
-    required_info: Dict[
-        str, "RequiredInfoField"
-    ]  # Proper type restored using TYPE_CHECKING
-    collected_info: Dict[str, Any]
-    pending_questions: List[str]
+    required_info: NotRequired[Dict[str, "RequiredInfoField"]]
+    collected_info: NotRequired[Dict[str, Any]]
+    pending_questions: NotRequired[List[str]]
 
     # Decision tracking and explainability
-    decision_rationale: List[Dict[str, Any]]  # History of orchestrator decisions
+    decision_rationale: NotRequired[
+        List[Dict[str, Any]]
+    ]  # History of orchestrator decisions
 
     # Unified Legion Swarm State
-    legion_strategy: Literal["council", "parallel", "intelligent"]
+    legion_strategy: NotRequired[Literal["council", "parallel", "intelligent"]]
     # Use deep_merge_dicts reducer to allow parallel workers to update results concurrently
     # Deep merge prevents data loss in nested structures
-    legion_results: Annotated[Dict[str, Any], deep_merge_dicts]
+    legion_results: NotRequired[Annotated[Dict[str, Any], deep_merge_dicts]]
 
     # Conversation memory management
-    conversation_summaries: List[Dict[str, Any]]  # Stored conversation summaries
+    conversation_summaries: NotRequired[
+        List[Dict[str, Any]]
+    ]  # Stored conversation summaries
 
     # Execution level tracking for dependency-aware sequential execution
-    current_execution_level: int  # Which level is currently being processed (0-indexed)
-    total_execution_levels: int  # Total number of execution levels
-    level_results: Dict[int, Dict[str, Any]]  # Results stored per execution level
-    fail_on_level_error: bool  # If True, stop on any worker failure; if False, continue with partial results
+    current_execution_level: NotRequired[
+        int
+    ]  # Which level is currently being processed (0-indexed)
+    total_execution_levels: NotRequired[int]  # Total number of execution levels
+    level_results: NotRequired[
+        Dict[int, Dict[str, Any]]
+    ]  # Results stored per execution level
+    fail_on_level_error: NotRequired[
+        bool
+    ]  # If True, stop on any worker failure; if False, continue with partial results
 
     # Conversation continuation state
-    awaiting_user_response: bool  # NEW: If True, pause and wait for next user message
-    conversation_complete: bool  # NEW: If True, conversation is finished
+    awaiting_user_response: NotRequired[
+        bool
+    ]  # If True, pause and wait for next user message
+    conversation_complete: NotRequired[bool]  # If True, conversation is finished
 
     # Metadata (execution metrics, etc.)
-    metadata: Dict[str, Any]
-    execution_path: Annotated[
-        List[Dict[str, Any]], operator.add
+    metadata: NotRequired[Dict[str, Any]]
+    execution_path: NotRequired[
+        Annotated[List[Dict[str, Any]], operator.add]
     ]  # Track execution flow
 
 

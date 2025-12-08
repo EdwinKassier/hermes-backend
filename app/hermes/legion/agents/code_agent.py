@@ -1,5 +1,6 @@
 """Code agent for code generation and programming tasks."""
 
+import json
 import logging
 from typing import Dict, List
 
@@ -95,35 +96,92 @@ Analyze and respond with JSON only."""
                 persona=self.persona,
             )
 
-            import json
-            import re
+            # Extract JSON from response - handle nested JSON properly
+            # Try to find the outermost JSON object by counting braces
+            json_start = response.find("{")
+            if json_start != -1:
+                brace_count = 0
+                json_end = json_start
+                for i, char in enumerate(response[json_start:], start=json_start):
+                    if char == "{":
+                        brace_count += 1
+                    elif char == "}":
+                        brace_count -= 1
+                        if brace_count == 0:
+                            json_end = i + 1
+                            break
 
-            json_match = re.search(r"\{.*\}", response, re.DOTALL)
-            if json_match:
-                analysis = json.loads(json_match.group(0))
+                json_str = response[json_start:json_end]
+                try:
+                    analysis = json.loads(json_str)
 
-                if not analysis.get("needs_info", False):
+                    # Validate JSON structure
+                    if not isinstance(analysis, dict):
+                        logger.warning(
+                            "Parsed JSON is not a dictionary, proceeding without clarification"
+                        )
+                        return {}
+
+                    if not analysis.get("needs_info", False):
+                        logger.info(
+                            "Code agent can proceed without clarification. "
+                            "Inferred: %s",
+                            analysis.get("inferred_values", {}),
+                        )
+                        return {}
+
+                    # Validate required_fields structure
+                    required_fields = analysis.get("required_fields", [])
+                    if not isinstance(required_fields, list):
+                        logger.warning(
+                            "required_fields is not a list, proceeding without clarification"
+                        )
+                        return {}
+
+                    required_info = {}
+                    for field_spec in required_fields:
+                        if not isinstance(field_spec, dict):
+                            logger.warning(
+                                "Skipping invalid field_spec: %s", field_spec
+                            )
+                            continue
+
+                        field_name = field_spec.get("field_name")
+                        if not field_name:
+                            logger.warning(
+                                "Skipping field_spec without field_name: %s", field_spec
+                            )
+                            continue
+
+                        try:
+                            required_info[field_name] = RequiredInfoField(
+                                field_name=field_name,
+                                field_type=field_spec.get("field_type", "string"),
+                                question=field_spec.get("question", ""),
+                                description=field_spec.get("description", ""),
+                                options=field_spec.get("options"),
+                            )
+                        except Exception as field_error:
+                            logger.warning(
+                                "Failed to create RequiredInfoField for %s: %s",
+                                field_name,
+                                field_error,
+                            )
+                            continue
+
                     logger.info(
-                        f"Code agent can proceed without clarification. "
-                        f"Inferred: {analysis.get('inferred_values', {})}"
+                        "Code agent needs clarification: %s",
+                        list(required_info.keys()),
                     )
-                    return {}
-
-                required_info = {}
-                for field_spec in analysis.get("required_fields", []):
-                    field_name = field_spec["field_name"]
-                    required_info[field_name] = RequiredInfoField(
-                        field_name=field_name,
-                        field_type=field_spec["field_type"],
-                        question=field_spec["question"],
-                        description=field_spec.get("description", ""),
-                        options=field_spec.get("options"),
+                    return required_info
+                except json.JSONDecodeError as json_error:
+                    logger.warning(
+                        "Failed to parse JSON from response: %s. Response: %s",
+                        json_error,
+                        response[:200],
                     )
-
-                logger.info(
-                    f"Code agent needs clarification: {list(required_info.keys())}"
-                )
-                return required_info
+            else:
+                logger.warning("No JSON object found in response: %s", response[:200])
 
         except Exception as e:
             logger.warning(
@@ -161,6 +219,19 @@ The previous attempt was rejected. You MUST address the following feedback:
 {state.judge_feedback}
 """
 
+            # Build tool context if tools are available
+            tool_context = ""
+            if self._tools:
+                tool_names = [getattr(t, "name", str(t)) for t in self._tools]
+                tool_context = f"""
+
+**Available Tools**: You have access to the following tools that may help with code generation:
+{', '.join(tool_names)}
+
+- Use the 'calculator' tool for mathematical calculations or numerical computations
+- Use the 'database_query' tool to retrieve relevant data or examples from the database
+
+Use these tools when they would enhance the accuracy or completeness of your code."""
             code_prompt = f"""Generate clean, well-documented code for the following task:
 
 Task: {state.task}
@@ -171,6 +242,7 @@ Requirements: {requirements}
 Programming Language: {language}
 
 Constraints: {constraints}
+{tool_context}
 
 Please provide:
 1. Complete, working code with proper structure

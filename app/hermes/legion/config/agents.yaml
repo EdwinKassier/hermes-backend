@@ -13,17 +13,18 @@ agents:
       - investigation
       - analysis
     required_tools:
-      - search
-      - web_search
+      - firecrawl
     optional_tools:
-      - document_retrieval
-      - summarize
+      - semantic_search
+      - database_query
     max_iterations: 5
     metadata:
       priority: high
       concurrent_limit: 3
 
   # Code Agent - For programming and code generation
+  # Note: Code execution tools (python_repl, code_interpreter) were removed per system design.
+  # Code generation relies on LLM capabilities without external execution tools.
   - id: code_agent
     type: code
     description: "Generates code, implements features, and helps with programming tasks"
@@ -32,14 +33,10 @@ agents:
       - programming
       - implementation
       - debugging
-    required_tools:
-      - python_repl
-      - code_interpreter
+    required_tools: []
     optional_tools:
-      - linter
-      - debugger
-      - file_reader
-      - file_writer
+      - calculator
+      - database_query
     max_iterations: 10
     metadata:
       priority: high
@@ -56,11 +53,10 @@ agents:
       - comparison
     required_tools:
       - calculator
-      - statistical_analysis
     optional_tools:
-      - chart_generator
-      - data_parser
-      - summarize
+      - database_query
+      - semantic_search
+      - time_info
     max_iterations: 5
     metadata:
       priority: medium
@@ -77,13 +73,11 @@ agents:
       - extraction
       - cleaning
     required_tools:
-      - data_parser
+      - database_query
     optional_tools:
-      - csv_reader
-      - json_parser
-      - sql_executor
-      - data_validator
-      - python_repl
+      - calculator
+      - semantic_search
+      - time_info
     max_iterations: 7
     metadata:
       priority: medium

@@ -1,6 +1,7 @@
 """Agent factory for dynamic agent creation."""
 
 import logging
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from app.shared.utils.service_loader import get_gemini_service
@@ -129,9 +130,13 @@ class AgentFactory:
         # Create agent with persona
         agent = cls.create_agent(config, tools, persona=persona)
 
+        # Generate unique agent ID per instance to avoid collisions in state dictionary
+        # Format: "{agent_type}_{timestamp}" ensures uniqueness while maintaining readability
+        unique_agent_id = f"{agent.agent_id}_{datetime.now().timestamp()}"
+
         # Create agent info for tracking
         agent_info = AgentInfo(
-            agent_id=agent.agent_id,
+            agent_id=unique_agent_id,
             agent_type=config.agent_type,
             tools=[getattr(t, "name", str(t)) for t in tools] if tools else [],
             metadata=config.metadata,
