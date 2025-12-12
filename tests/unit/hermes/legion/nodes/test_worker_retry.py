@@ -91,8 +91,8 @@ class TestWorkerRetryLogic:
         assert mock_agent.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_fails_after_max_retries(self, worker_state):
-        """Worker fails after exhausting retries."""
+    async def test_graceful_degradation_after_max_retries(self, worker_state):
+        """Worker returns degraded status with helpful message after exhausting retries."""
         # Always fail
         mock_agent = MockAgent(should_fail=True, fail_count=999)
 
@@ -109,9 +109,13 @@ class TestWorkerRetryLogic:
                 result = await legion_worker_node(worker_state)
 
         # max_retries=2 means 3 total attempts (initial + 2 retries)
-        assert result["legion_results"]["test_worker_1"]["status"] == "failed"
+        # Now returns 'degraded' instead of 'failed' for graceful degradation
+        assert result["legion_results"]["test_worker_1"]["status"] == "degraded"
         assert result["legion_results"]["test_worker_1"]["attempts"] == 3
+        assert result["legion_results"]["test_worker_1"]["is_partial"] == True
         assert mock_agent.call_count == 3
+        # Verify the result contains a helpful message, not just the error
+        assert "Partial Result" in result["legion_results"]["test_worker_1"]["result"]
 
     @pytest.mark.asyncio
     async def test_no_retry_on_timeout(self, worker_state):
@@ -163,7 +167,7 @@ class TestWorkerRetryLogic:
 
     @pytest.mark.asyncio
     async def test_zero_retries(self, worker_state):
-        """Zero retries means only one attempt."""
+        """Zero retries means only one attempt, then graceful degradation."""
         worker_state["max_retries"] = 0
 
         mock_agent = MockAgent(should_fail=True, fail_count=999)
@@ -180,7 +184,8 @@ class TestWorkerRetryLogic:
 
                 result = await legion_worker_node(worker_state)
 
-        assert result["legion_results"]["test_worker_1"]["status"] == "failed"
+        # Returns 'degraded' instead of 'failed' for graceful degradation
+        assert result["legion_results"]["test_worker_1"]["status"] == "degraded"
         assert result["legion_results"]["test_worker_1"]["attempts"] == 1
         assert mock_agent.call_count == 1
 

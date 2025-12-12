@@ -144,7 +144,11 @@ Analyze what the user wants and decide how to route this message. Consider:
 
   "builds_on_previous": <true|false>,
   "references_conversation_context": <true|false>,
-  "context_summary": "<summary of relevant context, if applicable>"
+  "context_summary": "<summary of relevant context, if applicable>",
+
+  "is_answer_refinement": <true|false>,
+  "refinement_type": "repeat|clarify|update|expand|null",
+  "prior_answer_reference": "<what prior answer they're asking about, if applicable>"
 }}
 
 **Examples of conversation_type (be creative, these are just examples):**
@@ -155,6 +159,20 @@ Analyze what the user wants and decide how to route this message. Consider:
 - "meta-question about system capabilities"
 - "clarification providing requested information"
 - "topic shift to new area while task is active"
+- "request to repeat/clarify previous answer"
+- "refinement of prior response"
+
+**Answer Refinement Detection:**
+Detect when user is asking to REPEAT, CLARIFY, UPDATE, or EXPAND a previous answer:
+- "Tell me again" / "What was that?" / "Can you repeat?" → refinement_type: "repeat"
+- "What do you mean by X?" / "Explain that part" → refinement_type: "clarify"
+- "Update that with..." / "Change X to Y" → refinement_type: "update"
+- "Tell me more about..." / "Expand on..." → refinement_type: "expand"
+
+When is_answer_refinement is true:
+- Use SIMPLE_RESPONSE (for repeating/clarifying) or ORCHESTRATE (for updating with new work)
+- Set prior_answer_reference to identify what they're asking about
+- DO NOT ask for clarification - use the conversation history to determine what they're referencing
 
 **Inference Examples:**
 ✅ "Research AI trends" → Infer: recent/current trends (last 6 months), moderate depth
@@ -201,6 +219,10 @@ Be thoughtful and context-aware. The same words can mean different things in dif
                     data.get("references_conversation_context", False)
                 ),
                 context_summary=data.get("context_summary"),
+                # Answer refinement fields
+                is_answer_refinement=bool(data.get("is_answer_refinement", False)),
+                refinement_type=data.get("refinement_type"),
+                prior_answer_reference=data.get("prior_answer_reference"),
             )
 
             logger.info(
@@ -213,6 +235,12 @@ Be thoughtful and context-aware. The same words can mean different things in dif
                 logger.info(
                     f"Topic change detected ({decision.topic_change_confidence:.2f}): "
                     f"{decision.previous_topic_description} → {decision.new_topic_description}"
+                )
+
+            if decision.is_answer_refinement:
+                logger.info(
+                    f"Answer refinement detected: type={decision.refinement_type}, "
+                    f"ref={decision.prior_answer_reference}"
                 )
 
             return decision
@@ -248,9 +276,10 @@ Be thoughtful and context-aware. The same words can mean different things in dif
         """
         parts = []
 
-        # Add conversation history
+        # Add conversation history - use extended window for better context
         if history and len(history) > 0:
-            recent = history[-5:]  # Last 5 messages
+            # Use last 10 messages for better conversation continuity
+            recent = history[-10:]
             history_text = "\n".join(
                 [
                     f"{msg.get('role', 'unknown')}: {msg.get('content', '')}"
@@ -258,6 +287,12 @@ Be thoughtful and context-aware. The same words can mean different things in dif
                 ]
             )
             parts.append(f"**Recent Conversation:**\n{history_text}")
+
+            # Extract key topics from older history for deeper context
+            if len(history) > 10:
+                key_topics = self._extract_key_topics(history[:-10])
+                if key_topics:
+                    parts.append(f"**Earlier Topics Discussed:**\n{key_topics}")
         else:
             parts.append("**New Conversation** (no prior context)")
 
@@ -290,6 +325,54 @@ Be thoughtful and context-aware. The same words can mean different things in dif
                 parts.append("**Current Context:**\n" + "\n".join(context_parts))
 
         return "\n\n".join(parts)
+
+    def _extract_key_topics(self, history: List[Dict[str, str]]) -> str:
+        """
+        Extract key topics from older conversation history.
+
+        Provides a concise summary of earlier topics to maintain
+        continuity without overwhelming the context window.
+
+        Args:
+            history: Older conversation messages (before recent window)
+
+        Returns:
+            String summarizing key topics discussed
+        """
+        if not history:
+            return ""
+
+        # Extract key nouns/topics from user messages
+        topics = set()
+        for msg in history:
+            if msg.get("role") == "user":
+                content = msg.get("content", "").lower()
+                # Simple keyword extraction for common task indicators
+                keywords = [
+                    "research",
+                    "code",
+                    "analyze",
+                    "write",
+                    "create",
+                    "explain",
+                    "help",
+                    "find",
+                    "search",
+                    "build",
+                ]
+                for keyword in keywords:
+                    if keyword in content:
+                        # Get context around keyword (rough topic extraction)
+                        idx = content.find(keyword)
+                        snippet = content[max(0, idx - 5) : min(len(content), idx + 30)]
+                        topics.add(snippet.strip())
+
+        if not topics:
+            return ""
+
+        # Limit to top 3 topics
+        topic_list = list(topics)[:3]
+        return "- " + "\n- ".join(topic_list)
 
     async def analyze_batch(
         self,

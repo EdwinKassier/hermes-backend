@@ -28,6 +28,9 @@ def legion_graph_service():
             "app.hermes.legion.intelligence.routing_service.get_async_llm_service"
         ) as mock_get_llm,
         patch(
+            "app.hermes.legion.intelligence.metadata_generator.get_async_llm_service"
+        ) as mock_metadata_llm,
+        patch(
             "app.hermes.legion.parallel.task_decomposer.get_gemini_service"
         ) as mock_decomposer_service,
         patch(
@@ -57,9 +60,14 @@ def legion_graph_service():
 
         # Mock LLM service to avoid LangChain dependency
         mock_llm_service = AsyncMock()
+        # Configure the mock to return proper strings for metadata generation
+        mock_llm_service.generate_async = AsyncMock(
+            return_value="Multi-agent parallel orchestration was used for this task."
+        )
         mock_get_llm.return_value = mock_llm_service
         mock_nodes_async_service.return_value = mock_llm_service
         mock_memory_llm.return_value = mock_llm_service
+        mock_metadata_llm.return_value = mock_llm_service
 
         # Mock Gemini service
         mock_gemini = Mock()
@@ -211,7 +219,10 @@ class TestLegionGraphService:
         # Verify rationale in metadata - now in 'rationale' block
         assert "rationale" in result.metadata
         rationale = result.metadata["rationale"]
-        assert "Multi-agent parallel execution" in rationale["summary"]
+        # Dynamic generation produces varied but contextually relevant summaries
+        # Check for key concepts rather than exact static phrase
+        summary = rationale["summary"].lower()
+        assert "multi-agent" in summary or "parallel" in summary
 
         # Verify execution block
         assert "execution" in result.metadata

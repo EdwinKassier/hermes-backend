@@ -74,8 +74,10 @@ async def judge_node(state: OrchestratorState) -> Dict[str, Any]:
     # Get Gemini Service
     gemini_service = get_gemini_service()
 
-    # Get strictness and persona from metadata (default to 0.7 and 'critic')
-    strictness = task_info.metadata.get("judge_strictness", 0.7)
+    # Get strictness and persona from metadata
+    # ENHANCEMENT (Issue 1 & 2): Lowered default strictness from 0.7 to 0.5
+    # to prefer accepting useful answers over demanding perfection
+    strictness = task_info.metadata.get("judge_strictness", 0.5)
     persona = task_info.metadata.get("judge_persona", "critic")
 
     # Construct Judge Prompt with Dynamic Criteria Generation
@@ -102,6 +104,12 @@ Your goal is to evaluate the output of a sub-agent to ensure it meets the user's
   "feedback": "string", // Required if is_valid is false. Be specific about what needs to be fixed.
   "reasoning": "string" // Explain why you gave this score based on the criteria
 }}
+
+**IMPORTANT PHILOSOPHY**: Prefer to ACCEPT useful answers over demanding perfection.
+- A partially correct answer that helps the user is better than rejecting and retrying
+- If the answer addresses the core user need, accept it even if some details are imperfect
+- Only reject if the answer is fundamentally wrong, off-topic, or harmful
+- When in doubt, APPROVE and let the user decide if they need refinement
 
 Analyze the output and provide your judgment in JSON format.
 """

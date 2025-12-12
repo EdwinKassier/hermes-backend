@@ -8,6 +8,7 @@ from app.hermes.models import GeminiResponse, ProcessRequestResult, UserIdentity
 from app.shared.config.langfuse_config import langfuse_config
 from app.shared.services.TTSService import TTSService
 
+from .intelligence.metadata_generator import MetadataGenerator
 from .nodes.orchestration_graph import get_orchestration_graph
 from .persistence import LegionPersistence
 from .utils.conversation_memory import ConversationContextBuilder
@@ -43,6 +44,7 @@ class LegionGraphService:
         self._tts_service = TTSService()
         self._persistence = LegionPersistence(checkpoint_db_path)
         self._context_builder = ConversationContextBuilder()
+        self._metadata_generator = MetadataGenerator()
 
     def _build_orchestration_rationale(
         self,
@@ -227,10 +229,13 @@ class LegionGraphService:
 
         return judge_summary
 
-    def _build_structured_metadata(
+    async def _build_structured_metadata(
         self, result: dict, start_time: float, duration_ms: float
     ) -> dict:
         """Build structured metadata in hierarchical format for UI rendering.
+
+        Uses AI-powered dynamic generation for context-aware descriptions
+        while preserving the existing metadata structure for frontend compatibility.
 
         Args:
             result: Final graph state
@@ -337,15 +342,30 @@ class LegionGraphService:
                     "worker_count": total_workers,
                 }
 
-        # Build rationale block
+        # Extract original query from messages for dynamic generation
+        messages = result.get("messages", [])
+        original_query = ""
+        for msg in messages:
+            if msg.get("role") == "user":
+                original_query = msg.get("content", "")
+                break
+
+        # Build rationale block with dynamic summary
         rationale = {}
         if decision_rationale:
             latest_decision = decision_rationale[-1] if decision_rationale else {}
             analysis = latest_decision.get("analysis", {})
             decisions = latest_decision.get("decisions", {})
 
-            rationale["summary"] = self._get_orchestration_structure(
-                analysis, decisions
+            # Generate dynamic orchestration summary
+            rationale["summary"] = (
+                await self._metadata_generator.generate_orchestration_summary(
+                    analysis=analysis,
+                    decisions=decisions,
+                    original_query=original_query,
+                    agents_used=agents_used,
+                    execution_mode=mode,
+                )
             )
             rationale["decisions"] = decision_rationale
 
@@ -353,10 +373,19 @@ class LegionGraphService:
         task_ledger = result.get("task_ledger", {})
         judge_info = self._extract_judge_metadata(task_ledger)
 
-        # Build usage block
+        # Build usage block with dynamic toolset explanation
+        toolset_explanation = (
+            await self._metadata_generator.generate_toolset_explanation(
+                tools_used=tools_used,
+                agents_used=agents_used,
+                original_query=original_query,
+            )
+        )
+
         usage = {
             "agents": agents_used,
             "tools": tools_used,
+            "toolset_rationale": toolset_explanation,
         }
 
         # Add judge info if present
@@ -870,9 +899,9 @@ class LegionGraphService:
                     if last_message["role"] == "assistant":
                         response_content = last_message["content"]
 
-                        # Create structured metadata
+                        # Create structured metadata with dynamic generation
                         duration_ms = (time.time() - start_time) * 1000
-                        metadata = self._build_structured_metadata(
+                        metadata = await self._build_structured_metadata(
                             result=result,
                             start_time=start_time,
                             duration_ms=duration_ms,

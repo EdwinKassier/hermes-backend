@@ -722,7 +722,47 @@ async def information_gathering_node(state: OrchestratorState) -> Dict[str, Any]
     missing_fields = set(required_info_dict.keys()) - set(new_collected_info.keys())
 
     if missing_fields:
-        # Still need more information, ask questions
+        # ENHANCEMENT: Try to infer defaults before asking for clarification
+        # This addresses Issue 4: prefer answers quickly with reasonable defaults
+        logger.info(
+            f"Missing {len(missing_fields)} fields, attempting to infer defaults"
+        )
+
+        # Get task description from state
+        task_description = ""
+        current_task_id = state.get("current_task_id")
+        if current_task_id:
+            task_ledger = state.get("task_ledger", {})
+            task_info = task_ledger.get(current_task_id)
+            if task_info:
+                task_description = task_info.description
+
+        # Filter required_info to only missing fields for inference
+        missing_required_info = {
+            k: v for k, v in required_info_dict.items() if k in missing_fields
+        }
+
+        inferred = extractor.infer_defaults(
+            required_info=missing_required_info,
+            task_description=task_description or user_message,
+            conversation_history=[
+                {"role": msg.get("role"), "content": msg.get("content")}
+                for msg in context_window
+            ],
+        )
+
+        # Merge inferred defaults
+        if inferred:
+            logger.info(
+                f"Inferred {len(inferred)} default values: {list(inferred.keys())}"
+            )
+            new_collected_info.update(inferred)
+            missing_fields = set(required_info_dict.keys()) - set(
+                new_collected_info.keys()
+            )
+
+    if missing_fields:
+        # Only ask for truly critical info that couldn't be inferred
         # Access question from RequiredInfoField objects properly
         pending_questions = []
         for field in missing_fields:

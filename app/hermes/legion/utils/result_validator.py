@@ -118,7 +118,20 @@ class ResultValidator:
             result_text = data.get("result", "")
             status = data.get("status", "unknown")
 
-            # Already failed workers are excluded
+            # ENHANCEMENT (Issue 2): Include degraded results in valid_results
+            # They have useful partial information for synthesis
+            if status == "degraded" or data.get("is_partial"):
+                valid_results[worker_id] = data
+                issues.append(
+                    {
+                        "worker_id": worker_id,
+                        "reason": "Worker returned degraded/partial result",
+                        "severity": "low",  # Low severity - still usable
+                    }
+                )
+                continue
+
+            # Failed/timeout workers are excluded
             if status in ["failed", "timeout"]:
                 issues.append(
                     {
@@ -146,10 +159,10 @@ class ResultValidator:
         # Log summary
         total = len(results)
         valid_count = len(valid_results)
-        invalid_count = len(issues)
+        invalid_count = len([i for i in issues if i["severity"] == "high"])
 
         logger.info(
-            f"Result validation: {valid_count}/{total} valid, {invalid_count} issues"
+            f"Result validation: {valid_count}/{total} usable, {invalid_count} failures"
         )
 
         # Check error ratio
@@ -160,6 +173,70 @@ class ResultValidator:
             )
 
         return valid_results, issues
+
+    def validate_batch_with_partials(
+        self,
+        results: Dict[str, Dict[str, Any]],
+    ) -> Tuple[
+        Dict[str, Dict[str, Any]], Dict[str, Dict[str, Any]], List[Dict[str, str]]
+    ]:
+        """
+        Validate results separating full success, partial success, and failures.
+
+        This provides more granular control for synthesis, allowing different
+        treatment of partial vs complete results.
+
+        Args:
+            results: Dictionary of worker_id -> result_data
+
+        Returns:
+            Tuple of (valid_results, partial_results, complete_failures)
+        """
+        valid_results = {}
+        partial_results = {}
+        issues = []
+
+        for worker_id, data in results.items():
+            result_text = data.get("result", "")
+            status = data.get("status", "unknown")
+
+            # Check for degraded/partial status
+            if status == "degraded" or data.get("is_partial"):
+                partial_results[worker_id] = data
+                continue
+
+            # Complete failures
+            if status in ["failed", "timeout"]:
+                issues.append(
+                    {
+                        "worker_id": worker_id,
+                        "reason": f"Worker had status: {status}",
+                        "severity": "high",
+                    }
+                )
+                continue
+
+            # Validate the result content
+            is_valid, reason = self.validate(result_text)
+
+            if is_valid:
+                valid_results[worker_id] = data
+            else:
+                issues.append(
+                    {
+                        "worker_id": worker_id,
+                        "reason": reason,
+                        "severity": "medium",
+                    }
+                )
+
+        logger.info(
+            f"Result validation (with partials): "
+            f"{len(valid_results)} valid, {len(partial_results)} partial, "
+            f"{len(issues)} issues"
+        )
+
+        return valid_results, partial_results, issues
 
     def get_quality_metrics(
         self,

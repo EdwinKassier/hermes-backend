@@ -126,3 +126,17 @@ class RoutingDecision(BaseModel):
     context_summary: Optional[str] = Field(
         default=None, description="Summary of relevant context"
     )
+
+    # Answer refinement/repeat detection (Issue 1: response flexibility)
+    is_answer_refinement: bool = Field(
+        default=False,
+        description="Whether user is asking to repeat, clarify, or update a previous answer",
+    )
+    refinement_type: Optional[str] = Field(
+        default=None,
+        description="Type of refinement: 'repeat', 'clarify', 'update', 'expand'",
+    )
+    prior_answer_reference: Optional[str] = Field(
+        default=None,
+        description="Reference to which prior answer should be refined or repeated",
+    )

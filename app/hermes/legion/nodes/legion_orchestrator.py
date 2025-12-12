@@ -273,6 +273,60 @@ async def legion_dispatch_node(state: OrchestratorState) -> Dict[str, Any]:
     }
 
 
+# --- Graceful Degradation Helper (Issue 2: Error Recovery) ---
+
+
+def _generate_graceful_degradation_message(
+    worker_id: str,
+    role: str,
+    task: str,
+    error: Optional[Exception],
+) -> str:
+    """
+    Generate a helpful message when worker cannot complete fully.
+
+    Instead of returning an error message, provides context about what
+    was attempted and any partial insights that might still be useful.
+
+    Args:
+        worker_id: ID of the worker
+        role: Worker's role (e.g., "researcher", "coder")
+        task: Task description
+        error: The exception that caused failure
+
+    Returns:
+        Helpful degradation message with context
+    """
+    error_type = type(error).__name__ if error else "Unknown"
+    error_msg = str(error) if error else "Unknown error occurred"
+
+    # Provide context-aware guidance based on role
+    role_guidance = {
+        "researcher": "Consider trying a more specific query or different search terms.",
+        "coder": "The code generation encountered issues. You may need to provide more specific requirements.",
+        "analyst": "Data analysis was incomplete. Try with a smaller dataset or simpler query.",
+        "optimist": "Could not fully analyze from this perspective.",
+        "critic": "Critical analysis was incomplete.",
+        "general": "The task could not be fully completed.",
+    }
+
+    guidance = role_guidance.get(role.lower(), role_guidance["general"])
+
+    return f"""**Partial Result - {role.title()} Worker**
+
+I attempted to complete: "{task[:100]}{'...' if len(task) > 100 else ''}"
+
+**What happened:** The {role} component encountered a {error_type} during execution.
+
+**Recommendation:** {guidance}
+
+While I couldn't fully complete this task, here's what I can tell you:
+- The request was understood and processing was attempted
+- The specific issue was: {error_msg[:200]}{'...' if len(error_msg) > 200 else ''}
+
+This partial result is still included so the synthesis can acknowledge this limitation and work with available information from other workers."""
+
+
 # --- Legion Worker Node ---
 
 
@@ -438,18 +492,35 @@ async def legion_worker_node(state: LegionWorkerState) -> Dict[str, Any]:
                 e,
             )
 
-    # Should not reach here, but handle as final failure
+    # Should not reach here, but handle as final failure with graceful degradation
+    # ENHANCEMENT (Issue 2): Instead of hard failure, produce a helpful partial result
     duration = (datetime.utcnow() - start_time).total_seconds()
+
+    degraded_result = _generate_graceful_degradation_message(
+        worker_id=worker_id,
+        role=state["role"],
+        task=state["task_description"],
+        error=last_error,
+    )
+
+    logger.warning(
+        "Legion worker %s returning degraded result after %d attempts in %.2fs",
+        worker_id,
+        max_retries + 1,
+        duration,
+    )
+
     return {
         "legion_results": {
             worker_id: {
-                "result": str(last_error) if last_error else "Unknown error",
+                "result": degraded_result,
                 "role": state["role"],
-                "status": "failed",
+                "status": "degraded",  # Changed from "failed" for graceful handling
                 "duration_seconds": duration,
                 "error": str(last_error) if last_error else "Unknown error",
                 "execution_level": state.get("execution_level", 0),
                 "attempts": max_retries + 1,
+                "is_partial": True,  # Flag for synthesis to handle appropriately
             }
         }
     }
