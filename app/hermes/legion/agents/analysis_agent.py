@@ -262,7 +262,14 @@ Please provide:
 4. Insights and implications
 5. Recommendations (if applicable)
 
-Be thorough, objective, and data-driven in your analysis."""
+Be thorough, objective, and data-driven in your analysis.
+
+**CRITICAL OUTPUT FORMATTING REQUIREMENTS**:
+- Use proper markdown structure with ## and ### headers
+- Separate ALL major sections with double newlines (\\n\\n)
+- Use horizontal rules (---) surrounded by blank lines for distinct topics
+- Break long analysis into short, readable paragraphs (avoid dense text walls)
+- Use bullet points for lists and ensure blank lines around them"""
 
             # Use GeminiService to perform analysis
             user_id = state.metadata.get("user_id", "default")

@@ -268,6 +268,13 @@ DETAILED CONTENT FROM 7-10 SCRAPED SOURCES:
    - Technical details and expert insights
    - Comparative analysis where relevant
 
+**CRITICAL OUTPUT FORMATTING REQUIREMENTS**:
+- Use proper markdown that a frontend can parse
+- Separate ALL major sections with double newlines (\\n\\n)
+- Use horizontal rules (---) surrounded by blank lines to separate topics
+- Break long text into short, readable paragraphs
+- Ensure blank lines around lists and headers
+
 5. **Structure**:
    - **Executive Summary**: High-level overview (2-3 paragraphs)
    - **Key Findings**: 8-12 detailed bullet points with citations from different sources

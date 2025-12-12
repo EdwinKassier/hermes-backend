@@ -1023,8 +1023,17 @@ async def general_response_node(state: OrchestratorState) -> Dict[str, Any]:
     try:
         # Use async generation for general responses
         # Pass user_id to ensure proper Langfuse tracing linkage
+        # Append formatting instructions to ensure consistency
+        formatted_prompt = f"""{user_message}
+
+**CRITICAL OUTPUT FORMATTING**:
+- Use proper markdown structure
+- Separate paragraphs with double newlines
+- Wrap ALL code in fenced code blocks (```language)
+- Ensure blank lines around lists and headers"""
+
         result = await llm_service.generate_async(
-            prompt=user_message,
+            prompt=formatted_prompt,
             persona=persona,
             user_id=user_id,
         )

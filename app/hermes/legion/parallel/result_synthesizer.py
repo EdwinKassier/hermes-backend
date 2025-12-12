@@ -103,6 +103,38 @@ FORMATTING GUIDELINES:
 - Include code blocks if code was generated
 - Maintain markdown formatting from agent outputs
 
+**CRITICAL OUTPUT FORMATTING REQUIREMENTS** (MUST FOLLOW):
+
+Your response MUST be parseable by a frontend markdown renderer:
+
+1. **Code Blocks**: ALL code MUST be in fenced code blocks with language identifiers:
+   - Use triple backticks with language, e.g.: ```python, ```javascript, ```bash
+   - NEVER output raw code without proper fencing
+   - The opening fence MUST include the language identifier
+   - The closing ``` MUST be on its own line
+   - Example of correct formatting:
+     ```python
+     def example():
+         return "value"
+     ```
+
+2. **Section Spacing**:
+   - Separate ALL major sections with double newlines (\\n\\n)
+   - Use horizontal rules (---) surrounded by blank lines to separate distinct topics
+
+3. **Section Headers**: Use Markdown headers (##, ###) for major sections, always preceded and followed by a blank line
+
+4. **Lists**: Use proper Markdown list syntax
+   - Unordered: Use - or * prefix
+   - Ordered: Use 1. 2. 3. prefix
+   - Ensure blank lines before and after the list
+
+5. **Inline Code**: Use single backticks for filenames, function names, variables: `filename.py`
+
+6. **Block Quotes**: Use > for important notes or warnings
+
+7. **Maintain Original Formatting**: Preserve any markdown formatting from agent outputs
+
 Provide a well-structured, comprehensive response that naturally weaves together all agent contributions while directly addressing "{original_query}"."""
 
         try:

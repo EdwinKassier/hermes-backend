@@ -250,7 +250,17 @@ Please provide:
 3. Usage examples if applicable
 4. Any important notes about the implementation
 
-Focus on code quality, readability, and best practices."""
+Focus on code quality, readability, and best practices.
+
+**CRITICAL OUTPUT FORMATTING REQUIREMENTS**:
+- ALL code MUST be wrapped in fenced code blocks with the language identifier
+- Use ```{language} to open code blocks and ``` on its own line to close them
+- Separate code blocks from explanatory text with blank lines
+- Use `backticks` for inline code references like function names or variables
+- Example of required format:
+  ```{language}
+  # Your code here
+  ```"""
 
             # Use GeminiService to generate code
             user_id = state.metadata.get("user_id", "default")

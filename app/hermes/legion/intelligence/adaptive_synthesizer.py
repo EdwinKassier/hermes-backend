@@ -117,6 +117,26 @@ class AdaptiveSynthesizer:
             Persona: {persona}
 
             Ensure the tone matches the persona.
+
+            **CRITICAL OUTPUT FORMATTING REQUIREMENTS**:
+
+            Your response MUST use proper markdown that a frontend can parse:
+
+            1. **Code Blocks**: ALL code MUST be wrapped in fenced code blocks:
+               - Use triple backticks with language: ```python, ```javascript, etc.
+               - NEVER output raw code without proper fencing
+               - Closing ``` must be on its own line
+
+            2. **Structure**: Use ## headers for sections, - for bullet lists
+
+            3. **Spacing**:
+               - Include double newlines between all sections
+               - Use horizontal rules (---) surrounded by blank lines for major separations
+               - Ensure blank lines around lists and code blocks
+
+            4. **Inline Code**: Use `backticks` for filenames and function names
+
+            5. **Preserve Formatting**: Maintain markdown from agent outputs
             """
 
             response = await self.llm_service.generate_async(prompt, persona=persona)
