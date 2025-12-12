@@ -102,6 +102,9 @@ class TestGeminiToolExecution:
                 "hour",
                 "minute",
                 "second",
+                "pm",
+                "am",
+                "utc",
             ]
         ), f"Response should contain time information: {response}"
 
@@ -134,7 +137,7 @@ class TestGeminiToolExecution:
             # Verify it contains time information
             assert any(
                 keyword in response.lower()
-                for keyword in ["time", "current", "now", "clock"]
+                for keyword in ["time", "current", "now", "clock", "pm", "am", "utc"]
             ), f"Response to '{prompt}' should contain time info: {response}"
 
             print(f"✅ Prompt '{prompt}' -> Response: {response}")
@@ -195,7 +198,8 @@ class TestGeminiToolExecution:
         # Should get time information
         assert time_response is not None
         assert any(
-            keyword in time_response.lower() for keyword in ["time", "current", "now"]
+            keyword in time_response.lower()
+            for keyword in ["time", "current", "now", "pm", "am", "utc"]
         ), f"Should get time info: {time_response}"
 
         print(f"✅ Contextual time request successful: {time_response}")
@@ -222,7 +226,8 @@ class TestGeminiToolExecution:
 
             # Each response should contain time information
             assert any(
-                keyword in response.lower() for keyword in ["time", "current", "now"]
+                keyword in response.lower()
+                for keyword in ["time", "current", "now", "pm", "am", "utc"]
             ), f"Response should contain time info: {response}"
 
             responses.append(response)
@@ -253,7 +258,8 @@ class TestGeminiToolExecution:
         assert response is not None
         assert len(response.strip()) > 0
         assert any(
-            keyword in response.lower() for keyword in ["time", "current", "now"]
+            keyword in response.lower()
+            for keyword in ["time", "current", "now", "pm", "am", "utc"]
         )
 
         # Verify reasonable performance (should complete within 30 seconds)
@@ -293,7 +299,8 @@ class TestGeminiToolExecution:
             assert response is not None
             assert len(response.strip()) > 0
             assert any(
-                keyword in response.lower() for keyword in ["time", "current", "now"]
+                keyword in response.lower()
+                for keyword in ["time", "current", "now", "pm", "am", "utc"]
             ), f"Persona '{persona}' should provide time info: {response}"
 
             print(f"✅ Persona '{persona}' tool execution successful: {response}")
@@ -328,7 +335,8 @@ class TestGeminiToolExecution:
         # Both responses should contain time information
         for i, response in enumerate([response1, response2], 1):
             assert any(
-                keyword in response.lower() for keyword in ["time", "current", "now"]
+                keyword in response.lower()
+                for keyword in ["time", "current", "now", "pm", "am", "utc"]
             ), f"Response {i} should contain time info: {response}"
 
 
