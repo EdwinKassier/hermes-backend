@@ -5,6 +5,8 @@ from typing import Any, Dict, List, Optional
 
 from app.shared.utils.service_loader import get_gemini_service
 
+from .persona_context import get_current_legion_persona
+
 logger = logging.getLogger(__name__)
 
 
@@ -127,7 +129,9 @@ class ToolAllocator:
             circuit_breaker = get_llm_circuit_breaker()
 
             response = circuit_breaker.call(
-                self.gemini_service.generate_gemini_response, prompt, persona="hermes"
+                self.gemini_service.generate_gemini_response,
+                prompt,
+                persona=get_current_legion_persona(),
             )
 
             # Parse tool names from response

@@ -264,7 +264,7 @@ class RouterService:
                 task_description=worker["task_description"],
                 tools=worker["tools"],
                 user_id=state["user_id"],
-                persona=state["persona"],
+                persona=worker.get("persona", state.get("persona", "legion")),
                 context=context,
                 execution_level=worker.get("execution_level", 0),
                 max_retries=worker.get("max_retries", 2),

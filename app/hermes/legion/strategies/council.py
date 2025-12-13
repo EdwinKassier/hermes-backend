@@ -18,6 +18,12 @@ class CouncilStrategy(LegionStrategy):
     from multiple perspectives.
     """
 
+    def __init__(self, persona_generator=None):
+        """Initialize council strategy with dependencies."""
+        # Council strategy uses predefined personas, so it doesn't need persona generation
+        # But we keep the parameter for consistency
+        pass
+
     async def generate_workers(
         self, query: str, context: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
@@ -37,7 +43,8 @@ class CouncilStrategy(LegionStrategy):
                 workers.append(
                     {
                         "worker_id": f"council_{p['name']}",
-                        "role": p["name"],
+                        "role": "analyst",  # Use valid agent type for council members
+                        "persona": p["name"],  # Use the generated council persona
                         "task_description": f"Analyze this question from the perspective of {p['name']} ({p['description']}). Focus on: {p['perspective']}.\nQuestion: {query}",
                         "tools": ["web_search"],  # Default tool for council
                     }
@@ -50,13 +57,15 @@ class CouncilStrategy(LegionStrategy):
             return [
                 {
                     "worker_id": "council_optimist",
-                    "role": "optimist",
+                    "role": "analyst",  # Use valid agent type
+                    "persona": "optimist",  # Use council persona
                     "task_description": f"Analyze optimistically: {query}",
                     "tools": ["web_search"],
                 },
                 {
                     "worker_id": "council_critic",
-                    "role": "critic",
+                    "role": "analyst",  # Use valid agent type
+                    "persona": "critic",  # Use council persona
                     "task_description": f"Analyze critically: {query}",
                     "tools": ["web_search"],
                 },

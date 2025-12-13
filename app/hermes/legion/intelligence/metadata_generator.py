@@ -10,6 +10,8 @@ from typing import Any, Dict, List, Optional
 
 from app.shared.utils.service_loader import get_async_llm_service
 
+from ..utils.persona_context import get_current_legion_persona
+
 logger = logging.getLogger(__name__)
 
 
@@ -75,7 +77,9 @@ GUIDELINES:
 
 Return ONLY the explanation text, no preamble."""
 
-            response = await self.llm_service.generate_async(prompt, persona="hermes")
+            response = await self.llm_service.generate_async(
+                prompt, persona=get_current_legion_persona()
+            )
             return response.strip()
 
         except Exception as e:
@@ -150,7 +154,9 @@ Create a 1 sentence description that captures:
 Keep it under 20 words. Be specific and avoid generic descriptions.
 Return ONLY the description text."""
 
-            response = await self.llm_service.generate_async(prompt, persona="hermes")
+            response = await self.llm_service.generate_async(
+                prompt, persona=get_current_legion_persona()
+            )
             return response.strip()
 
         except Exception as e:
@@ -206,7 +212,9 @@ Create a 1-2 sentence explanation that captures:
 Keep under 30 words. Be specific to this request.
 Return ONLY the explanation text."""
 
-            response = await self.llm_service.generate_async(prompt, persona="hermes")
+            response = await self.llm_service.generate_async(
+                prompt, persona=get_current_legion_persona()
+            )
             allocation_reason = response.strip()
 
         except Exception as e:

@@ -6,6 +6,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from app.shared.utils.service_loader import get_gemini_service
 
+from ..utils.persona_context import get_current_legion_persona
+
 logger = logging.getLogger(__name__)
 
 
@@ -60,7 +62,7 @@ class ParallelTaskDecomposer:
             # Use AI to detect multi-agent tasks
             prompt = self._build_multi_agent_detection_prompt(user_message)
             response = self.gemini_service.generate_gemini_response(
-                prompt, persona="hermes"
+                prompt, persona=get_current_legion_persona()
             )
 
             # Parse AI response
@@ -76,7 +78,7 @@ class ParallelTaskDecomposer:
             logger.warning(f"Network error in AI detection, retrying: {e}")
             try:
                 response = self.gemini_service.generate_gemini_response(
-                    prompt, persona="hermes"
+                    prompt, persona=get_current_legion_persona()
                 )
                 is_multi = "MULTI_AGENT" in response.upper()
                 logger.info(f"AI retry successful: {is_multi}")
@@ -218,7 +220,7 @@ Respond with ONLY the JSON, no other text."""
 
         try:
             response = self.gemini_service.generate_gemini_response(
-                prompt, persona="hermes"
+                prompt, persona=get_current_legion_persona()
             )
 
             # Parse JSON response

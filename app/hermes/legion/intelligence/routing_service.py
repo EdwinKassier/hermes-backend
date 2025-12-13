@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 from app.shared.utils.service_loader import get_async_llm_service
 
 from ..utils.llm_utils import extract_json_from_llm_response
+from ..utils.persona_context import get_current_legion_persona
 from .routing_intelligence import (
     ConversationPhase,
     RiskLevel,
@@ -184,7 +185,9 @@ When is_answer_refinement is true:
 Be thoughtful and context-aware. The same words can mean different things in different contexts. **Prioritize intelligent inference to create fluid, natural conversations.**"""
 
         try:
-            response = await self.llm_service.generate_async(prompt, persona="hermes")
+            response = await self.llm_service.generate_async(
+                prompt, persona=get_current_legion_persona()
+            )
             data = extract_json_from_llm_response(response)
 
             # Parse and validate the decision

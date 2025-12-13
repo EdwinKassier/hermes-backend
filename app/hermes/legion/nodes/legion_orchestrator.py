@@ -393,7 +393,7 @@ async def legion_worker_node(state: LegionWorkerState) -> Dict[str, Any]:
         agent_type = agent_type_map.get(role, role)  # Default to role if not in map
 
         config = AgentConfig(agent_type=agent_type, required_tools=[])
-        agent = AgentFactory.create_agent(config, tools)
+        agent = AgentFactory.create_agent(config, tools, persona=state["persona"])
 
         # Create SubAgentState
         sub_state = SubAgentState(

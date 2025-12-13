@@ -17,6 +17,7 @@ from ..intelligence.performance_optimizer import PerformanceOptimizer
 from ..intelligence.query_analyzer import QueryAnalyzer
 from ..intelligence.tool_intelligence import ToolIntelligence
 from ..intelligence.worker_planner import IntelligentWorkerPlanner
+from ..utils.persona_generator import LegionPersonaGenerator
 from .base import LegionStrategy
 
 logger = logging.getLogger(__name__)
@@ -36,7 +37,7 @@ class IntelligentStrategy(LegionStrategy):
     - Manages costs to stay within budget
     """
 
-    def __init__(self):
+    def __init__(self, persona_generator: LegionPersonaGenerator = None):
         # Core intelligence services (Phase 2)
         self.query_analyzer = QueryAnalyzer()
         self.worker_planner = IntelligentWorkerPlanner()
@@ -47,6 +48,9 @@ class IntelligentStrategy(LegionStrategy):
         self.feedback_learner = _global_feedback_learner  # Shared across instances
         self.performance_optimizer = PerformanceOptimizer()
         self.cost_optimizer = CostOptimizer()
+
+        # Dependencies
+        self.persona_generator = persona_generator or LegionPersonaGenerator()
 
     async def generate_workers(
         self, query: str, context: Dict[str, Any]
@@ -138,8 +142,13 @@ class IntelligentStrategy(LegionStrategy):
                     }
                 )
 
+            # Generate personas for all workers
+            workers = await self.persona_generator.generate_personas_for_workers(
+                workers, {"query": query}
+            )
+
             logger.info(
-                f"Generated {len(workers)} intelligent workers with Phase 4 optimizations"
+                f"Generated {len(workers)} intelligent workers with Phase 4 optimizations and personas"
             )
             logger.info(f"Cost summary: {self.cost_optimizer.get_cost_summary()}")
 
@@ -147,8 +156,8 @@ class IntelligentStrategy(LegionStrategy):
 
         except Exception as e:
             logger.error(f"Error in intelligent worker generation: {e}")
-            # Fallback to single worker
-            return [
+            # Fallback to single worker with persona
+            fallback_workers = [
                 {
                     "worker_id": "fallback_worker",
                     "role": "general",
@@ -156,6 +165,12 @@ class IntelligentStrategy(LegionStrategy):
                     "tools": [],
                 }
             ]
+            fallback_workers = (
+                await self.persona_generator.generate_personas_for_workers(
+                    fallback_workers, {"query": query}
+                )
+            )
+            return fallback_workers
 
     async def synthesize_results(
         self, original_query: str, results: Dict[str, Any], persona: str

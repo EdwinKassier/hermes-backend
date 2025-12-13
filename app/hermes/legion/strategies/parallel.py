@@ -6,6 +6,7 @@ from typing import Any, Dict, List
 from ..parallel.result_synthesizer import ResultSynthesizer
 from ..parallel.task_decomposer import ParallelTaskDecomposer
 from ..utils import ToolAllocator
+from ..utils.persona_generator import LegionPersonaGenerator
 from .base import LegionStrategy
 
 logger = logging.getLogger(__name__)
@@ -23,6 +24,10 @@ class ParallelStrategy(LegionStrategy):
     - Sequential execution between levels
     """
 
+    def __init__(self, persona_generator: LegionPersonaGenerator = None):
+        """Initialize parallel strategy with dependencies."""
+        self.persona_generator = persona_generator or LegionPersonaGenerator()
+
     async def generate_workers(
         self, query: str, context: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
@@ -38,7 +43,7 @@ class ParallelStrategy(LegionStrategy):
             logger.warning(
                 "Task decomposition failed or returned empty, falling back to single worker"
             )
-            return [
+            fallback_workers = [
                 {
                     "worker_id": "parallel_default",
                     "role": "general",
@@ -48,6 +53,13 @@ class ParallelStrategy(LegionStrategy):
                     "dependencies": [],
                 }
             ]
+            # Generate persona for fallback worker
+            fallback_workers = (
+                await self.persona_generator.generate_personas_for_workers(
+                    fallback_workers, {"query": query}
+                )
+            )
+            return fallback_workers
 
         # Analyze dependencies between tasks
         try:
@@ -128,8 +140,13 @@ class ParallelStrategy(LegionStrategy):
         # Sort by execution level to ensure proper ordering
         workers.sort(key=lambda w: w["execution_level"])
 
+        # Generate personas for all workers
+        workers = await self.persona_generator.generate_personas_for_workers(
+            workers, {"query": query}
+        )
+
         logger.info(
-            "Generated %d workers across %d execution levels",
+            "Generated %d workers across %d execution levels with personas",
             len(workers),
             len(execution_levels),
         )

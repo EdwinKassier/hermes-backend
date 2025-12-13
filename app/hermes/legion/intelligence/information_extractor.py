@@ -6,6 +6,8 @@ from typing import Any, Dict, List, Optional
 from app.hermes.legion.models import RequiredInfoField
 from app.shared.utils.service_loader import get_gemini_service
 
+from ..utils.persona_context import get_current_legion_persona
+
 logger = logging.getLogger(__name__)
 
 
@@ -74,7 +76,7 @@ Respond in JSON format: {{"field_name": "value or null", ...}}"""
 
         try:
             response = self.gemini_service.generate_gemini_response(
-                prompt, persona="hermes"
+                prompt, persona=get_current_legion_persona()
             )
             # Parse JSON response using robust helper
             from app.hermes.legion.utils.llm_utils import extract_json_from_llm_response
@@ -157,7 +159,7 @@ Return a value for EVERY field - use null only as last resort."""
 
         try:
             response = self.gemini_service.generate_gemini_response(
-                prompt, persona="hermes"
+                prompt, persona=get_current_legion_persona()
             )
             from app.hermes.legion.utils.llm_utils import extract_json_from_llm_response
 

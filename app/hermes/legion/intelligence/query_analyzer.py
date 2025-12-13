@@ -13,6 +13,7 @@ from app.shared.utils.service_loader import get_async_llm_service
 
 from ..models import Domain, QueryComplexity
 from ..utils.llm_utils import extract_json_from_llm_response
+from ..utils.persona_context import get_current_legion_persona
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +67,9 @@ class QueryAnalyzer:
             """
 
             # Properly await async LLM call
-            response = await self.llm_service.generate_async(prompt, persona="hermes")
+            response = await self.llm_service.generate_async(
+                prompt, persona=get_current_legion_persona()
+            )
             data = extract_json_from_llm_response(response)
 
             return QueryComplexity(**data)
@@ -110,7 +113,9 @@ class QueryAnalyzer:
             }}
             """
 
-            response = await self.llm_service.generate_async(prompt, persona="hermes")
+            response = await self.llm_service.generate_async(
+                prompt, persona=get_current_legion_persona()
+            )
             data = extract_json_from_llm_response(response)
 
             domain_strs = data.get("domains", [])
