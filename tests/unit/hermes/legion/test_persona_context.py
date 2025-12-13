@@ -2,10 +2,12 @@
 
 import asyncio
 
+import pytest
+
 from app.hermes.legion.utils.persona_context import (
     LegionPersonaContext,
     get_current_legion_persona,
-    with_legion_persona,
+    use_legion_persona,
 )
 
 
@@ -62,25 +64,22 @@ class TestLegionPersonaContext:
         # Context should be cleaned up despite exception
         assert get_current_legion_persona() == "legion"
 
-    def test_async_context(self):
+    @pytest.mark.asyncio
+    async def test_async_context(self):
         """Test context manager in async functions."""
         # Outside context
         assert get_current_legion_persona() == "legion"
 
         # Inside async context
-        async def test_async():
-            with LegionPersonaContext("async_persona"):
-                await asyncio.sleep(0.01)  # Simulate async work
-                assert get_current_legion_persona() == "async_persona"
-                return "done"
-
-        result = run_async_test(test_async())
-        assert result == "done"
+        with LegionPersonaContext("async_persona"):
+            await asyncio.sleep(0.01)  # Simulate async work
+            assert get_current_legion_persona() == "async_persona"
 
         # Context should be restored
         assert get_current_legion_persona() == "legion"
 
-    def test_concurrent_contexts(self):
+    @pytest.mark.asyncio
+    async def test_concurrent_contexts(self):
         """Test that contexts are isolated between concurrent tasks."""
         results = []
 
@@ -96,7 +95,7 @@ class TestLegionPersonaContext:
                 results.append(("task2", get_current_legion_persona()))
             results.append(("task2_done", get_current_legion_persona()))
 
-        run_async_test(asyncio.gather(task1(), task2()))
+        await asyncio.gather(task1(), task2())
 
         # Check results - each task should see its own persona
         task_results = {key: value for key, value in results}
@@ -105,15 +104,15 @@ class TestLegionPersonaContext:
         assert task_results["task1_done"] == "legion"
         assert task_results["task2_done"] == "legion"
 
-    def test_context_manager_as_decorator(self):
-        """Test the with_legion_persona decorator."""
+    @pytest.mark.asyncio
+    async def test_context_manager_as_decorator(self):
+        """Test the use_legion_persona decorator."""
 
-        @with_legion_persona("decorated_persona")
+        @use_legion_persona("decorated_persona")
         async def decorated_function():
             return get_current_legion_persona()
 
-        # Run in event loop
-        result = run_async_test(decorated_function())
+        result = await decorated_function()
         assert result == "decorated_persona"
 
         # Context should be restored after function completes
