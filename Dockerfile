@@ -16,6 +16,7 @@ RUN apt-get clean && \
     apt-get update --allow-releaseinfo-change && \
     apt-get install -y --no-install-recommends \
         redis-server \
+        ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user

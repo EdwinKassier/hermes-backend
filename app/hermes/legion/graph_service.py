@@ -1014,65 +1014,32 @@ class LegionGraphService:
                     """Inner function to track execution for timeout handling."""
                     nonlocal partial_result, workers_completed, total_workers
 
-                    result = None
-                    stream = None
                     try:
-                        # Get the async generator
-                        stream = graph.astream(
-                            inputs, config=config, stream_mode="values"
+                        # Use ainvoke instead of astream to avoid async generator issues
+                        # For initial Legion requests (not resume), we don't need streaming
+                        result = await graph.ainvoke(inputs, config=config)
+
+                        # Store the final result for potential timeout recovery
+                        partial_result = result
+
+                        # Track worker progress from final result
+                        if "legion_results" in result:
+                            workers_completed = len(result["legion_results"])
+                        if "metadata" in result:
+                            plans = result["metadata"].get("legion_worker_plans", [])
+                            total_workers = len(plans)
+
+                        logger.info(
+                            "Graph execution completed successfully. Result keys: %s",
+                            list(result.keys()) if result else "None",
                         )
 
-                        try:
-                            async for chunk in stream:
-                                # Check if we hit an interrupt
-                                if "__interrupt__" in chunk:
-                                    interrupt_data = chunk["__interrupt__"]
-                                    logger.info(
-                                        "Graph interrupted: %s",
-                                        interrupt_data.get("type", "unknown"),
-                                    )
-                                    return "INTERRUPTED", {
-                                        "interrupted": True,
-                                        "interrupt_data": interrupt_data,
-                                        "thread_id": user_id,
-                                    }
-
-                                # Store the latest state for timeout recovery
-                                result = chunk
-                                partial_result = chunk
-
-                                # Track worker progress
-                                if "legion_results" in chunk:
-                                    workers_completed = len(chunk["legion_results"])
-                                if "metadata" in chunk:
-                                    plans = chunk["metadata"].get(
-                                        "legion_worker_plans", []
-                                    )
-                                    total_workers = len(plans)
-
-                                logger.info(
-                                    "Graph step completed. Keys: %s",
-                                    list(chunk.keys()) if chunk else "None",
-                                )
-                        finally:
-                            # Ensure generator is properly closed
-                            if stream is not None:
-                                try:
-                                    # Close the async generator to prevent "generator didn't stop after athrow()" errors
-                                    await stream.aclose()
-                                except (
-                                    GeneratorExit,
-                                    StopAsyncIteration,
-                                    asyncio.CancelledError,
-                                ):
-                                    # These are expected when closing a generator
-                                    pass
-                                except Exception as close_error:
-                                    logger.warning(
-                                        "Error closing graph stream: %s", close_error
-                                    )
-
                         return result, None  # result, no interrupt
+
+                    except Exception as e:
+                        # Log the execution error
+                        logger.error("Graph execution failed: %s", e)
+                        raise
                     except asyncio.CancelledError:
                         # Task was cancelled (e.g., by timeout) - ensure generator is closed
                         # The finally block above will handle cleanup

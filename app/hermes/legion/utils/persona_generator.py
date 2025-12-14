@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Dict, List, Optional
 from app.shared.utils.service_loader import get_async_llm_service
 
 from .persona_selector import PersonaSelector
-from .persona_templates import PersonaTemplateStore
 from .persona_validator import PersonaInputValidator
 
 if TYPE_CHECKING:
@@ -21,7 +20,8 @@ class LegionPersonaGenerator:
 
     def __init__(self):
         self.llm_service = get_async_llm_service()
-        self.template_store = PersonaTemplateStore()
+        # Template store removed - using dynamic personas only
+        self.template_store = None
         self.selector = PersonaSelector()
         self.validator = PersonaInputValidator()
 
@@ -37,17 +37,8 @@ class LegionPersonaGenerator:
             # Normalize role to match our templates
             normalized_role = self._normalize_role(validated_role)
 
-            # Use predefined templates for common roles
-            templates = self.template_store.get_templates_for_role(normalized_role)
-            if templates:
-                # Select persona based on task content
-                persona = self.selector.select_persona_from_templates(
-                    templates, validated_task
-                )
-                logger.debug(
-                    f"Generated persona '{persona}' for role '{validated_role}' with task: {validated_task[:50]}..."
-                )
-                return persona
+            # Template-based personas removed - using dynamic generation only
+            # Always fall back to basic persona generation
 
             # For unknown roles, generate a basic persona
             basic_persona = f"{normalized_role}_specialist"

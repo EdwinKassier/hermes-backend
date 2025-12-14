@@ -47,6 +47,9 @@ class LegionPersistence:
                 await conn.execute("PRAGMA journal_mode=WAL")
                 await conn.execute("PRAGMA synchronous=NORMAL")
 
+                # Add is_alive method that langgraph expects
+                conn.is_alive = lambda: True
+
                 saver = AsyncSqliteSaver(conn)
 
                 # Initialize tables if needed (AsyncSqliteSaver does this, but good to be explicit if needed)
