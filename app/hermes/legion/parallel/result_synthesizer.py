@@ -54,6 +54,70 @@ class ResultSynthesizer:
 
         logger.info(f"Synthesizing results from {len(agent_results)} agents")
 
+        # Filter out results that appear unrelated to the query
+        filtered_results = {}
+        query_lower = original_query.lower()
+
+        for agent_id, result_data in agent_results.items():
+            result_text = result_data.get("result", "").lower()
+
+            # Skip if result is too short or is an error message
+            if len(result_text.split()) < 10 or "error" in result_text[:100]:
+                filtered_results[agent_id] = result_data
+                continue
+
+            # Check for relevance to the query
+            query_keywords = set()
+            for word in query_lower.split():
+                if len(word) > 3 and word not in [
+                    "that",
+                    "with",
+                    "from",
+                    "this",
+                    "what",
+                    "when",
+                    "where",
+                    "which",
+                    "their",
+                    "about",
+                    "would",
+                    "could",
+                    "should",
+                    "there",
+                    "here",
+                    "they",
+                    "them",
+                    "then",
+                    "than",
+                    "will",
+                    "have",
+                    "been",
+                    "were",
+                    "does",
+                    "doing",
+                    "done",
+                ]:
+                    query_keywords.add(word)
+
+            relevant_keywords = [kw for kw in query_keywords if kw in result_text]
+            relevance_score = len(relevant_keywords) / max(len(query_keywords), 1)
+
+            if relevance_score >= 0.2:  # More lenient threshold for synthesis
+                filtered_results[agent_id] = result_data
+            else:
+                logger.warning(
+                    f"Filtering out unrelated result from agent {agent_id} "
+                    f"(relevance score: {relevance_score:.2f}, query keywords: {list(query_keywords)})"
+                )
+
+        if not filtered_results:
+            return f"I was unable to gather relevant information for your query: '{original_query}'. All research attempts returned unrelated or unsuccessful results."
+
+        agent_results = filtered_results
+        logger.info(
+            f"After filtering, synthesizing results from {len(agent_results)} relevant agents"
+        )
+
         # Build context from all agent results
         results_by_type = {}
         for agent_id, result_data in agent_results.items():
@@ -96,6 +160,8 @@ YOUR TASK:
 5. **Stay Focused**: Directly answer the user's original question
 6. **Be Comprehensive**: Include all relevant information from each agent
 7. **Natural Tone**: Write conversationally, not like a concatenated document
+8. **No Agent Lists**: Do NOT create sections listing agent names, contributions, or roles. Do NOT mention "agent contributions" or similar meta-information.
+9. **No Meta-References**: Do NOT mention or reference any filtered, irrelevant, excluded, or additional results. Only discuss and integrate the actual results provided.
 
 FORMATTING GUIDELINES:
 - Use clear section headings when appropriate
@@ -238,11 +304,11 @@ Provide a well-structured, comprehensive response that naturally weaves together
 
         for gap in gaps:
             if "code" in gap.lower():
-                questions.append("What programming language should I use for the code?")
+                questions.append("What specific coding requirements do you have?")
             elif "analysis" in gap.lower():
                 questions.append("What specific aspects should I analyze?")
             elif "research" in gap.lower():
-                questions.append("What depth of research do you need?")
+                questions.append("What depth of investigation do you need?")
 
         # Remove duplicates
         return list(set(questions))

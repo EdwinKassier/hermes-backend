@@ -1,7 +1,6 @@
 """Orchestrator utilities initialization."""
 
 from .result_synthesizer import ResultSynthesizer
-from .task_decomposer import ParallelTaskDecomposer
 from .task_dependencies import (
     DependencyAnalyzer,
     DependencyAwareTask,
@@ -16,8 +15,6 @@ from .task_dependencies import (
 # Users should import from app.hermes.legion.orchestrator directly
 
 __all__ = [
-    # Task decomposition
-    "ParallelTaskDecomposer",
     # Task dependencies
     "DependencyType",
     "TaskDependency",

@@ -93,13 +93,8 @@ class DecisionRationaleFormatter:
         # Task type
         task_type = analysis.get("identified_task_type")
         if task_type:
-            task_types = {
-                "research": "Research & Information Gathering",
-                "code": "Code Generation & Programming",
-                "analysis": "Data Analysis & Evaluation",
-                "data": "Data Processing & Transformation",
-            }
-            facts["Task Type"] = task_types.get(task_type, f"{task_type.title()}")
+            # Dynamic agent system uses custom agent types - display as-is
+            facts["Task Type"] = task_type.replace("_", " ").title()
 
         # Agent info
         if decisions.get("agent_needed"):

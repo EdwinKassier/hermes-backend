@@ -10,14 +10,12 @@ from typing import Any, Dict, List
 
 from app.shared.utils.toolhub import get_all_tools
 
+from ..agents.task_agent_planner import TaskAgentPlanner
 from ..intelligence.adaptive_synthesizer import AdaptiveSynthesizer
 from ..intelligence.cost_optimizer import CostOptimizer
 from ..intelligence.feedback_learner import FeedbackLearner
 from ..intelligence.performance_optimizer import PerformanceOptimizer
-from ..intelligence.query_analyzer import QueryAnalyzer
 from ..intelligence.tool_intelligence import ToolIntelligence
-from ..intelligence.worker_planner import IntelligentWorkerPlanner
-from ..utils.persona_generator import LegionPersonaGenerator
 from .base import LegionStrategy
 
 logger = logging.getLogger(__name__)
@@ -37,140 +35,235 @@ class IntelligentStrategy(LegionStrategy):
     - Manages costs to stay within budget
     """
 
-    def __init__(self, persona_generator: LegionPersonaGenerator = None):
-        # Core intelligence services (Phase 2)
-        self.query_analyzer = QueryAnalyzer()
-        self.worker_planner = IntelligentWorkerPlanner()
+    def __init__(self):
+        # Core dynamic agent intelligence
         self.tool_intelligence = ToolIntelligence()
         self.adaptive_synthesizer = AdaptiveSynthesizer()
 
-        # Advanced optimization services (Phase 4)
+        # Advanced optimization services
         self.feedback_learner = _global_feedback_learner  # Shared across instances
         self.performance_optimizer = PerformanceOptimizer()
         self.cost_optimizer = CostOptimizer()
 
-        # Dependencies
-        self.persona_generator = persona_generator or LegionPersonaGenerator()
+        # Dynamic agents handle their own personas - no persona generator needed
 
     async def generate_workers(
         self, query: str, context: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
-        """Generate workers using intelligent planning with Phase 4 optimizations."""
+        """Generate workers using TaskAgentPlanner with intelligent optimizations."""
         try:
             # Start performance monitoring
             self.performance_optimizer.start_execution()
             self.cost_optimizer.reset()
 
-            # 1. Analyze query complexity
-            complexity = await self.query_analyzer.analyze_complexity(query)
+            # Use TaskAgentPlanner for intelligent agent creation
+            planner = TaskAgentPlanner()
+            analysis = planner.analyze_task_and_plan_agents(
+                task_description=query,
+                user_context=context.get("user_context"),
+                complexity_estimate=self._get_complexity_estimate(context),
+            )
+
+            if not analysis.get("agent_plan"):
+                logger.warning("TaskAgentPlanner failed, using intelligent fallback")
+                return await self._create_intelligent_fallback_worker(query)
+
+            # Apply intelligent optimizations to the agent plan
+            optimized_plan = await self._apply_intelligent_optimizations(
+                analysis, query, context
+            )
+
+            # Convert to worker plan with dynamic agents
+            worker_plan = planner.create_worker_plan_from_analysis(
+                optimized_plan, query
+            )
+
+            # Apply intelligent tool allocation
+            worker_plan = await self._apply_intelligent_tool_allocation(worker_plan)
+
+            # End performance monitoring
+            execution_time = self.performance_optimizer.end_execution()
             logger.info(
-                f"Query complexity: {complexity.score}, suggested workers: {complexity.suggested_workers}"
+                f"Intelligent strategy generated {len(worker_plan)} dynamic agents in {execution_time:.2f}s"
+            )
+            logger.info(f"Cost summary: {self.cost_optimizer.get_cost_summary()}")
+
+            return worker_plan
+
+        except Exception as e:
+            logger.error(f"Intelligent strategy failed: {e}")
+            return await self._create_intelligent_fallback_worker(query)
+
+    async def _apply_intelligent_optimizations(
+        self, analysis: Dict[str, Any], query: str, context: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Apply intelligent optimizations to the agent plan."""
+        try:
+            # Use complexity estimate from context or default to moderate
+            complexity_estimate = context.get("complexity_estimate", "moderate")
+            complexity_score = {"simple": 3, "moderate": 6, "complex": 9}.get(
+                complexity_estimate, 6
             )
 
-            # Record LLM call cost
+            # Learn from history for worker count optimization
+            agent_plan = analysis.get("agent_plan", [])
+            if len(agent_plan) > 1:
+                learned_count = self.feedback_learner.get_optimal_worker_count(
+                    complexity_score
+                )
+                if len(self.feedback_learner.execution_history) > 10 and learned_count:
+                    # Apply learned optimization
+                    optimized_count = min(len(agent_plan), learned_count)
+                    if optimized_count < len(agent_plan):
+                        logger.info(
+                            f"Reducing agent count from {len(agent_plan)} to {optimized_count} based on learning"
+                        )
+                        agent_plan = agent_plan[:optimized_count]
+                        analysis["agent_plan"] = agent_plan
+                        analysis["task_analysis"]["estimated_steps"] = optimized_count
+
+            # Apply cost optimization
+            total_agents = len(agent_plan)
+            optimized_count = self.cost_optimizer.should_reduce_workers(total_agents)
+            if optimized_count < total_agents:
+                logger.info(
+                    f"Cost optimization: reducing agents from {total_agents} to {optimized_count}"
+                )
+                agent_plan = agent_plan[:optimized_count]
+                analysis["agent_plan"] = agent_plan
+
+            # Record costs
             self.cost_optimizer.record_llm_call(
-                "complexity_analysis", input_tokens=200, output_tokens=100
+                "task_analysis", input_tokens=400, output_tokens=300
             )
-
-            # 2. Learn from history - get optimal worker count
-            learned_worker_count = self.feedback_learner.get_optimal_worker_count(
-                complexity.score
-            )
-
-            # Use learned value if available, otherwise use AI suggestion
-            suggested_count = (
-                learned_worker_count
-                if len(self.feedback_learner.execution_history) > 10
-                else complexity.suggested_workers
-            )
-
-            # 3. Apply cost optimization
-            optimized_count = self.cost_optimizer.should_reduce_workers(suggested_count)
-            logger.info(
-                f"Worker count: suggested={suggested_count}, optimized={optimized_count}"
-            )
-
-            # 4. Plan workers (with optimized count)
-            # Override complexity.suggested_workers for the planner
-            complexity.suggested_workers = optimized_count
-
-            worker_plans = await self.worker_planner.plan_workers(
-                query=query,
-                complexity=complexity,
-                constraints=context.get("constraints"),
-            )
-
             self.cost_optimizer.record_llm_call(
-                "worker_planning", input_tokens=300, output_tokens=200
+                "agent_optimization", input_tokens=200, output_tokens=100
             )
 
-            # 5. Allocate tools intelligently
+            return analysis
+
+        except Exception as e:
+            logger.warning(f"Intelligent optimization failed: {e}, using original plan")
+            return analysis
+
+    async def _apply_intelligent_tool_allocation(
+        self, worker_plan: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Apply intelligent tool allocation to workers."""
+        try:
             available_tools = get_all_tools()
 
-            workers = []
-            for plan in worker_plans:
+            for worker in worker_plan:
+                agent_config = worker.get("dynamic_agent_config", {})
+                task_description = worker.get("task_description", "")
+
+                # Use intelligent tool allocation based on agent capabilities
+                capabilities = agent_config.get("capabilities", {})
+                tools_needed = capabilities.get("tools_needed", [])
+
                 # Get intelligent tool recommendations
                 recommended_tools = await self.tool_intelligence.recommend_tools(
-                    role=plan.role,
-                    task=plan.task_description,
+                    role=agent_config.get("agent_type", "general"),
+                    task=task_description,
                     available_tools=available_tools,
+                )
+
+                # Update worker with intelligently allocated tools
+                worker["tools"] = [t.name for t in recommended_tools]
+
+                # Add metadata about intelligent allocation
+                if "metadata" not in worker:
+                    worker["metadata"] = {}
+                worker["metadata"].update(
+                    {
+                        "intelligent_tool_allocation": True,
+                        "tool_count": len(recommended_tools),
+                        "performance_monitoring": True,
+                        "cost_optimized": True,
+                    }
                 )
 
                 self.cost_optimizer.record_llm_call(
                     "tool_recommendation", input_tokens=150, output_tokens=50
                 )
 
-                workers.append(
-                    {
-                        "worker_id": plan.worker_id,
-                        "role": plan.role,
-                        "task_description": plan.task_description,
-                        "tools": recommended_tools,
-                        "metadata": {
-                            "specialization": plan.specialization,
-                            "priority": plan.priority,
-                            "estimated_duration": plan.estimated_duration,
-                            "complexity_score": complexity.score,
-                            # Phase 4: Add optimization metadata
-                            "learned_from_history": len(
-                                self.feedback_learner.execution_history
-                            )
-                            > 0,
-                            "cost_optimized": optimized_count < suggested_count,
-                            "performance_monitoring": True,
-                        },
-                    }
-                )
-
-            # Generate personas for all workers
-            workers = await self.persona_generator.generate_personas_for_workers(
-                workers, {"query": query}
-            )
-
-            logger.info(
-                f"Generated {len(workers)} intelligent workers with Phase 4 optimizations and personas"
-            )
-            logger.info(f"Cost summary: {self.cost_optimizer.get_cost_summary()}")
-
-            return workers
+            return worker_plan
 
         except Exception as e:
-            logger.error(f"Error in intelligent worker generation: {e}")
-            # Fallback to single worker with persona
-            fallback_workers = [
-                {
-                    "worker_id": "fallback_worker",
-                    "role": "general",
-                    "task_description": query,
-                    "tools": [],
-                }
-            ]
-            fallback_workers = (
-                await self.persona_generator.generate_personas_for_workers(
-                    fallback_workers, {"query": query}
-                )
+            logger.warning(
+                f"Intelligent tool allocation failed: {e}, using basic allocation"
             )
-            return fallback_workers
+            return worker_plan
+
+    def _get_complexity_estimate(self, context: Dict[str, Any]) -> str:
+        """Extract complexity estimate from context."""
+        complexity = context.get("complexity_estimate", "moderate")
+        # Map to expected values
+        if isinstance(complexity, (int, float)):
+            if complexity > 7:
+                return "complex"
+            elif complexity > 4:
+                return "moderate"
+            else:
+                return "simple"
+        return str(complexity).lower()
+
+    async def _create_intelligent_fallback_worker(
+        self, query: str
+    ) -> List[Dict[str, Any]]:
+        """Create an intelligent fallback worker when planning fails."""
+        fallback_config = {
+            "agent_id": "intelligent_fallback",
+            "agent_type": "intelligent_fallback_specialist",
+            "task_types": ["general", "analysis", "problem_solving"],
+            "capabilities": {
+                "primary_focus": "handling complex tasks when intelligent planning fails",
+                "tools_needed": ["reasoning", "analysis", "problem_solving"],
+                "expertise_level": "intermediate",
+                "specializations": ["fallback_handling", "general_assistance"],
+                "knowledge_domains": ["general_knowledge", "task_management"],
+            },
+            "prompts": {
+                "identify_required_info": """Analyze this task to determine what information is needed.
+
+Task: "{task}"
+User Message: "{user_message}"
+
+Determine what information is needed to complete this task effectively.
+
+Response format (JSON):
+{{
+  "needs_info": true|false,
+  "inferred_values": {{}},
+  "required_fields": [],
+  "reasoning": "why you need this information"
+}}""",
+                "execute_task": """Complete this task using your intelligent analysis capabilities.
+
+Task: {task}
+{judge_feedback}
+
+Your capabilities: {capabilities}
+Available tools: {tool_context}
+
+Provide a comprehensive solution to the task, applying intelligent analysis and problem-solving.""",
+            },
+            "persona": "intelligent_assistant",
+            "task_portion": query,
+            "dependencies": [],
+        }
+
+        return [
+            {
+                "worker_id": "intelligent_fallback",
+                "role": "intelligent_fallback",
+                "task_description": query,
+                "tools": [],
+                "execution_level": 0,
+                "dependencies": [],
+                "dynamic_agent_config": fallback_config,
+            }
+        ]
 
     async def synthesize_results(
         self, original_query: str, results: Dict[str, Any], persona: str

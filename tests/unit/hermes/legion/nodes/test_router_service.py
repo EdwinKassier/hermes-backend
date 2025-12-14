@@ -157,12 +157,28 @@ class TestRouterService:
                 "role": "researcher",
                 "task_description": "Research topic A",
                 "tools": ["search"],
+                "dynamic_agent_config": {
+                    "agent_id": "researcher",
+                    "agent_type": "research_specialist",
+                    "task_types": ["research"],
+                    "capabilities": {"research": True},
+                    "prompts": {"execute_task": "Research the topic"},
+                    "persona": "researcher",
+                },
             },
             {
                 "worker_id": "worker_2",
                 "role": "analyzer",
                 "task_description": "Analyze data",
                 "tools": ["calculator"],
+                "dynamic_agent_config": {
+                    "agent_id": "analyzer",
+                    "agent_type": "analysis_specialist",
+                    "task_types": ["analysis"],
+                    "capabilities": {"analysis": True},
+                    "prompts": {"execute_task": "Analyze the data"},
+                    "persona": "analyzer",
+                },
             },
         ]
 

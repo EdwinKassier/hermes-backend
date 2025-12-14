@@ -18,7 +18,9 @@ from ..strategies.council import CouncilStrategy
 from ..strategies.intelligent import IntelligentStrategy
 from ..strategies.parallel import ParallelStrategy
 from ..strategies.registry import get_strategy_registry
-from ..utils import ToolAllocator
+
+# ToolAllocator removed - dynamic agents specify their own tools
+from ..utils.persona_context import LegionPersonaContext
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +50,8 @@ class LegionWorkerState(TypedDict):
     persona: str  # The main system persona (e.g. "hermes")
     context: Dict[str, Any]  # Shared context/collected info
     execution_level: int  # For dependency-aware execution ordering
+    # Dynamic agent configuration - REQUIRED for dynamic agent creation
+    dynamic_agent_config: Dict[str, Any]
     # Retry configuration
     max_retries: int  # Maximum retry attempts (default: 2)
     retry_delay_seconds: float  # Base delay between retries (default: 1.0)
@@ -78,17 +82,10 @@ async def legion_orchestrator_node(state: OrchestratorState) -> Dict[str, Any]:
     strategy_name = state.get("legion_strategy")
 
     if not strategy_name:
-        # Simple heuristic for now, can be enhanced with LLM classifier
-        # We can move this logic to a "StrategySelector" service later
-        from ..parallel.task_decomposer import ParallelTaskDecomposer
-
-        decomposer = ParallelTaskDecomposer()
-        if decomposer.is_multi_agent_task(user_message):
-            strategy_name = "parallel"
-        else:
-            strategy_name = "council"
-
-        logger.info("Legion strategy determined: %s", strategy_name)
+        # All strategies now use dynamic agents - default to intelligent strategy
+        # which analyzes tasks and creates optimal agent combinations
+        strategy_name = "intelligent"
+        logger.info("Using intelligent strategy with dynamic agent creation")
 
     # 2. Get Strategy Implementation
     strategy_registry = get_strategy_registry()
@@ -370,49 +367,43 @@ async def legion_worker_node(state: LegionWorkerState) -> Dict[str, Any]:
         if state["tools"]:
             tools = registry.get_tools(state["tools"])
         else:
-            # Fallback to allocating if no specific tools specified
-            tool_allocator = ToolAllocator()
-            tools = tool_allocator.allocate_tools_for_task(
-                task_type="general",
-                task_description=state["task_description"],
+            # Fallback to basic tool allocation if no specific tools specified
+            # For dynamic agents, tools are typically specified in the agent config
+            tools = []  # Dynamic agents specify their own tools
+
+        # Create dynamic agent from configuration
+        # The system now ONLY supports dynamic agents - no hardcoded agent types
+        dynamic_config = state.get("dynamic_agent_config")
+        if not dynamic_config:
+            raise ValueError(
+                f"Worker '{state['worker_id']}' missing required 'dynamic_agent_config'. "
+                "The system now only supports dynamic agent creation."
             )
 
-        # Create Agent using the worker's role as the agent type
-        from ..state import AgentConfig
-
-        # Map worker role to agent type
-        # Roles like "researcher", "coder" should map to "research", "code"
         role = state["role"].lower()
-        agent_type_map = {
-            "researcher": "research",
-            "coder": "code",
-            "programmer": "code",
-            "analyst": "analysis",
-            "data_analyst": "data",
-        }
-        agent_type = agent_type_map.get(role, role)  # Default to role if not in map
+        logger.info(f"Creating dynamic agent for role '{role}' from config")
 
-        config = AgentConfig(agent_type=agent_type, required_tools=[])
-        agent = AgentFactory.create_agent(config, tools, persona=state["persona"])
+        agent = AgentFactory.create_dynamic_agent(tools=tools, **dynamic_config)
 
         # Create SubAgentState
         sub_state = SubAgentState(
             agent_id=worker_id,
             status=SubAgentStatus.PROCESSING,
             task=state["task_description"],
-            task_type=agent_type,  # Use mapped agent_type
+            task_type=dynamic_config.get("agent_type", "dynamic_agent"),
             triggering_message=state["task_description"],
             collected_info=state["context"],
             metadata={"user_id": state["user_id"], "persona": state["persona"]},
         )
 
-        # Execute - prefer async if available
-        if hasattr(agent, "execute_task_async"):
-            return await agent.execute_task_async(sub_state)
-        else:
-            # Fall back to sync execute_task (run in thread pool to avoid blocking)
-            loop = asyncio.get_running_loop()
-            return await loop.run_in_executor(None, agent.execute_task, sub_state)
+        # Execute with Legion persona context
+        with LegionPersonaContext(state["persona"]):
+            if hasattr(agent, "execute_task_async"):
+                return await agent.execute_task_async(sub_state)
+            else:
+                # Fall back to sync execute_task (run in thread pool to avoid blocking)
+                loop = asyncio.get_running_loop()
+                return await loop.run_in_executor(None, agent.execute_task, sub_state)
 
     last_error = None
     for attempt in range(max_retries + 1):
@@ -433,6 +424,82 @@ async def legion_worker_node(state: LegionWorkerState) -> Dict[str, Any]:
                 attempt + 1,
                 max_retries + 1,
             )
+
+            # Validate that the result is relevant to the task
+            task_lower = state["task_description"].lower()
+            result_lower = result.lower()
+
+            # Check if result contains key terms from the task
+            task_keywords = set()
+            # Extract important words (skip common words)
+            for word in task_lower.split():
+                if len(word) > 3 and word not in [
+                    "that",
+                    "with",
+                    "from",
+                    "this",
+                    "what",
+                    "when",
+                    "where",
+                    "which",
+                    "their",
+                    "about",
+                    "would",
+                    "could",
+                    "should",
+                    "there",
+                    "here",
+                    "they",
+                    "them",
+                    "then",
+                    "than",
+                    "will",
+                    "have",
+                    "been",
+                    "were",
+                    "does",
+                    "doing",
+                    "done",
+                ]:
+                    task_keywords.add(word)
+
+            # Check if result contains at least some task keywords
+            relevant_keywords = [kw for kw in task_keywords if kw in result_lower]
+            relevance_score = len(relevant_keywords) / max(len(task_keywords), 1)
+
+            # If result seems unrelated (low relevance score), treat as degraded
+            if (
+                relevance_score < 0.3 and len(result.split()) > 50
+            ):  # Only check longer results
+                logger.warning(
+                    "Legion worker %s result appears unrelated to task (relevance: %.2f). "
+                    "Task keywords: %s, Found: %s",
+                    worker_id,
+                    relevance_score,
+                    list(task_keywords),
+                    relevant_keywords,
+                )
+                degraded_result = _generate_graceful_degradation_message(
+                    worker_id=worker_id,
+                    role=state["role"],
+                    task=state["task_description"],
+                    error=Exception(
+                        f"Generated content appears unrelated to the requested task (relevance score: {relevance_score:.2f})"
+                    ),
+                )
+                return {
+                    "legion_results": {
+                        worker_id: {
+                            "result": degraded_result,
+                            "role": state["role"],
+                            "status": "degraded",
+                            "duration_seconds": duration,
+                            "execution_level": state.get("execution_level", 0),
+                            "attempts": attempt + 1,
+                            "is_partial": True,
+                        }
+                    }
+                }
 
             return {
                 "legion_results": {

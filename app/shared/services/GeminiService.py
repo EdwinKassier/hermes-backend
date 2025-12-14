@@ -193,58 +193,6 @@ class GeminiService:
                 # Update existing config with loaded prompt
                 self.persona_configs[persona_name].base_prompt = base_prompt
 
-        # Add Legion-generated personas
-        self._add_legion_personas()
-
-    def _add_legion_personas(self):
-        """Add Legion-generated personas to the configuration."""
-        legion_personas = {
-            # Research personas
-            "thorough_investigator": "You are a thorough investigator who meticulously researches topics, leaving no stone unturned in your quest for comprehensive information.",
-            "data_driven_analyst": "You are a data-driven analyst who focuses on empirical evidence, statistical analysis, and factual accuracy in your research and analysis.",
-            "comprehensive_researcher": "You are a comprehensive researcher who provides detailed, well-rounded analysis covering multiple aspects and perspectives.",
-            "methodical_explorer": "You are a methodical explorer who systematically investigates topics, following structured approaches to discovery and analysis.",
-            "evidence_based_analyst": "You are an evidence-based analyst who prioritizes verifiable facts, empirical data, and logical reasoning in your assessments.",
-            # Code personas
-            "pragmatic_developer": "You are a pragmatic developer who focuses on practical, maintainable solutions that work reliably in real-world scenarios.",
-            "innovative_architect": "You are an innovative architect who designs elegant, scalable systems with forward-thinking approaches to software development.",
-            "clean_code_specialist": "You are a clean code specialist who emphasizes readable, maintainable, and well-structured code following best practices.",
-            "performance_optimizer": "You are a performance optimizer who focuses on efficient algorithms, optimized code, and high-performance solutions.",
-            "robust_engineer": "You are a robust engineer who builds reliable, fault-tolerant systems with comprehensive error handling and edge case coverage.",
-            # Analysis personas
-            "critical_thinker": "You are a critical thinker who evaluates information objectively, identifies flaws in reasoning, and provides balanced analysis.",
-            "systematic_analyzer": "You are a systematic analyzer who breaks down complex problems into manageable components and analyzes them methodically.",
-            "logical_reasoner": "You are a logical reasoner who applies formal logic, identifies fallacies, and constructs well-reasoned arguments.",
-            "insightful_evaluator": "You are an insightful evaluator who provides deep analysis, identifies key insights, and offers valuable recommendations.",
-            "data_interpreter": "You are a data interpreter who analyzes patterns, draws meaningful conclusions, and communicates data-driven insights effectively.",
-            # Data personas
-            "precision_analyst": "You are a precision analyst who ensures accuracy in data handling, calculations, and interpretations with meticulous attention to detail.",
-            "pattern_recognizer": "You are a pattern recognizer who identifies trends, correlations, and meaningful patterns in complex datasets.",
-            "statistical_expert": "You are a statistical expert who applies appropriate statistical methods, understands distributions, and interprets results correctly.",
-            "data_storyteller": "You are a data storyteller who transforms complex data into compelling narratives that are easy to understand and act upon.",
-            "insight_miner": "You are an insight miner who uncovers hidden relationships, identifies key drivers, and extracts actionable insights from data.",
-            # General personas
-            "versatile_solver": "You are a versatile solver who adapts to different challenges, applies appropriate methods, and finds effective solutions across domains.",
-            "adaptive_problem_solver": "You are an adaptive problem solver who modifies approaches based on context, learns from experience, and optimizes solutions over time.",
-            "comprehensive_executor": "You are a comprehensive executor who ensures complete task fulfillment, attention to detail, and thorough completion.",
-            "resourceful_agent": "You are a resourceful agent who finds creative solutions, makes the most of available resources, and overcomes obstacles effectively.",
-            "flexible_specialist": "You are a flexible specialist who combines deep expertise with adaptability, applying specialized knowledge to diverse situations.",
-            # Council personas (from existing definitions)
-            "optimist": "You are an optimist who focuses on opportunities, benefits, and positive outcomes, emphasizing potential and possibilities.",
-            "pessimist": "You are a pessimist who identifies risks, challenges, and potential problems, emphasizing caution and critical evaluation.",
-            "critic": "You are a critic who evaluates weaknesses, flaws, and areas for improvement, providing constructive feedback and quality assessment.",
-            "pragmatist": "You are a pragmatist who focuses on practical implementation and realistic outcomes, emphasizing feasibility and real-world application.",
-            "creative": "You are a creative thinker who generates innovative ideas and unconventional solutions, exploring novel approaches and possibilities.",
-            "analytical": "You are an analytical thinker who provides data-driven analysis and logical reasoning, focusing on systematic evaluation and evidence-based conclusions.",
-        }
-
-        for persona_name, base_prompt in legion_personas.items():
-            if persona_name not in self.persona_configs:
-                self.persona_configs[persona_name] = PersonaConfig(
-                    name=persona_name, base_prompt=base_prompt
-                )
-                logging.debug(f"Added Legion persona: {persona_name}")
-
     def _get_persona_config(self, persona: str) -> PersonaConfig:
         """Get persona configuration with fallback."""
         if persona not in self.persona_configs:
@@ -590,8 +538,15 @@ IMPORTANT: Ensure you fully address the Original User Query requirements, includ
             # Handle regular text response
             response = self._extract_text_content(message.content)
             if not response:
-                logging.warning("Gemini returned empty response")
+                logging.warning(
+                    "Gemini returned empty response for persona: %s", persona
+                )
+
+                # Return error template as final fallback
                 return persona_config.error_message_template
+
+            # Use LLM to clean up and complete the response if needed
+            response = self._llm_cleanup_response(response, prompt, persona)
 
             logging.info("Generated response successfully with persona: %s", persona)
             return response
@@ -603,6 +558,99 @@ IMPORTANT: Ensure you fully address the Original User Query requirements, includ
                 persona_config.error_message_template
                 + " Rate limiting or internal error. Try again in 30s."
             )
+
+    def _llm_cleanup_response(
+        self, response: str, original_prompt: str, persona: str
+    ) -> str:
+        """
+        Use LLM to clean up and complete responses that appear incomplete or malformed.
+
+        Simple and effective: if the response looks problematic, ask the LLM to fix it.
+
+        Args:
+            response: The generated response from the LLM
+            original_prompt: The original prompt for context
+            persona: The persona used for generation
+
+        Returns:
+            Cleaned up response
+        """
+        if not response or not response.strip():
+            return response
+
+        # Quick check if response needs cleanup
+        if self._response_needs_cleanup(response, original_prompt, persona):
+            logging.info("Response needs cleanup, using LLM to fix it")
+            try:
+                cleaned_response = self._ask_llm_to_cleanup(
+                    response, original_prompt, persona
+                )
+                if cleaned_response and len(cleaned_response.strip()) > len(
+                    response.strip()
+                ):
+                    logging.info("LLM cleanup successful, response improved")
+                    return cleaned_response
+                else:
+                    logging.warning("LLM cleanup didn't improve response")
+            except Exception as e:
+                logging.error("LLM cleanup failed: %s", e)
+
+        return response
+
+    def _response_needs_cleanup(self, response: str, prompt: str, persona: str) -> bool:
+        """
+        Simple check to determine if response needs LLM cleanup.
+        """
+        if not response or len(response.strip()) < 10:
+            return False  # Too short to be worth cleaning
+
+        import re
+
+        # Check for obvious incomplete patterns
+        incomplete_patterns = [
+            r":\s*$",  # Lines ending with colon (Python blocks)
+            r"^\s*\w+\s*\([^)]*$",  # Unclosed function calls
+            r"```\w*$",  # Unclosed code blocks
+            r"^\s*(if|for|while|def|class)\s+.*[^}]\s*$",  # Incomplete code structures
+        ]
+
+        # Basic check for obviously incomplete responses
+        return len(response.strip()) < 50 and any(
+            re.search(pattern, response, re.MULTILINE)
+            for pattern in incomplete_patterns[:2]
+        )
+
+    def _ask_llm_to_cleanup(
+        self, response: str, original_prompt: str, persona: str
+    ) -> str:
+        """
+        Ask the LLM to clean up and complete the response.
+        """
+        # Create a simple cleanup prompt
+        cleanup_prompt = f"""Please clean up and complete this response. Make sure it's properly formatted and complete:
+
+Original Request: {original_prompt}
+
+Current Response: {response}
+
+Provide a cleaned up, complete version of the response above. Ensure proper formatting, complete code blocks, and all necessary closing elements."""
+
+        try:
+            # Use a simplified model call for cleanup (reuse existing model setup)
+            persona_config = self._get_persona_config(persona)
+
+            # Create model for cleanup (reuse the same model instance if possible)
+            model = self._create_model_for_persona(persona_config)
+
+            # Simple cleanup call
+            cleanup_message = model.invoke([HumanMessage(content=cleanup_prompt)])
+            cleaned_content = self._extract_text_content(cleanup_message.content)
+
+            return cleaned_content if cleaned_content else response
+
+        except Exception as e:
+            logging.error("Cleanup LLM call failed: %s", e)
+            return response  # Return original if cleanup fails
 
     def add_persona(self, persona_config: PersonaConfig) -> None:
         """
@@ -627,7 +675,23 @@ IMPORTANT: Ensure you fully address the Original User Query requirements, includ
             >>> service.add_persona(custom_persona)
         """
         self.persona_configs[persona_config.name] = persona_config
-        logging.info("Added persona configuration: %s", persona_config.name)
+
+    def add_personas(self, persona_configs: Dict[str, PersonaConfig]) -> None:
+        """
+        Add multiple persona configurations to the service.
+
+        Args:
+            persona_configs: Dictionary of persona name to PersonaConfig objects
+
+        Example:
+            >>> service = GeminiService()
+            >>> personas = {"agent1": config1, "agent2": config2}
+            >>> service.add_personas(personas)
+        """
+        self.persona_configs.update(persona_configs)
+        logging.info(f"Added {len(persona_configs)} personas to GeminiService")
+        for name, config in persona_configs.items():
+            logging.debug("Added persona configuration: %s", name)
 
     def remove_persona(self, persona_name: str) -> bool:
         """

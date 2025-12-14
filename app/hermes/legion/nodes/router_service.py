@@ -267,6 +267,7 @@ class RouterService:
                 persona=worker.get("persona", state.get("persona", "legion")),
                 context=context,
                 execution_level=worker.get("execution_level", 0),
+                dynamic_agent_config=worker["dynamic_agent_config"],
                 max_retries=worker.get("max_retries", 2),
                 retry_delay_seconds=worker.get("retry_delay_seconds", 1.0),
             )

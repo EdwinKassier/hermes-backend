@@ -19,7 +19,8 @@ from ..state import (
     TaskInfo,
     TaskStatus,
 )
-from ..utils import ToolAllocator
+
+# ToolAllocator removed - using ToolRegistry directly
 
 logger = logging.getLogger(__name__)
 
@@ -197,23 +198,18 @@ async def orchestrator_node(state: OrchestratorState) -> OrchestratorState:
             "complexity"
         ] = routing_decision.complexity_estimate
 
-        # Check if multi-agent task (parallel/legion mode)
-        from ..parallel.task_decomposer import ParallelTaskDecomposer
-
-        decomposer = ParallelTaskDecomposer()
-
-        if decomposer.is_multi_agent_task(user_message):
-            logger.info("Multi-agent orchestration detected - routing to legion")
-            decision_rationale.append(current_decision)
-            # Return new dict to ensure proper merging (LangGraph may replace dicts without reducer)
-            return {
-                "next_action": "legion_orchestrate",
-                "decision_rationale": decision_rationale,
-                "metadata": {**state_metadata},
-                "execution_path": [
-                    {"node": "orchestrator", "timestamp": datetime.now().isoformat()}
-                ],
-            }
+        # All tasks now use dynamic agent orchestration
+        logger.info("Routing to legion orchestration with dynamic agents")
+        decision_rationale.append(current_decision)
+        # Return new dict to ensure proper merging (LangGraph may replace dicts without reducer)
+        return {
+            "next_action": "legion_orchestrate",
+            "decision_rationale": decision_rationale,
+            "metadata": {**state_metadata},
+            "execution_path": [
+                {"node": "orchestrator", "timestamp": datetime.now().isoformat()}
+            ],
+        }
 
         # Single agent orchestration - infer agent type from routing decision
         # This avoids an extra LLM call to TaskIdentifier
@@ -539,11 +535,12 @@ def _handle_new_task(state, user_message, task_type, decision, rationale):
     decision["decisions"]["agent_needed"] = True
     decision["decisions"]["selected_task_type"] = task_type
 
-    # Allocate tools
-    tool_allocator = ToolAllocator()
-    allocated_tools = tool_allocator.allocate_tools_for_task(
-        task_type=task_type, task_description=user_message
-    )
+    # For dynamic agents, tools are specified in agent configurations
+    # Use basic tool set for legacy compatibility
+    from ..utils.tool_registry import get_tool_registry
+
+    tool_registry = get_tool_registry()
+    allocated_tools = tool_registry.get_tools(["web_search", "analysis"])  # Basic tools
 
     decision["analysis"]["tool_allocation"] = {
         "task_type": task_type,
@@ -583,6 +580,11 @@ def _handle_new_task(state, user_message, task_type, decision, rationale):
                 "task_type": task_type,
                 "judge_strictness": 0.7,
                 "judge_persona": "critic",
+                "agent_type": getattr(agent_info, "agent_type", "dynamic_agent"),
+                "agent_metadata": getattr(agent_info, "metadata", {}),
+                "worker_metadata": getattr(agent_info, "metadata", {}).get(
+                    "metadata", {}
+                ),
             },
         )
 
@@ -840,17 +842,16 @@ async def agent_executor_node(state: OrchestratorState) -> Dict[str, Any]:
     # Get tool names (they're stored as names to avoid serialization issues)
     tool_names = state["tool_allocations"].get(agent_id, [])
 
-    # Recreate tools from names using ToolAllocator
-    # This avoids the serialization issue with LangGraph checkpointing
-    tool_allocator = ToolAllocator()
-    task_info = state["task_ledger"][task_id]
-    task_description = task_info.description
-    task_type = task_info.metadata.get("task_type", "general")
+    # For dynamic agents, tools are specified in agent configurations
+    # Use tool registry for recreation to avoid serialization issues
+    from ..utils.tool_registry import get_tool_registry
 
-    # Re-allocate tools based on task type
-    tools = tool_allocator.allocate_tools_for_task(
-        task_type=task_type, task_description=task_description
-    )
+    tool_registry = get_tool_registry()
+    task_info = state["task_ledger"][task_id]
+
+    # Use stored tool names from tool_allocations if available
+    stored_tools = state.get("tool_allocations", {}).get(task_info.agent_id, [])
+    tools = tool_registry.get_tools(stored_tools) if stored_tools else []
 
     # Recreate agent
     try:

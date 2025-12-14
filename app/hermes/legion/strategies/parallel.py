@@ -3,10 +3,11 @@
 import logging
 from typing import Any, Dict, List
 
+from ..agents.task_agent_planner import TaskAgentPlanner
 from ..parallel.result_synthesizer import ResultSynthesizer
-from ..parallel.task_decomposer import ParallelTaskDecomposer
-from ..utils import ToolAllocator
-from ..utils.persona_generator import LegionPersonaGenerator
+
+# ToolAllocator removed - dynamic agents handle their own tools
+# PersonaGenerator removed - dynamic agents handle their own personas
 from .base import LegionStrategy
 
 logger = logging.getLogger(__name__)
@@ -24,133 +25,134 @@ class ParallelStrategy(LegionStrategy):
     - Sequential execution between levels
     """
 
-    def __init__(self, persona_generator: LegionPersonaGenerator = None):
-        """Initialize parallel strategy with dependencies."""
-        self.persona_generator = persona_generator or LegionPersonaGenerator()
+    def __init__(self):
+        """Initialize parallel strategy."""
+        # Dynamic agents handle their own personas - no persona generator needed
 
     async def generate_workers(
         self, query: str, context: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
         """
-        Decompose task into subtasks with dependency analysis.
+        Analyze task and create dynamic agents with dependency analysis.
 
-        Returns workers annotated with execution level information.
+        Uses TaskAgentPlanner to invent completely custom agent types.
+        Returns workers with dynamic_agent_config for legion orchestrator.
         """
-        decomposer = ParallelTaskDecomposer()
-        subtasks = decomposer.decompose_task(query, skip_check=True)
-
-        if not subtasks:
-            logger.warning(
-                "Task decomposition failed or returned empty, falling back to single worker"
+        try:
+            # Use TaskAgentPlanner to analyze task and create dynamic agents
+            planner = TaskAgentPlanner()
+            analysis = planner.analyze_task_and_plan_agents(
+                task_description=query,
+                user_context=context.get("user_context"),
+                complexity_estimate=context.get("complexity_estimate", "moderate"),
             )
-            fallback_workers = [
+
+            if not analysis.get("agent_plan"):
+                logger.warning("Task analysis failed, falling back to single worker")
+                # Create a basic fallback dynamic agent
+                fallback_config = {
+                    "agent_id": "general_assistant",
+                    "agent_type": "general_task_handler",
+                    "task_types": ["general", "analysis"],
+                    "capabilities": {
+                        "primary_focus": "general task assistance and analysis",
+                        "tools_needed": ["analysis", "reasoning"],
+                        "expertise_level": "intermediate",
+                        "specializations": ["problem_solving", "task_analysis"],
+                        "knowledge_domains": ["general_knowledge", "task_management"],
+                    },
+                    "prompts": {
+                        "identify_required_info": """Analyze this task to determine what information is needed.
+
+Task: "{task}"
+User Message: "{user_message}"
+
+Determine what information is needed to complete this task effectively.
+
+Response format (JSON):
+{{
+  "needs_info": true|false,
+  "inferred_values": {{}},
+  "required_fields": [],
+  "reasoning": "why you need this information"
+}}""",
+                        "execute_task": """Complete this task using your capabilities.
+
+Task: {task}
+{judge_feedback}
+
+Your capabilities: {capabilities}
+Available tools: {tool_context}
+
+Provide a comprehensive solution to the task.""",
+                    },
+                    "persona": "helpful_assistant",
+                    "task_portion": query,
+                    "dependencies": [],
+                }
+
+                fallback_workers = [
+                    {
+                        "worker_id": "parallel_fallback",
+                        "role": "general_assistant",
+                        "task_description": query,
+                        "tools": [],
+                        "execution_level": 0,
+                        "dependencies": [],
+                        "dynamic_agent_config": fallback_config,
+                    }
+                ]
+
+                return fallback_workers
+
+            # Convert analysis to worker plan with dynamic agents
+            worker_plan = planner.create_worker_plan_from_analysis(analysis, query)
+
+            logger.info(
+                f"Created {len(worker_plan)} dynamic agents for parallel execution"
+            )
+            return worker_plan
+
+        except Exception as e:
+            logger.error(f"Dynamic agent planning failed: {e}, using fallback")
+            # Fallback to simple single worker
+            fallback_config = {
+                "agent_id": "emergency_fallback",
+                "agent_type": "emergency_task_handler",
+                "task_types": ["general"],
+                "capabilities": {
+                    "primary_focus": "handling tasks when planning fails",
+                    "tools_needed": ["basic_reasoning"],
+                    "expertise_level": "basic",
+                    "specializations": ["fallback_handling"],
+                    "knowledge_domains": ["general_assistance"],
+                },
+                "prompts": {
+                    "identify_required_info": """Task: "{task}"
+
+Response: {{"needs_info": false, "inferred_values": {{}}, "required_fields": [], "reasoning": "fallback mode"}}""",
+                    "execute_task": """Task: {task}
+
+I apologize, but I encountered an issue with the planning system. However, I can still help you with this task using my general capabilities.
+
+Please provide more details about what you'd like me to help you with.""",
+                },
+                "persona": "helpful_assistant",
+                "task_portion": query,
+                "dependencies": [],
+            }
+
+            return [
                 {
-                    "worker_id": "parallel_default",
-                    "role": "general",
+                    "worker_id": "emergency_fallback",
+                    "role": "emergency_fallback",
                     "task_description": query,
                     "tools": [],
                     "execution_level": 0,
                     "dependencies": [],
+                    "dynamic_agent_config": fallback_config,
                 }
             ]
-            # Generate persona for fallback worker
-            fallback_workers = (
-                await self.persona_generator.generate_personas_for_workers(
-                    fallback_workers, {"query": query}
-                )
-            )
-            return fallback_workers
-
-        # Analyze dependencies between tasks
-        try:
-            dependency_info = await decomposer.analyze_task_dependencies(subtasks)
-            execution_levels = dependency_info.get("execution_levels", [])
-            tasks_by_id = dependency_info.get("tasks", {})
-            is_sequential = dependency_info.get("is_sequential", False)
-
-            if is_sequential:
-                logger.info(
-                    "Detected sequential workflow with %d levels", len(execution_levels)
-                )
-        except (ValueError, RuntimeError) as e:
-            logger.error("Dependency analysis failed: %s, treating all as parallel", e)
-            execution_levels = [[f"task_{i}" for i in range(len(subtasks))]]
-            tasks_by_id = {}
-            is_sequential = False
-
-        workers = []
-        tool_allocator = ToolAllocator()
-
-        # Build worker list with execution level info
-        for level_idx, level_tasks in enumerate(execution_levels):
-            for task_id in level_tasks:
-                # Find the original subtask data
-                if task_id in tasks_by_id:
-                    task_info = tasks_by_id[task_id]
-                    subtask = {
-                        "description": task_info.description,
-                        "agent_type": task_info.agent_type,
-                        "keywords": task_info.keywords,
-                    }
-                    dependencies = task_info.dependencies
-                else:
-                    # Fallback to original subtask by index
-                    # Try to extract index from task_id like "task_0", "task_1"
-                    idx = 0
-                    if "_" in task_id:
-                        try:
-                            # Get the last part after underscore and try to parse as int
-                            last_part = task_id.split("_")[-1]
-                            idx = int(last_part)
-                        except ValueError:
-                            # Not a number, use position in execution_levels
-                            idx = level_tasks.index(task_id)
-
-                    if idx < len(subtasks):
-                        subtask = subtasks[idx]
-                    else:
-                        # Skip this task if we can't find data
-                        logger.warning("Could not find subtask data for %s", task_id)
-                        continue
-                    dependencies = []
-
-                # Allocate tools
-                tools = tool_allocator.allocate_tools_for_task(
-                    task_type=subtask.get("agent_type", "general"),
-                    task_description=subtask.get("description", ""),
-                )
-                tool_names = [t.name for t in tools]
-
-                workers.append(
-                    {
-                        "worker_id": task_id,
-                        "role": subtask.get("agent_type", "general"),
-                        "task_description": subtask.get("description", ""),
-                        "tools": tool_names,
-                        "execution_level": level_idx,
-                        "dependencies": dependencies,
-                        "metadata": {
-                            "is_sequential": is_sequential,
-                            "total_levels": len(execution_levels),
-                            "keywords": subtask.get("keywords", []),
-                        },
-                    }
-                )
-
-        # Sort by execution level to ensure proper ordering
-        workers.sort(key=lambda w: w["execution_level"])
-
-        # Generate personas for all workers
-        workers = await self.persona_generator.generate_personas_for_workers(
-            workers, {"query": query}
-        )
-
-        logger.info(
-            "Generated %d workers across %d execution levels with personas",
-            len(workers),
-            len(execution_levels),
-        )
-        return workers
 
     async def synthesize_results(
         self, original_query: str, results: Dict[str, Any], persona: str

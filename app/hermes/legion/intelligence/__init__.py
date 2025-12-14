@@ -1,5 +1,4 @@
 """Legion Intelligence Services."""
 
-from .metadata_generator import MetadataGenerator
-
-__all__ = ["MetadataGenerator"]
+# All intelligence services have been replaced by the dynamic agent system
+# TaskAgentPlanner now handles all task analysis and agent creation

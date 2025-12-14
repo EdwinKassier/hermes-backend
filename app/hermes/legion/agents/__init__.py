@@ -1,15 +1,22 @@
 """Sub-agent implementations for Legion."""
 
-from .analysis_agent import AnalysisAgent
 from .base import BaseSubAgent
-from .code_agent import CodeAgent
-from .data_agent import DataAgent
-from .research_agent import ResearchAgent
+from .dynamic_agent import DynamicAgent
+from .dynamic_agent_utils import (
+    create_mixed_agent_plan,
+    create_worker_plan_with_dynamic_agents,
+    example_dynamic_mixed_team,
+)
+from .factory import AgentFactory
+from .task_agent_planner import TaskAgentPlanner
 
 __all__ = [
     "BaseSubAgent",
-    "ResearchAgent",
-    "CodeAgent",
-    "AnalysisAgent",
-    "DataAgent",
+    "DynamicAgent",
+    "AgentFactory",
+    "TaskAgentPlanner",
+    # Dynamic agent utilities
+    "create_worker_plan_with_dynamic_agents",
+    "create_mixed_agent_plan",
+    "example_dynamic_mixed_team",
 ]

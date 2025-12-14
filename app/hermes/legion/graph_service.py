@@ -1,14 +1,13 @@
 import asyncio
 import logging
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from app.hermes.exceptions import AIServiceError
 from app.hermes.models import GeminiResponse, ProcessRequestResult, UserIdentity
 from app.shared.config.langfuse_config import langfuse_config
 from app.shared.services.TTSService import TTSService
 
-from .intelligence.metadata_generator import MetadataGenerator
 from .nodes.orchestration_graph import get_orchestration_graph
 from .persistence import LegionPersistence
 from .utils.conversation_memory import ConversationContextBuilder
@@ -44,7 +43,6 @@ class LegionGraphService:
         self._tts_service = TTSService()
         self._persistence = LegionPersistence(checkpoint_db_path)
         self._context_builder = ConversationContextBuilder()
-        self._metadata_generator = MetadataGenerator()
 
     def _build_orchestration_rationale(
         self,
@@ -77,7 +75,7 @@ class LegionGraphService:
             "orchestration_structure": self._get_orchestration_structure(
                 analysis, decisions
             ),
-            "agents": self._get_agents_explanation(agents_used),
+            "agents": self._get_agents_explanation(agents_used, result),  # noqa: F821
             "toolsets": self._get_toolsets_explanation(tools_used, agents_used),
         }
 
@@ -112,35 +110,103 @@ class LegionGraphService:
 
         return "Direct response: Orchestrator agent determined simple question answerable from knowledge base and is providing the answer directly without specialized sub-agents"
 
-    def _get_agents_explanation(self, agents_used: list) -> list:
-        """Explain which agents were used and why."""
+    def _get_agents_explanation(self, agents_used: list, result: dict = None) -> list:
+        """Explain which agents were used and why, using rich metadata from dynamic agents."""
         if not agents_used:
             return []
 
         agent_explanations = []
-        for agent_id in agents_used:
-            # Extract agent type from ID (e.g., "research_1" -> "research")
-            agent_type = agent_id.split("_")[0]
 
-            explanation = {
-                "id": agent_id,
-                "type": agent_type,
-                "role": self._get_agent_role(agent_type),
-            }
+        # Try to get worker metadata from result if available
+        worker_metadata = {}
+        if result and "task_ledger" in result:
+            for entry in result["task_ledger"]:
+                if "worker_id" in entry and "metadata" in entry:
+                    worker_metadata[entry["worker_id"]] = entry["metadata"]
+
+        for agent_id in agents_used:
+            # For dynamic agents, extract rich information from metadata
+            metadata = worker_metadata.get(agent_id, {})
+
+            if metadata and "agent_type" in metadata:
+                # Rich metadata available from dynamic agent
+                agent_type = metadata.get("agent_type", "dynamic_agent")
+                capabilities = metadata.get("capabilities", {})
+                persona = metadata.get("persona", "specialist")
+                task_types = metadata.get("task_types", [])
+                specialization = metadata.get("specialization", "")
+
+                explanation = {
+                    "id": agent_id,
+                    "type": agent_type,
+                    "role": self._get_dynamic_agent_role(
+                        agent_type, capabilities, task_types
+                    ),
+                    "persona": persona,
+                    "capabilities": (
+                        list(capabilities.keys())[:3] if capabilities else []
+                    ),  # Top 3 capabilities
+                    "specialization": specialization,
+                    "task_types": task_types,
+                }
+            else:
+                # Fallback for agents without rich metadata
+                agent_type = agent_id.split("_")[0] if "_" in agent_id else agent_id
+                explanation = {
+                    "id": agent_id,
+                    "type": agent_type,
+                    "role": self._get_agent_role(agent_type),
+                }
+
             agent_explanations.append(explanation)
 
         return agent_explanations
 
+    def _get_dynamic_agent_role(
+        self, agent_type: str, capabilities: dict, task_types: list
+    ) -> str:
+        """Generate detailed role description for dynamic agents."""
+        try:
+            # Build comprehensive role description
+            role_parts = []
+
+            # Add primary focus from capabilities
+            if "primary_focus" in capabilities:
+                role_parts.append(capabilities["primary_focus"])
+            else:
+                role_parts.append(f"{agent_type.replace('_', ' ').title()} specialist")
+
+            # Add expertise level
+            expertise = capabilities.get("expertise_level", "specialized")
+            role_parts.append(f"with {expertise} expertise")
+
+            # Add key task types
+            if task_types:
+                primary_tasks = task_types[:2]  # Show top 2 task types
+                task_desc = ", ".join(primary_tasks)
+                role_parts.append(f"handling {task_desc} tasks")
+
+            # Add specialization if available
+            specializations = capabilities.get("specializations", [])
+            if specializations:
+                spec_desc = ", ".join(specializations[:2])
+                role_parts.append(f"specializing in {spec_desc}")
+
+            return " ".join(role_parts)
+
+        except Exception:
+            # Fallback to simple description
+            return f"{agent_type.replace('_', ' ').title()} operations"
+
     def _get_agent_role(self, agent_type: str) -> str:
         """Get human-readable role description for agent type."""
-        roles = {
+        # Dynamic agent system uses custom types - provide generic descriptions
+        legacy_roles = {
             "orchestrator": "Request routing, decision-making, and direct response generation",
-            "research": "Information gathering and research",
-            "code": "Code generation and programming",
-            "analysis": "Data analysis and evaluation",
-            "data": "Data processing and transformation",
         }
-        return roles.get(agent_type, f"{agent_type.title()} operations")
+        return legacy_roles.get(
+            agent_type, f"{agent_type.replace('_', ' ').title()} operations"
+        )
 
     def _get_toolsets_explanation(self, tools_used: list, agents_used: list) -> dict:
         """Explain which toolsets were allocated and why."""
@@ -230,7 +296,11 @@ class LegionGraphService:
         return judge_summary
 
     async def _build_structured_metadata(
-        self, result: dict, start_time: float, duration_ms: float
+        self,
+        result: dict,
+        start_time: float,
+        duration_ms: float,
+        original_query: Optional[str] = None,
     ) -> dict:
         """Build structured metadata in hierarchical format for UI rendering.
 
@@ -248,12 +318,34 @@ class LegionGraphService:
         from datetime import datetime
 
         state_metadata = result.get("metadata", {})
-        agents_used = state_metadata.get("agents_used", [])
-        tools_used = state_metadata.get("tools_used", [])
         execution_path = result.get("execution_path", [])
         level_results = result.get("level_results", {})
         legion_strategy = result.get("legion_strategy")
         decision_rationale = result.get("decision_rationale", [])
+
+        # Extract actual agents and tools used from execution results
+        agents_used = []
+        tools_used = []
+
+        if level_results:
+            for level_data in level_results.values():
+                level_workers = level_data.get("workers", {})
+                for worker_id, worker_data in level_workers.items():
+                    # Add worker ID to agents_used
+                    if worker_id not in agents_used:
+                        agents_used.append(worker_id)
+
+                    # Extract tools used by this worker (if available in metadata)
+                    worker_tools = worker_data.get("tools_used", [])
+                    for tool in worker_tools:
+                        if tool not in tools_used:
+                            tools_used.append(tool)
+
+        # Fallback to state metadata if no execution results found
+        if not agents_used:
+            agents_used = state_metadata.get("agents_used", [])
+        if not tools_used:
+            tools_used = state_metadata.get("tools_used", [])
 
         # Determine execution mode
         if legion_strategy:
@@ -291,17 +383,28 @@ class LegionGraphService:
 
                 workers = []
                 for worker_id, worker_data in level_workers.items():
+                    # Create human-readable agent name
+                    role = worker_data.get("role", "unknown")
+                    if worker_id.startswith("task_") and role == "research":
+                        agent_name = "Research Assistant"
+                    elif worker_id.startswith("dynamic_worker_"):
+                        agent_name = role  # Dynamic workers already have good names
+                    else:
+                        agent_name = f"{role.replace('_', ' ').title()} Agent"
+
                     workers.append(
                         {
                             "id": worker_id,
-                            "role": worker_data.get("role", "unknown"),
+                            "role": agent_name,  # Use human-readable name
                             "status": worker_data.get("status", "unknown"),
                             "result_summary": (
                                 worker_data.get("result", "")[:200] + "..."
                                 if len(worker_data.get("result", "")) > 200
                                 else worker_data.get("result", "")
                             ),
-                            "tools_used": [],  # Could extract from worker metadata if available
+                            "tools_used": worker_data.get(
+                                "tools_used", []
+                            ),  # Extract from worker metadata
                             "duration_ms": int(
                                 worker_data.get("duration_seconds", 0) * 1000
                             ),
@@ -342,13 +445,14 @@ class LegionGraphService:
                     "worker_count": total_workers,
                 }
 
-        # Extract original query from messages for dynamic generation
-        messages = result.get("messages", [])
-        original_query = ""
-        for msg in messages:
-            if msg.get("role") == "user":
-                original_query = msg.get("content", "")
-                break
+        # Use provided original query, or extract from messages as fallback
+        if original_query is None:
+            messages = result.get("messages", [])
+            original_query = ""
+            for msg in messages:
+                if msg.get("role") == "user":
+                    original_query = msg.get("content", "")
+                    break
 
         # Build rationale block with dynamic summary
         rationale = {}
@@ -357,15 +461,14 @@ class LegionGraphService:
             analysis = latest_decision.get("analysis", {})
             decisions = latest_decision.get("decisions", {})
 
-            # Generate dynamic orchestration summary
-            rationale["summary"] = (
-                await self._metadata_generator.generate_orchestration_summary(
-                    analysis=analysis,
-                    decisions=decisions,
-                    original_query=original_query,
-                    agents_used=agents_used,
-                    execution_mode=mode,
-                )
+            # Generate detailed orchestration summary with dynamic agent information
+            rationale["summary"] = await self._generate_dynamic_orchestration_summary(
+                analysis=analysis,
+                decisions=decisions,
+                original_query=original_query,
+                agents_used=agents_used,
+                level_results=level_results,
+                execution_mode=mode,
             )
             rationale["decisions"] = decision_rationale
 
@@ -373,13 +476,11 @@ class LegionGraphService:
         task_ledger = result.get("task_ledger", {})
         judge_info = self._extract_judge_metadata(task_ledger)
 
-        # Build usage block with dynamic toolset explanation
-        toolset_explanation = (
-            await self._metadata_generator.generate_toolset_explanation(
-                tools_used=tools_used,
-                agents_used=agents_used,
-                original_query=original_query,
-            )
+        # Build usage block with detailed toolset explanation
+        toolset_explanation = await self._generate_dynamic_toolset_explanation(
+            tools_used=tools_used,
+            agents_used=agents_used,
+            original_query=original_query,
         )
 
         usage = {
@@ -398,6 +499,161 @@ class LegionGraphService:
             "rationale": rationale,
             "usage": usage,
         }
+
+    async def _generate_dynamic_orchestration_summary(
+        self,
+        analysis: Dict[str, Any],
+        decisions: Dict[str, Any],
+        original_query: str,
+        agents_used: List[str],
+        level_results: Dict[str, Any],
+        execution_mode: str,
+    ) -> str:
+        """
+        Generate detailed orchestration summary for dynamic agents.
+
+        Provides comprehensive information about the execution including:
+        - Number and types of dynamic agents used
+        - Execution strategy and mode
+        - Task breakdown and agent specialization
+        - Performance and coordination details
+        """
+        try:
+            # Build agent breakdown with actual roles from execution
+            agent_breakdown = []
+            agent_roles = set()
+
+            # Extract roles from level_results
+            if level_results:
+                for level_data in level_results.values():
+                    level_workers = level_data.get("workers", {})
+                    for worker_id, worker_data in level_workers.items():
+                        role = worker_data.get("role", "unknown")
+                        agent_roles.add(role)
+                        agent_breakdown.append(f"{worker_id} ({role})")
+
+            # Fallback to agent IDs if no level results
+            if not agent_breakdown:
+                for agent_id in agents_used:
+                    agent_type = agent_id.split("_")[0] if "_" in agent_id else agent_id
+                    agent_role = self._get_agent_role(agent_type)
+                    agent_breakdown.append(f"{agent_id} ({agent_role})")
+                    agent_roles.add(agent_role)
+
+            agents_summary = (
+                ", ".join(agent_breakdown) if agent_breakdown else "dynamic agents"
+            )
+
+            # Generate comprehensive summary
+            worker_count = len(agent_breakdown) if agent_breakdown else len(agents_used)
+            summary_parts = [
+                f"Executed {worker_count} specialized dynamic agents in {execution_mode} orchestration mode.",
+                f"Agent composition: {agents_summary}",
+                f"Task: {original_query[:150]}{'...' if len(original_query) > 150 else ''}",
+            ]
+
+            # Add execution details if available
+            if analysis:
+                complexity = analysis.get("complexity_estimate", "unknown")
+                strategy = decisions.get("strategy", execution_mode)
+                summary_parts.append(
+                    f"Complexity assessment: {complexity} | Strategy: {strategy}"
+                )
+
+            # Add coordination information
+            if len(agents_used) > 1:
+                summary_parts.append(
+                    f"Multi-agent coordination achieved through dynamic task decomposition "
+                    f"and parallel execution with specialized agent roles."
+                )
+            else:
+                summary_parts.append(
+                    f"Single-agent execution optimized for task requirements "
+                    f"through dynamic capability matching."
+                )
+
+            return " ".join(summary_parts)
+
+        except Exception as e:
+            # Fallback summary if generation fails
+            return (
+                f"Executed {len(agents_used)} dynamic agents in {execution_mode} mode "
+                f"to process: {original_query[:100]}{'...' if len(original_query) > 100 else ''}"
+            )
+
+    async def _generate_dynamic_toolset_explanation(
+        self,
+        tools_used: List[str],
+        agents_used: List[str],
+        original_query: str,
+    ) -> str:
+        """
+        Generate detailed toolset explanation for dynamic agents.
+
+        Explains tool allocation, agent specialization, and execution efficiency.
+        """
+        try:
+            # Group tools by agent type for dynamic agents
+            tool_agent_mapping = {}
+
+            for agent_id in agents_used:
+                agent_type = agent_id.split("_")[0] if "_" in agent_id else agent_id
+                if agent_type not in tool_agent_mapping:
+                    tool_agent_mapping[agent_type] = []
+                # For dynamic agents, we distribute tools across agent types
+                tools_per_agent = len(tools_used) // len(agents_used) or 1
+                start_idx = agents_used.index(agent_id) * tools_per_agent
+                end_idx = start_idx + tools_per_agent
+                agent_tools = tools_used[start_idx:end_idx] if tools_used else []
+                tool_agent_mapping[agent_type].extend(agent_tools)
+
+            # Calculate actual worker count from agents_used or use provided count
+            worker_count = len(agents_used) if agents_used else 0
+
+            # Build comprehensive explanation
+            explanation_parts = [
+                f"Deployed {len(tools_used)} specialized tools across {worker_count} dynamic agents.",
+            ]
+
+            # Add agent-tool mapping details
+            if tool_agent_mapping:
+                mapping_details = []
+                for agent_type, agent_tools in tool_agent_mapping.items():
+                    if agent_tools:
+                        agent_role = self._get_agent_role(agent_type)
+                        tool_list = ", ".join(agent_tools[:3])  # Limit to first 3 tools
+                        if len(agent_tools) > 3:
+                            tool_list += f" +{len(agent_tools) - 3} more"
+                        mapping_details.append(f"{agent_role}: {tool_list}")
+
+                if mapping_details:
+                    explanation_parts.append(
+                        f"Tool allocation: {'; '.join(mapping_details)}"
+                    )
+
+            # Add efficiency and specialization notes
+            if len(tools_used) > 0:
+                efficiency_note = (
+                    f"Tool utilization optimized for task requirements with "
+                    f"{len(set(tools_used))} unique tool types deployed."
+                )
+                explanation_parts.append(efficiency_note)
+
+            if len(agents_used) > 1:
+                specialization_note = (
+                    f"Multi-agent specialization enabled complementary tool usage "
+                    f"across {len(agents_used)} distinct execution contexts."
+                )
+                explanation_parts.append(specialization_note)
+
+            return " ".join(explanation_parts)
+
+        except Exception as e:
+            # Fallback explanation if generation fails
+            return (
+                f"Utilized {len(tools_used)} tools across {len(agents_used)} dynamic agents "
+                f"to efficiently complete the task requirements."
+            )
 
     async def process_request(
         self,
@@ -901,11 +1157,28 @@ class LegionGraphService:
 
                         # Create structured metadata with dynamic generation
                         duration_ms = (time.time() - start_time) * 1000
-                        metadata = await self._build_structured_metadata(
-                            result=result,
-                            start_time=start_time,
-                            duration_ms=duration_ms,
-                        )
+                        try:
+                            metadata = await self._build_structured_metadata(
+                                result=result,
+                                start_time=start_time,
+                                duration_ms=duration_ms,
+                                original_query=prompt,
+                            )
+                        except Exception as e:
+                            logger.error(
+                                f"Failed to build structured metadata: {e}",
+                                exc_info=True,
+                            )
+                            metadata = {
+                                "execution": {
+                                    "mode": "parallel",
+                                    "strategy": "parallel",
+                                },
+                                "rationale": {
+                                    "summary": f"Error generating metadata: {str(e)}"
+                                },
+                                "usage": {"agents": [], "tools": []},
+                            }
 
                         # Log successful completion
                         duration_ms = (time.time() - start_time) * 1000

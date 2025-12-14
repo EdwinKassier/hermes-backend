@@ -15,12 +15,9 @@ from .task_timeout import (
     run_with_timeout,
     with_timeout,
 )
-from .tool_allocator import ToolAllocator
 from .tool_registry import ToolRegistry, get_tool_registry
 
 __all__ = [
-    # Tool allocation
-    "ToolAllocator",
     # Tool registry
     "ToolRegistry",
     "get_tool_registry",

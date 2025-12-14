@@ -31,7 +31,29 @@ EL_API_KEY = os.getenv("EL_API_KEY")  # ElevenLabs API key
 @lru_cache(maxsize=1)
 def get_gemini_service():
     """Lazy load and cache the GeminiService instance."""
-    return GeminiService()
+    service = GeminiService()
+
+    # Register Legion personas with the service
+    try:
+        from app.hermes.legion.utils.persona_generator import LegionPersonaProvider
+
+        legion_personas = LegionPersonaProvider.get_legion_personas()
+        service.add_personas(legion_personas)
+        import logging
+
+        logging.info(
+            f"Successfully registered {len(legion_personas)} Legion personas with GeminiService"
+        )
+    except Exception as e:
+        # Log error but don't fail if Legion personas can't be loaded
+        import logging
+
+        logging.error(f"Failed to load Legion personas: {e}")
+        import traceback
+
+        logging.error(f"Traceback: {traceback.format_exc()}")
+
+    return service
 
 
 @lru_cache(maxsize=1)

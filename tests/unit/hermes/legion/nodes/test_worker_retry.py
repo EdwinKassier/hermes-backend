@@ -39,6 +39,14 @@ def worker_state():
         persona="hermes",
         context={},
         execution_level=0,
+        dynamic_agent_config={
+            "agent_id": "researcher",
+            "agent_type": "research_specialist",
+            "task_types": ["research"],
+            "capabilities": {"research": True},
+            "prompts": {"execute_task": "Research the topic"},
+            "persona": "researcher",
+        },
         max_retries=2,
         retry_delay_seconds=0.01,  # Short delay for tests
     )
