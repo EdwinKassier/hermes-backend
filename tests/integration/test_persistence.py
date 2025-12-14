@@ -36,6 +36,8 @@ async def test_persistence_across_restarts(temp_db_path):
     async with aiosqlite.connect(temp_db_path) as conn:
         await conn.execute("PRAGMA journal_mode=WAL")
         await conn.execute("PRAGMA synchronous=NORMAL")
+        # Add is_alive method that langgraph expects
+        conn.is_alive = lambda: True
         checkpointer1 = AsyncSqliteSaver(conn)
         graph1 = get_orchestration_graph(checkpointer=checkpointer1)
 
@@ -61,6 +63,8 @@ async def test_persistence_across_restarts(temp_db_path):
     async with aiosqlite.connect(temp_db_path) as conn2:
         await conn2.execute("PRAGMA journal_mode=WAL")
         await conn2.execute("PRAGMA synchronous=NORMAL")
+        # Add is_alive method that langgraph expects
+        conn2.is_alive = lambda: True
         checkpointer2 = AsyncSqliteSaver(conn2)
         graph2 = get_orchestration_graph(checkpointer=checkpointer2)
 
