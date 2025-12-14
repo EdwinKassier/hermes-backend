@@ -66,7 +66,7 @@ class TestWorkerRetryLogic:
             mock_registry.return_value.get_tools.return_value = []
 
             with patch(
-                "app.hermes.legion.nodes.legion_orchestrator.AgentFactory.create_agent"
+                "app.hermes.legion.nodes.legion_orchestrator.AgentFactory.create_dynamic_agent"
             ) as mock_factory:
                 mock_factory.return_value = mock_agent
 
@@ -88,7 +88,7 @@ class TestWorkerRetryLogic:
             mock_registry.return_value.get_tools.return_value = []
 
             with patch(
-                "app.hermes.legion.nodes.legion_orchestrator.AgentFactory.create_agent"
+                "app.hermes.legion.nodes.legion_orchestrator.AgentFactory.create_dynamic_agent"
             ) as mock_factory:
                 mock_factory.return_value = mock_agent
 
@@ -110,7 +110,7 @@ class TestWorkerRetryLogic:
             mock_registry.return_value.get_tools.return_value = []
 
             with patch(
-                "app.hermes.legion.nodes.legion_orchestrator.AgentFactory.create_agent"
+                "app.hermes.legion.nodes.legion_orchestrator.AgentFactory.create_dynamic_agent"
             ) as mock_factory:
                 mock_factory.return_value = mock_agent
 
@@ -141,7 +141,7 @@ class TestWorkerRetryLogic:
                 mock_timeout.side_effect = TaskTimeoutError("test_worker_1", 30.0, 30.0)
 
                 with patch(
-                    "app.hermes.legion.nodes.legion_orchestrator.AgentFactory.create_agent"
+                    "app.hermes.legion.nodes.legion_orchestrator.AgentFactory.create_dynamic_agent"
                 ):
                     result = await legion_worker_node(worker_state)
 
@@ -164,7 +164,7 @@ class TestWorkerRetryLogic:
             mock_registry.return_value.get_tools.return_value = []
 
             with patch(
-                "app.hermes.legion.nodes.legion_orchestrator.AgentFactory.create_agent"
+                "app.hermes.legion.nodes.legion_orchestrator.AgentFactory.create_dynamic_agent"
             ) as mock_factory:
                 mock_factory.return_value = mock_agent
 
@@ -186,7 +186,7 @@ class TestWorkerRetryLogic:
             mock_registry.return_value.get_tools.return_value = []
 
             with patch(
-                "app.hermes.legion.nodes.legion_orchestrator.AgentFactory.create_agent"
+                "app.hermes.legion.nodes.legion_orchestrator.AgentFactory.create_dynamic_agent"
             ) as mock_factory:
                 mock_factory.return_value = mock_agent
 
@@ -218,7 +218,7 @@ class TestWorkerRetryLogic:
             mock_registry.return_value.get_tools.return_value = []
 
             with patch(
-                "app.hermes.legion.nodes.legion_orchestrator.AgentFactory.create_agent"
+                "app.hermes.legion.nodes.legion_orchestrator.AgentFactory.create_dynamic_agent"
             ) as mock_factory:
                 mock_factory.return_value = mock_agent
 
@@ -247,7 +247,7 @@ class TestWorkerRetryLogic:
             mock_registry.return_value.get_tools.return_value = mock_tools
 
             with patch(
-                "app.hermes.legion.nodes.legion_orchestrator.AgentFactory.create_agent"
+                "app.hermes.legion.nodes.legion_orchestrator.AgentFactory.create_dynamic_agent"
             ) as mock_factory:
                 mock_factory.return_value = mock_agent
 
@@ -271,7 +271,7 @@ class TestWorkerRetryLogic:
             mock_registry.return_value.get_tools.return_value = []
 
             with patch(
-                "app.hermes.legion.nodes.legion_orchestrator.AgentFactory.create_agent"
+                "app.hermes.legion.nodes.legion_orchestrator.AgentFactory.create_dynamic_agent"
             ) as mock_factory:
                 mock_factory.return_value = mock_agent
 

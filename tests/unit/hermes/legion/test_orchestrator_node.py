@@ -80,10 +80,7 @@ async def test_gather_info(MockRoutingIntelligence, mock_state):
 
 @pytest.mark.asyncio
 @patch("app.hermes.legion.intelligence.routing_service.RoutingIntelligence")
-@patch("app.hermes.legion.parallel.task_decomposer.ParallelTaskDecomposer")
-async def test_multi_agent_orchestration(
-    MockDecomposer, MockRoutingIntelligence, mock_state
-):
+async def test_multi_agent_orchestration(MockRoutingIntelligence, mock_state):
     """Test multi-agent orchestration routing."""
     # Setup routing decision
     mock_routing = MockRoutingIntelligence.return_value
@@ -99,9 +96,6 @@ async def test_multi_agent_orchestration(
     )
     mock_routing.analyze = AsyncMock(return_value=mock_decision)
 
-    # Setup decomposer to confirm multi-agent
-    MockDecomposer.return_value.is_multi_agent_task.return_value = True
-
     # Execute
     result = await orchestrator_node(mock_state)
 
@@ -112,11 +106,7 @@ async def test_multi_agent_orchestration(
 
 @pytest.mark.asyncio
 @patch("app.hermes.legion.intelligence.routing_service.RoutingIntelligence")
-@patch("app.hermes.legion.parallel.task_decomposer.ParallelTaskDecomposer")
-@patch("app.hermes.legion.nodes.graph_nodes.AgentFactory")
 async def test_single_agent_orchestration(
-    MockAgentFactory,
-    MockDecomposer,
     MockRoutingIntelligence,
     mock_state,
 ):
@@ -135,24 +125,12 @@ async def test_single_agent_orchestration(
     )
     mock_routing.analyze = AsyncMock(return_value=mock_decision)
 
-    # Setup decomposer to deny multi-agent
-    MockDecomposer.return_value.is_multi_agent_task.return_value = False
-
-    # Setup agent factory
-    mock_agent = Mock()
-    mock_agent.task_types = ["research"]
-    mock_agent.identify_required_info.return_value = {}
-    mock_agent_info = Mock()
-    mock_agent_info.agent_id = "agent_1"
-
-    MockAgentFactory.create_agent_from_task.return_value = (mock_agent, mock_agent_info)
-
     # Execute
     result = await orchestrator_node(mock_state)
 
     # Verify
-    assert result["next_action"] == GraphDecision.EXECUTE_AGENT.value
-    assert result["current_agent_id"] == "agent_1"
+    assert result["next_action"] == "legion_orchestrate"
+    # Legion orchestration handles agent creation dynamically, no single agent_id
 
 
 @pytest.mark.asyncio
