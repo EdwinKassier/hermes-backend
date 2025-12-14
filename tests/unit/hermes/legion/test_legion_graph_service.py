@@ -96,20 +96,8 @@ class TestLegionGraphService:
             "metadata": {"parallel_execution_metrics": {}},
         }
 
-        # Helper to create async iterator
-        async def async_iter(items):
-            for item in items:
-                yield item
-
-        # We need to access the mock_graph that get_orchestration_graph returns
-        # Since we don't have direct access to the mock object created in fixture easily inside the test method
-        # unless we inspect the service or the patch.
-        # But we set service._graph = mock_graph in fixture, and get_orchestration_graph returns mock_graph.
-        # So service._graph IS the mock graph.
-
-        legion_graph_service._graph.astream = Mock(
-            return_value=async_iter([mock_result])
-        )
+        # For ainvoke, we return the result directly (not wrapped in async iterator)
+        legion_graph_service._graph.ainvoke = AsyncMock(return_value=mock_result)
 
         # Execute
         result = await legion_graph_service.process_request(
@@ -122,8 +110,8 @@ class TestLegionGraphService:
         assert result.metadata["legion_mode"] is True
         assert result.metadata["langgraph_enabled"] is True
 
-        # Verify graph astream called
-        legion_graph_service._graph.astream.assert_called_once()
+        # Verify graph ainvoke called
+        legion_graph_service._graph.ainvoke.assert_called_once()
 
     async def test_chat_success(self, legion_graph_service, user_identity):
         """Test chat success flow."""
@@ -141,9 +129,7 @@ class TestLegionGraphService:
             for item in items:
                 yield item
 
-        legion_graph_service._graph.astream = Mock(
-            return_value=async_iter([mock_result])
-        )
+        legion_graph_service._graph.ainvoke = AsyncMock(return_value=mock_result)
 
         # Execute
         response = await legion_graph_service.chat("Test message", user_identity)
@@ -182,9 +168,7 @@ class TestLegionGraphService:
             for item in items:
                 yield item
 
-        legion_graph_service._graph.astream = Mock(
-            return_value=async_iter([mock_result])
-        )
+        legion_graph_service._graph.ainvoke = AsyncMock(return_value=mock_result)
 
         # Execute
         result = await legion_graph_service.process_request(
@@ -207,7 +191,9 @@ class TestLegionGraphService:
     async def test_error_handling(self, legion_graph_service, user_identity):
         """Test error handling during graph execution."""
         # Setup mock graph to raise exception
-        legion_graph_service._graph.astream = Mock(side_effect=Exception("Graph error"))
+        legion_graph_service._graph.ainvoke = AsyncMock(
+            side_effect=Exception("Graph error")
+        )
 
         # Execute and verify raises AIServiceError
         from app.hermes.exceptions import AIServiceError
