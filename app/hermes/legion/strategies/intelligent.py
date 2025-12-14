@@ -82,7 +82,7 @@ class IntelligentStrategy(LegionStrategy):
             worker_plan = await self._apply_intelligent_tool_allocation(worker_plan)
 
             # End performance monitoring
-            execution_time = self.performance_optimizer.end_execution()
+            execution_time = self.performance_optimizer.get_elapsed_time()
             logger.info(
                 f"Intelligent strategy generated {len(worker_plan)} dynamic agents in {execution_time:.2f}s"
             )
