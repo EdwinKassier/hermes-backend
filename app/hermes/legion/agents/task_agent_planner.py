@@ -3,7 +3,7 @@
 import logging
 from typing import Any, Dict, List, Optional
 
-from app.shared.utils.service_loader import get_async_llm_service, get_gemini_service
+from app.shared.utils.service_loader import get_async_llm_service, get_llm_service
 
 from .dynamic_agent import DynamicAgent
 
@@ -24,15 +24,15 @@ class TaskAgentPlanner:
     """
 
     def __init__(self):
-        self._gemini_service = None
+        self._llm_service = None
         self._async_llm_service = None
 
     @property
-    def gemini_service(self):
-        """Lazy load sync LLM service."""
-        if self._gemini_service is None:
-            self._gemini_service = get_gemini_service()
-        return self._gemini_service
+    def llm_service(self):
+        """Lazy load LLM service."""
+        if self._llm_service is None:
+            self._llm_service = get_llm_service()
+        return self._llm_service
 
     @property
     def async_llm_service(self):
@@ -134,8 +134,8 @@ Response Format (JSON):
 Analyze the task and create completely custom agent types as needed."""
 
         try:
-            response = self.gemini_service.generate_gemini_response(
-                prompt=analysis_prompt, persona="hermes"
+            response = self.llm_service.generate_response(
+                prompt=analysis_prompt, persona="legion"
             )
 
             # Extract JSON from response

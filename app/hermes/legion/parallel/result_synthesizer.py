@@ -3,7 +3,7 @@
 import logging
 from typing import Any, Dict, List, Optional
 
-from app.shared.utils.service_loader import get_async_llm_service, get_gemini_service
+from app.shared.utils.service_loader import get_async_llm_service, get_llm_service
 
 logger = logging.getLogger(__name__)
 
@@ -22,15 +22,15 @@ class ResultSynthesizer:
 
     def __init__(self):
         """Initialize result synthesizer."""
-        self._gemini_service = None
+        self._llm_service = None
         self._async_llm_service = None
 
     @property
-    def gemini_service(self):
-        """Lazy load Gemini service."""
-        if self._gemini_service is None:
-            self._gemini_service = get_gemini_service()
-        return self._gemini_service
+    def llm_service(self):
+        """Lazy load LLM service."""
+        if self._llm_service is None:
+            self._llm_service = get_llm_service()
+        return self._llm_service
 
     @property
     def async_llm_service(self):
@@ -216,8 +216,8 @@ Your response MUST be parseable by a frontend markdown renderer:
 Provide a well-structured, comprehensive response that naturally weaves together all agent contributions while directly addressing "{original_query}"."""
 
         try:
-            synthesized = self.gemini_service.generate_gemini_response(
-                prompt, persona=persona
+            synthesized = self.llm_service.generate_response(
+                prompt=prompt, persona="legion"
             )
             return synthesized
 

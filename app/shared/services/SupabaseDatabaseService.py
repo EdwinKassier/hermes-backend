@@ -143,7 +143,7 @@ class SupabaseDatabaseService:
         Returns:
             Formatted results
         """
-        from app.shared.services.LLMService import LLMService
+        from app.shared.utils.service_loader import get_llm_service
 
         # Get available tables
         tables = await self._get_table_list()
@@ -181,14 +181,21 @@ Examples:
 - "Show me projects" -> {{"operation": "select", "table": "project", "columns": "*", "limit": 10}}
 - "Describe project table" -> {{"operation": "describe", "table": "project"}}
 - "Count workflows" -> {{"operation": "count", "table": "workflow_entity"}}
-- "Find completed test runs" -> {{"operation": "select", "table": "test_run", "columns": "*", "filters": [{{"column": "status", "operator": "eq", "value": "completed"}}], "limit": 10}}
+- "Find completed test runs" -> {{"operation": "select", "table": "test_run", "columns": "*", "filters": [{{"column": "status", "operator": "eq", "value": "completed"}}]}}
+"""
 
-Return ONLY the JSON object, nothing else."""
-
-        llm_service = LLMService()
-        llm_response = await asyncio.create_task(
-            asyncio.to_thread(llm_service.generate_gemini_response, prompt, "hermes")
-        )
+        try:
+            # Generate PostgREST query from natural language using LLM
+            # Run in thread to not block event loop
+            llm_service = get_llm_service()
+            llm_response = await asyncio.to_thread(
+                llm_service.generate_response, prompt, "hermes"
+            )
+        except Exception as e:
+            logger.error(f"LLM failed to generate query plan: {e}")
+            llm_response = (
+                '{"operation": "error", "message": "LLM failed to generate query plan"}'
+            )
 
         # Parse LLM response
         import json

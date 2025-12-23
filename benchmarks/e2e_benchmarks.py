@@ -125,7 +125,7 @@ def benchmark_llm_generation():
             for i in range(iterations):
                 try:
                     start = time.perf_counter()
-                    response = service.generate_gemini_response(
+                    response = service.generate_response(
                         prompt=prompt, persona="hermes", user_id=f"benchmark_user_{i}"
                     )
                     elapsed_ms = (time.perf_counter() - start) * 1000

@@ -36,10 +36,21 @@ class ToolRegistry:
     DEGRADATION_TIMEOUT_SECONDS = 300  # 5 minutes
     MAX_TRANSIENT_ERRORS = 3
 
+    @property
+    def llm_service(self):
+        """Lazy load LLM service."""
+        if not self._llm_service:
+            from app.shared.utils.service_loader import get_llm_service
+
+            self._llm_service = get_llm_service()
+        return self._llm_service
+
     def __init__(self):
-        """Initialize the tool registry."""
-        self._tools: Dict[str, Any] = {}
-        self._gemini_service = None
+        """Initialize registry."""
+        self._tools = {}
+        self._schemas = {}
+        self._initialized = False
+        self._llm_service = None
 
         # Tool health tracking
         self._degraded_tools: Dict[str, float] = (
@@ -84,15 +95,15 @@ class ToolRegistry:
 
     def _initialize_tools(self) -> None:
         """
-        Initialize all tools from the Gemini service.
+        Initialize all tools from the LLM service.
 
         This loads all available tools and indexes them by name.
         """
         try:
-            from app.shared.utils.service_loader import get_gemini_service
+            from app.shared.utils.service_loader import get_llm_service
 
-            self._gemini_service = get_gemini_service()
-            all_tools = getattr(self._gemini_service, "all_tools", [])
+            self._llm_service = get_llm_service()
+            all_tools = getattr(self._llm_service, "all_tools", [])
 
             for tool in all_tools:
                 tool_name = self._get_tool_name(tool)

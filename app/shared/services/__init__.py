@@ -9,22 +9,14 @@ from .CloudStorageService import CloudStorageService
 
 # Import services to make them available when importing from app.services
 from .IdentityService import IdentityService
-from .LLMService import (  # Backward compat aliases
-    GeminiService,
-    GeminiServiceError,
-    LLMService,
-    LLMServiceError,
-    PersonaConfig,
-)
+from .LLMService import LLMService, LLMServiceError
 from .TTSService import TTSService
 
 __all__ = [
     "IdentityService",
+    "SupabaseDatabaseService",
     "CloudStorageService",
     "LLMService",
     "LLMServiceError",
-    "PersonaConfig",
-    "GeminiService",  # Backward compat alias
-    "GeminiServiceError",  # Backward compat alias
     "TTSService",
 ]

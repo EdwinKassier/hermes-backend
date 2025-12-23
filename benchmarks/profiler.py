@@ -633,10 +633,8 @@ async def profile_llm_service(iterations: int = 3) -> ProfileResult:
                         profiler.record_cache_miss("model_cache")
 
                     start = time.perf_counter()
-                    response = sync_service.generate_gemini_response(
-                        prompt=f"What is {i+1} + {i+1}?",
-                        persona="hermes",
-                        user_id=f"profiler_{i}",
+                    response = sync_service.generate_response(
+                        prompt="Simulate a task", persona="hermes"
                     )
                     duration = (time.perf_counter() - start) * 1000
 

@@ -56,10 +56,6 @@ def get_llm_service():
     return service
 
 
-# Backward compatibility alias
-get_gemini_service = get_llm_service
-
-
 @lru_cache(maxsize=1)
 def get_async_llm_service() -> AsyncLLMService:
     """

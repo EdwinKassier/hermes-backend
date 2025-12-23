@@ -92,7 +92,7 @@ class DynamicAgent(BaseSubAgent):
             persona = get_current_legion_persona() or self.persona
 
             # Call LLM directly - already wrapped in try/except with fail-open
-            response = llm_service.generate_gemini_response(
+            response = llm_service.generate_response(
                 prompt=analysis_prompt,
                 persona=persona,
             )

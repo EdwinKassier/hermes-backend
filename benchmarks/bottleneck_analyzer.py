@@ -255,7 +255,7 @@ class BottleneckAnalyzer:
             sync_times = []
             for i in range(2):
                 start = time.perf_counter()
-                _ = sync_service.generate_gemini_response(
+                _ = sync_service.generate_response(
                     prompt=f"What is {i+1}?", persona="hermes", user_id=f"analyzer_{i}"
                 )
                 duration = (time.perf_counter() - start) * 1000

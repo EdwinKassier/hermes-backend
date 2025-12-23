@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 @pytest.fixture(scope="module")
-def gemini_service():
+def llm_service():
     """Create LLMService with real Supabase connection"""
     # Ensure environment variables are set
     # Handle both SUPABASE_URL and SUPABASE_PROJECT_URL
@@ -49,16 +49,16 @@ def gemini_service():
 class TestVectorDatabaseConnection:
     """Test basic vector database connectivity"""
 
-    def test_vector_store_initialized(self, gemini_service):
+    def test_vector_store_initialized(self, llm_service):
         """Test that vector store is properly initialized"""
-        assert gemini_service.vector_store is not None
-        assert gemini_service.embeddings_model is not None
+        assert llm_service.vector_store is not None
+        assert llm_service.embeddings_model is not None
         logger.info("✓ Vector store initialized successfully")
 
-    def test_embedding_generation(self, gemini_service):
+    def test_embedding_generation(self, llm_service):
         """Test generating embeddings"""
         query = "Edwin Kassier software engineer"
-        embedding = gemini_service.embeddings_model.embed_query(query)
+        embedding = llm_service.embeddings_model.embed_query(query)
 
         # Verify embedding dimensions (accept 768 or 1536 as valid)
         # Google has multiple embedding models with different dimensions
@@ -72,12 +72,12 @@ class TestVectorDatabaseConnection:
             f"✓ Generated embedding with {actual_dimensions} dimensions (expected one of {valid_dimensions})"
         )
 
-    def test_embedding_consistency(self, gemini_service):
+    def test_embedding_consistency(self, llm_service):
         """Test that same query produces similar embeddings"""
         query = "Edwin Kassier"
 
-        embedding1 = gemini_service.embeddings_model.embed_query(query)
-        embedding2 = gemini_service.embeddings_model.embed_query(query)
+        embedding1 = llm_service.embeddings_model.embed_query(query)
+        embedding2 = llm_service.embeddings_model.embed_query(query)
 
         # Calculate cosine similarity
         similarity = np.dot(embedding1, embedding2) / (
@@ -93,13 +93,11 @@ class TestVectorDatabaseConnection:
 class TestVectorSimilaritySearch:
     """Test vector similarity search functionality"""
 
-    def test_direct_similarity_search(self, gemini_service):
+    def test_direct_similarity_search(self, llm_service):
         """Test direct RPC call to match_documents"""
         query = "Edwin Kassier education background"
 
-        results = gemini_service._direct_similarity_search(
-            query=query, k=5, threshold=0.5
-        )
+        results = llm_service._direct_similarity_search(query=query, k=5, threshold=0.5)
 
         # Should return results
         assert isinstance(results, list)
@@ -117,17 +115,17 @@ class TestVectorSimilaritySearch:
 
         logger.info(f"✓ Retrieved {len(results)} relevant documents")
 
-    def test_similarity_threshold_filtering(self, gemini_service):
+    def test_similarity_threshold_filtering(self, llm_service):
         """Test that threshold properly filters results"""
         query = "Edwin Kassier"
 
         # High threshold - fewer results
-        high_threshold_results = gemini_service._direct_similarity_search(
+        high_threshold_results = llm_service._direct_similarity_search(
             query=query, k=10, threshold=0.8
         )
 
         # Low threshold - more results
-        low_threshold_results = gemini_service._direct_similarity_search(
+        low_threshold_results = llm_service._direct_similarity_search(
             query=query, k=10, threshold=0.5
         )
 
@@ -163,11 +161,9 @@ class TestVectorSimilaritySearch:
             ),
         ],
     )
-    def test_search_relevance(self, gemini_service, query, expected_keywords):
+    def test_search_relevance(self, llm_service, query, expected_keywords):
         """Test that search returns relevant results for specific queries"""
-        results = gemini_service._direct_similarity_search(
-            query=query, k=5, threshold=0.6
-        )
+        results = llm_service._direct_similarity_search(query=query, k=5, threshold=0.6)
 
         assert len(results) > 0, f"No results for query: {query}"
 
@@ -182,11 +178,11 @@ class TestVectorSimilaritySearch:
 
         logger.info(f"✓ Found keywords {found_keywords} for query '{query}'")
 
-    def test_search_returns_sorted_by_score(self, gemini_service):
+    def test_search_returns_sorted_by_score(self, llm_service):
         """Test that results are sorted by similarity score"""
         query = "Edwin Kassier background"
 
-        results = gemini_service._direct_similarity_search(
+        results = llm_service._direct_similarity_search(
             query=query, k=10, threshold=0.5
         )
 
@@ -203,34 +199,34 @@ class TestVectorSimilaritySearch:
 class TestRAGPipeline:
     """Test end-to-end RAG pipeline"""
 
-    def test_rag_response_generation(self, gemini_service):
+    def test_rag_response_generation(self, llm_service):
         """Test full RAG response generation"""
         query = "Where did Edwin Kassier study?"
         user_id = "test_user_rag"
 
-        response = gemini_service.generate_response(
+        response = llm_service.generate_response(
             prompt=query, user_id=user_id, persona="hermes"
         )
 
         # Should return a response
         assert isinstance(response, str)
         assert len(response) > 0
-        assert response != gemini_service.DEFAULT_ERROR_MESSAGE
+        assert response != llm_service.DEFAULT_ERROR_MESSAGE
 
         logger.info(f"✓ RAG Response: {response[:200]}")
 
-    def test_rag_vs_standard_generation(self, gemini_service):
+    def test_rag_vs_standard_generation(self, llm_service):
         """Test that RAG provides more specific answers than standard generation"""
         query = "What programming languages does Edwin Kassier know?"
         user_id = "test_user_comparison"
 
         # RAG response
-        rag_response = gemini_service.generate_gemini_response(
+        rag_response = llm_service.generate_response(
             prompt=query, user_id=user_id, persona="hermes"
         )
 
         # Standard generation (without RAG)
-        standard_response = gemini_service.generate_gemini_response(
+        standard_response = llm_service.generate_response(
             prompt=query, persona="hermes"
         )
 
@@ -242,12 +238,12 @@ class TestRAGPipeline:
         assert len(rag_response) > 0
         assert len(standard_response) > 0
 
-    def test_rag_handles_no_context(self, gemini_service):
+    def test_rag_handles_no_context(self, llm_service):
         """Test RAG behavior when no relevant context exists"""
         query = "What is the capital of Atlantis?"
         user_id = "test_user_no_context"
 
-        response = gemini_service.generate_response(
+        response = llm_service.generate_response(
             prompt=query, user_id=user_id, persona="hermes"
         )
 
@@ -258,17 +254,17 @@ class TestRAGPipeline:
         logger.info(f"✓ No-context response: {response[:150]}")
 
     @pytest.mark.slow
-    def test_rag_conversation_context(self, gemini_service):
+    def test_rag_conversation_context(self, llm_service):
         """Test that RAG maintains conversation context"""
         user_id = "test_user_context"
 
         # First query
-        response1 = gemini_service.generate_gemini_response(
+        response1 = llm_service.generate_response(
             prompt="Who is Edwin Kassier?", user_id=user_id, persona="hermes"
         )
 
         # Follow-up query (should use context)
-        response2 = gemini_service.generate_gemini_response(
+        response2 = llm_service.generate_response(
             prompt="What is his education background?",
             user_id=user_id,
             persona="hermes",
@@ -297,9 +293,9 @@ class TestRAGQuality:
             ("Edwin Kassier experience", ["experience", "work", "worked", "years"]),
         ],
     )
-    def test_rag_answer_quality(self, gemini_service, query, expected_keywords):
+    def test_rag_answer_quality(self, llm_service, query, expected_keywords):
         """Test that RAG responses contain relevant keywords"""
-        response = gemini_service.generate_response(
+        response = llm_service.generate_response(
             prompt=query, user_id="test_quality", persona="hermes"
         )
 

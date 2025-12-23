@@ -35,10 +35,10 @@ class TestSupabaseDatabaseService:
 
     @pytest.fixture
     def mock_llm_service(self):
-        """Mock LLMService (renamed from GeminiService)."""
-        with patch("app.shared.services.LLMService.LLMService") as mock_cls:
+        """Mock LLMService."""
+        with patch("app.shared.utils.service_loader.get_llm_service") as mock_get:
             mock_instance = MagicMock()
-            mock_cls.return_value = mock_instance
+            mock_get.return_value = mock_instance
             yield mock_instance
 
     @pytest.mark.asyncio
@@ -55,9 +55,7 @@ class TestSupabaseDatabaseService:
                 "columns": "*",
                 "limit": 10,
             }
-            mock_llm_service.generate_gemini_response.return_value = json.dumps(
-                query_plan
-            )
+            mock_llm_service.generate_response.return_value = json.dumps(query_plan)
 
             # Mock Supabase response
             mock_response = MagicMock()
@@ -74,7 +72,7 @@ class TestSupabaseDatabaseService:
             assert "Test User" in result
 
             # Verify LLM service called
-            mock_llm_service.generate_gemini_response.assert_called_once()
+            mock_llm_service.generate_response.assert_called_once()
 
             # Verify Supabase called
             mock_supabase_client.table.assert_called_with("users")
@@ -125,9 +123,7 @@ class TestSupabaseDatabaseService:
         with patch.object(service, "_get_table_list", return_value=["users"]):
             # Mock LLM response
             query_plan = {"operation": "count", "table": "users"}
-            mock_llm_service.generate_gemini_response.return_value = json.dumps(
-                query_plan
-            )
+            mock_llm_service.generate_response.return_value = json.dumps(query_plan)
 
             # Mock Supabase response
             mock_response = MagicMock()

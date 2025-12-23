@@ -16,6 +16,20 @@ except ImportError:
     HumanMessage = None
     LANGCHAIN_AVAILABLE = False
 
+try:
+    import google.generativeai as genai
+    from langchain_community.vectorstores import SupabaseVectorStore
+    from langchain_google_genai import GoogleGenerativeAIEmbeddings
+    from supabase import create_client
+
+    SUPABASE_AVAILABLE = True
+except ImportError:
+    genai = None
+    GoogleGenerativeAIEmbeddings = None
+    SupabaseVectorStore = None
+    create_client = None
+    SUPABASE_AVAILABLE = False
+
 from app.shared.config.langfuse_config import langfuse_config
 from app.shared.config.posthog_config import posthog_config
 from app.shared.utils.conversation_state import ConversationState
@@ -38,10 +52,6 @@ class LLMServiceError(Exception):
     """Base exception for LLMService errors."""
 
     pass
-
-
-# Backward compatibility alias
-GeminiServiceError = LLMServiceError
 
 
 class PersonaNotFoundError(LLMServiceError):
@@ -128,7 +138,94 @@ class LLMService:
         # Initialize conversation state
         self.conversation_state = ConversationState(db_path=conversation_db_path)
 
+        # Internal state for vector store (lazy loaded)
+        self._vector_store = None
+        self._embeddings_model = None
+
         logging.info("LLMService initialized.")
+
+    @property
+    def vector_store(self):
+        """Lazy load vector store."""
+        if self._vector_store is None:
+            self._initialize_vector_store()
+        return self._vector_store
+
+    def _initialize_vector_store(self):
+        """Initialize embeddings and vector store connection."""
+        if not SUPABASE_AVAILABLE:
+            logging.warning("Supabase dependencies not available for vector store")
+            return
+
+        if "GOOGLE_API_KEY" not in os.environ:
+            logging.warning("GOOGLE_API_KEY not set - Vector store disabled")
+            return
+
+        try:
+            # Initialize Gemini Embeddings (1536 dimensions)
+            genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
+
+            # Create custom embeddings wrapper with explicit dimensionality
+            _target_dimensionality = 1536
+
+            class CustomDimensionalityEmbeddings(GoogleGenerativeAIEmbeddings):
+                """Custom embeddings that enforce 1536 dimensions"""
+
+                def embed_query(self, text: str, **kwargs) -> List[float]:
+                    """Override to add output_dimensionality parameter"""
+                    try:
+                        result = genai.embed_content(
+                            model="models/embedding-001",
+                            content=text,
+                            task_type="retrieval_query",
+                            output_dimensionality=_target_dimensionality,
+                        )
+                        return result["embedding"]
+                    except Exception as e:
+                        logging.error(f"Failed to generate embedding: {e}")
+                        raise
+
+                def embed_documents(
+                    self, texts: List[str], **kwargs
+                ) -> List[List[float]]:
+                    """Override to add output_dimensionality parameter"""
+                    try:
+                        return [self.embed_query(text) for text in texts]
+                    except Exception as e:
+                        logging.error(f"Failed to generate document embeddings: {e}")
+                        raise
+
+            self._embeddings_model = CustomDimensionalityEmbeddings(
+                model="models/embedding-001",
+                google_api_key=os.environ["GOOGLE_API_KEY"],
+                task_type="retrieval_document",
+            )
+
+            logging.info("Initialized Gemini API Embeddings (1536D)")
+
+            # Initialize Supabase vector store
+            supabase_url = os.environ.get("SUPABASE_URL") or os.environ.get(
+                "SUPABASE_PROJECT_URL"
+            )
+            supabase_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+
+            if not supabase_url or not supabase_key:
+                logging.warning(
+                    "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set for vector store"
+                )
+                self._vector_store = None
+            else:
+                supabase_client = create_client(supabase_url, supabase_key)
+                self._vector_store = SupabaseVectorStore(
+                    client=supabase_client,
+                    embedding=self._embeddings_model,
+                    table_name="hermes_vectors",
+                )
+                logging.info("Initialized Supabase vector store in LLMService")
+
+        except Exception as e:
+            logging.error(f"Failed to initialize vector store: {e}")
+            self._vector_store = None
 
     def _load_agent_prompts(self) -> Dict[str, str]:
         """
@@ -534,7 +631,7 @@ IMPORTANT: Ensure you fully address the Original User Query requirements, includ
             user_id=user_id, trace_id=trace_id, properties=properties
         )
 
-    def generate_gemini_response(
+    def generate_response(
         self,
         prompt: str,
         persona: str = "hermes",
@@ -542,7 +639,7 @@ IMPORTANT: Ensure you fully address the Original User Query requirements, includ
         trace_id: Optional[str] = None,
     ) -> str:
         """
-        Generate a response using Gemini with optional tool execution.
+        Generate a response using the LLM with optional tool execution.
 
         This method creates a persona-specific model, processes the user prompt,
         and handles tool calls if the model requests them. It ensures natural
@@ -563,8 +660,8 @@ IMPORTANT: Ensure you fully address the Original User Query requirements, includ
             GeminiServiceError: For other service-related errors
 
         Example:
-            >>> service = GeminiService()
-            >>> response = service.generate_gemini_response("What's the time?", "hermes")
+            >>> service = LLMService()
+            >>> response = service.generate_response("What's the time?", "hermes")
             >>> print(response)
             "The current time is..."
         """
@@ -789,7 +886,7 @@ Provide a cleaned up, complete version of the response above. Ensure proper form
             ValueError: If persona_config is invalid or persona name already exists
 
         Example:
-            >>> service = GeminiService()
+            >>> service = LLMService()
             >>> custom_persona = PersonaConfig(
             ...     name="customer_service",
             ...     base_prompt="You are a helpful customer service agent.",
@@ -807,7 +904,7 @@ Provide a cleaned up, complete version of the response above. Ensure proper form
             persona_configs: Dictionary of persona name to PersonaConfig objects
 
         Example:
-            >>> service = GeminiService()
+            >>> service = LLMService()
             >>> personas = {"agent1": config1, "agent2": config2}
             >>> service.add_personas(personas)
         """
@@ -827,7 +924,7 @@ Provide a cleaned up, complete version of the response above. Ensure proper form
             True if persona was removed, False if persona was not found
 
         Example:
-            >>> service = GeminiService()
+            >>> service = LLMService()
             >>> success = service.remove_persona("customer_service")
             >>> print(success)
             True
@@ -856,7 +953,3 @@ Provide a cleaned up, complete version of the response above. Ensure proper form
             "allowed_tools": config.allowed_tools,
             "has_custom_error_message": bool(config.error_message_template),
         }
-
-
-# Backward compatibility alias
-GeminiService = LLMService

@@ -14,14 +14,14 @@ class TestResultSynthesizer:
         """Set up test fixtures."""
         self.synthesizer = ResultSynthesizer()
 
-    @patch("app.hermes.legion.parallel.result_synthesizer.get_gemini_service")
-    def test_synthesize_results_with_two_agents(self, mock_get_gemini):
+    @patch("app.hermes.legion.parallel.result_synthesizer.get_llm_service")
+    def test_synthesize_results_with_two_agents(self, mock_get_llm):
         """Test synthesis of results from two agents."""
         mock_service = MagicMock()
-        mock_service.generate_gemini_response.return_value = (
+        mock_service.generate_response.return_value = (
             "Based on the research on quantum computing and analysis of applications..."
         )
-        mock_get_gemini.return_value = mock_service
+        mock_get_llm.return_value = mock_service
 
         results = {
             "research_1": {
@@ -74,14 +74,12 @@ class TestResultSynthesizer:
         # Should have some fallback message
         assert len(result) > 0
 
-    @patch("app.hermes.legion.parallel.result_synthesizer.get_gemini_service")
-    def test_synthesize_with_failed_agent(self, mock_get_gemini):
+    @patch("app.hermes.legion.parallel.result_synthesizer.get_llm_service")
+    def test_synthesize_with_failed_agent(self, mock_get_llm):
         """Test synthesis when one agent failed."""
         mock_service = MagicMock()
-        mock_service.generate_gemini_response.return_value = (
-            "Based on the research results..."
-        )
-        mock_get_gemini.return_value = mock_service
+        mock_service.generate_response.return_value = "Based on the research results..."
+        mock_get_llm.return_value = mock_service
 
         results = {
             "research_1": {
@@ -106,12 +104,40 @@ class TestResultSynthesizer:
         # Should still produce output from successful agent
         assert "research" in result.lower()
 
-    @patch("app.hermes.legion.parallel.result_synthesizer.get_gemini_service")
-    def test_synthesize_uses_ai_when_multiple_results(self, mock_get_gemini):
+    @patch("app.hermes.legion.parallel.result_synthesizer.get_llm_service")
+    def test_synthesize_results_success(self, mock_get_llm):
+        """Test successful result synthesis."""
+        mock_service = MagicMock()
+        mock_get_llm.return_value = mock_service
+        mock_service.generate_response.return_value = "Combined synthesis..."
+
+        results = {
+            "agent1": {
+                "agent_type": "research",
+                "result": "Result 1",
+                "task_description": "Task 1",
+                "status": "success",
+            },
+            "agent2": {
+                "agent_type": "analysis",
+                "result": "Result 2",
+                "task_description": "Task 2",
+                "status": "success",
+            },
+        }
+
+        result = self.synthesizer.synthesize_results("test query", results)
+
+        # Should have called LLM service
+        mock_service.generate_response.assert_called_once()
+        assert result == "Combined synthesis..."
+
+    @patch("app.hermes.legion.parallel.result_synthesizer.get_llm_service")
+    def test_synthesize_uses_ai_when_multiple_results(self, mock_get_llm):
         """Test that AI synthesis is used for multiple results."""
         mock_service = MagicMock()
-        mock_service.generate_gemini_response.return_value = "Combined synthesis..."
-        mock_get_gemini.return_value = mock_service
+        mock_service.generate_response.return_value = "Combined synthesis..."
+        mock_get_llm.return_value = mock_service
 
         results = {
             "agent1": {
@@ -131,14 +157,14 @@ class TestResultSynthesizer:
         result = self.synthesizer.synthesize_results("test query", results)
 
         # Should have called AI service
-        mock_service.generate_gemini_response.assert_called_once()
+        mock_service.generate_response.assert_called_once()
 
-    @patch("app.hermes.legion.parallel.result_synthesizer.get_gemini_service")
-    def test_fallback_concatenation_on_ai_failure(self, mock_get_gemini):
+    @patch("app.hermes.legion.parallel.result_synthesizer.get_llm_service")
+    def test_fallback_concatenation_on_ai_failure(self, mock_get_llm):
         """Test fallback to concatenation when AI fails."""
         mock_service = MagicMock()
-        mock_service.generate_gemini_response.side_effect = Exception("AI Error")
-        mock_get_gemini.return_value = mock_service
+        mock_service.generate_response.side_effect = Exception("AI Error")
+        mock_get_llm.return_value = mock_service
 
         results = {
             "agent1": {
@@ -208,15 +234,15 @@ class TestSynthesisQuality:
         """Set up test fixtures."""
         self.synthesizer = ResultSynthesizer()
 
-    @patch("app.hermes.legion.parallel.result_synthesizer.get_gemini_service")
-    def test_synthesis_is_coherent(self, mock_get_gemini):
+    @patch("app.hermes.legion.parallel.result_synthesizer.get_llm_service")
+    def test_synthesis_is_coherent(self, mock_get_llm):
         """Test that synthesis produces coherent output."""
         mock_service = MagicMock()
-        mock_service.generate_gemini_response.return_value = """
+        mock_service.generate_response.return_value = """
         Based on the research and analysis, quantum computing represents
         a paradigm shift in computation with applications in cryptography.
         """
-        mock_get_gemini.return_value = mock_service
+        mock_get_llm.return_value = mock_service
 
         results = {
             "agent1": {

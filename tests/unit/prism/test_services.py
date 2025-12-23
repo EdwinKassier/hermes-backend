@@ -21,7 +21,7 @@ def prism_service():
         patch("app.prism.services.RedisSessionStore") as MockRedis,
         patch("app.prism.services.AttendeeClient") as MockAttendee,
         patch("app.prism.services.AudioProcessor") as MockAudio,
-        patch("app.prism.services.get_gemini_service") as MockGemini,
+        patch("app.prism.services.get_llm_service") as MockLLM,
         patch("app.prism.services.get_tts_service") as MockTTS,
     ):
 
@@ -32,7 +32,7 @@ def prism_service():
 
         service = PrismService()
         service.session_store = mock_store
-        service._gemini_service = Mock()
+        service._llm_service = Mock()
         service._tts_service = Mock()
 
         yield service
@@ -315,7 +315,7 @@ class TestTranscriptProcessing:
         mock_session.add_transcript("User", "Hey Prism, can you help?")
 
         # Mock Gemini response
-        prism_service.gemini_service.generate_gemini_response.return_value = "YES"
+        prism_service.llm_service.generate_response.return_value = "YES"
 
         should_respond = prism_service._should_respond(mock_session)
         assert should_respond is True
@@ -330,7 +330,7 @@ class TestTranscriptProcessing:
         mock_session.add_transcript("User", "um, okay")
 
         # Mock Gemini response
-        prism_service.gemini_service.generate_gemini_response.return_value = "NO"
+        prism_service.llm_service.generate_response.return_value = "NO"
 
         should_respond = prism_service._should_respond(mock_session)
         assert should_respond is False
@@ -370,7 +370,7 @@ class TestTranscriptProcessing:
         prism_service.session_store.get_session.return_value = mock_session
 
         # Mock Gemini to return a proper string response
-        prism_service.gemini_service.generate_gemini_response.return_value = (
+        prism_service.llm_service.generate_response.return_value = (
             "I can help you with that question."
         )
 
@@ -386,7 +386,7 @@ class TestTranscriptProcessing:
         # The lock should be cleared and new response started
         assert mock_session.is_generating_response == True  # New response started
         # Gemini should be called for the new response
-        prism_service.gemini_service.generate_gemini_response.assert_called()
+        prism_service.llm_service.generate_response.assert_called()
 
 
 @pytest.mark.unit

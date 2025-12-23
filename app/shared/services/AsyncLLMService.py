@@ -44,31 +44,30 @@ class AsyncLLMService:
         self, prompt: str, persona: str = "hermes", **kwargs
     ) -> str:
         """
-        Generate LLM response asynchronously.
+        Generate a response asynchronously using the underlying LLMService.
 
-        This wraps the synchronous generate_gemini_response in a thread pool
+        This wraps the synchronous generate_response in a thread pool
         to prevent blocking the event loop.
 
         Args:
-            prompt: The prompt to send to the LLM
-            persona: The AI persona to use (default: "hermes")
-            **kwargs: Additional arguments passed to generate_gemini_response
+            prompt: User input prompt
+            persona: Persona to use
+            **kwargs: Additional arguments passed to generate_response
 
         Returns:
             Generated response string
-
-        Raises:
-            Exception: If LLM generation fails
         """
         try:
-            # Execute blocking call in thread pool
-            response = await asyncio.to_thread(
-                self._llm_service.generate_gemini_response, prompt, persona, **kwargs
+            # Use asyncio.to_thread to run the synchronous method in a separate thread
+            return await asyncio.to_thread(
+                self._llm_service.generate_response, prompt, persona, **kwargs
             )
-            return response
         except Exception as e:
-            logger.error(f"Async LLM generation failed: {e}")
-            raise
+            logger.error(f"Async generation failed: {e}", exc_info=True)
+            # Fallback to direct synchronous call if thread pool fails (last resort)
+            # This will block, but ensures reliability
+            logger.warning("Falling back to synchronous generation")
+            return self._llm_service.generate_response(prompt, persona, **kwargs)
 
     def generate_sync(self, prompt: str, persona: str = "hermes", **kwargs) -> str:
         """

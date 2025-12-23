@@ -4,7 +4,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from app.hermes.legion.models import RequiredInfoField
-from app.shared.utils.service_loader import get_async_llm_service, get_gemini_service
+from app.shared.utils.service_loader import get_async_llm_service, get_llm_service
 
 from ..utils.persona_context import get_current_legion_persona
 
@@ -16,15 +16,15 @@ class InformationExtractor:
 
     def __init__(self):
         """Initialize information extractor."""
-        self._gemini_service = None
+        self._llm_service = None
         self._async_llm_service = None
 
     @property
-    def gemini_service(self):
-        """Lazy load Gemini service."""
-        if self._gemini_service is None:
-            self._gemini_service = get_gemini_service()
-        return self._gemini_service
+    def llm_service(self):
+        """Lazy load LLM service."""
+        if self._llm_service is None:
+            self._llm_service = get_llm_service()
+        return self._llm_service
 
     @property
     def async_llm_service(self):
@@ -83,7 +83,7 @@ For each field, extract the value if mentioned, otherwise return null.
 Respond in JSON format: {{"field_name": "value or null", ...}}"""
 
         try:
-            response = self.gemini_service.generate_gemini_response(
+            response = self.llm_service.generate_response(
                 prompt, persona=get_current_legion_persona()
             )
             # Parse JSON response using robust helper
@@ -166,7 +166,7 @@ Respond with ONLY valid JSON: {{"field_name": "inferred_value", ...}}
 Return a value for EVERY field - use null only as last resort."""
 
         try:
-            response = self.gemini_service.generate_gemini_response(
+            response = self.llm_service.generate_response(
                 prompt, persona=get_current_legion_persona()
             )
             from app.hermes.legion.utils.llm_utils import extract_json_from_llm_response

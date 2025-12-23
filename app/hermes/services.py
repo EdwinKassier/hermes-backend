@@ -5,7 +5,7 @@ import logging
 import uuid
 from typing import Optional
 
-from app.shared.utils.service_loader import get_gemini_service, get_tts_service
+from app.shared.utils.service_loader import get_llm_service, get_tts_service
 
 from .exceptions import (
     AIServiceError,
@@ -29,17 +29,17 @@ class HermesService:
 
     def __init__(self):
         """Initialize the Hermes service."""
-        self._gemini_service = None
+        self._llm_service = None
         self._tts_service = None
         self._legion_service = None  # Cached LegionGraphService
         self._conversation_contexts = {}  # In-memory store (use Redis in production)
 
     @property
-    def gemini_service(self):
-        """Lazy load Gemini service."""
-        if self._gemini_service is None:
-            self._gemini_service = get_gemini_service()
-        return self._gemini_service
+    def llm_service(self):
+        """Lazy load LLM service"""
+        if self._llm_service is None:
+            self._llm_service = get_llm_service()
+        return self._llm_service
 
     @property
     def tts_service(self):
@@ -239,10 +239,13 @@ class HermesService:
             AIServiceError: If AI generation fails
         """
         try:
-            result = self.gemini_service.generate_gemini_response(
-                prompt=prompt, persona=persona, user_id=user_id
+            # Generate response using LLM service (cached instance)
+            result = self.llm_service.generate_response(
+                prompt=prompt,  # Changed from message to prompt to match method signature
+                persona="hermes",
+                user_id=user_id,
+                trace_id=None,  # trace_id is not available in this context, setting to None
             )
-
             return GeminiResponse(
                 content=result,
                 user_id=user_id,

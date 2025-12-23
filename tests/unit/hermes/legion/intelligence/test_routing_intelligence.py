@@ -61,7 +61,7 @@ class TestRoutingIntelligence:
         }
         """
 
-        intel = RoutingIntelligence()
+        intel = RoutingIntelligence(use_structured_output=False)
         decision = await intel.analyze("hi there!")
 
         assert decision.action == RoutingAction.SIMPLE_RESPONSE
@@ -94,7 +94,7 @@ class TestRoutingIntelligence:
         }
         """
 
-        intel = RoutingIntelligence()
+        intel = RoutingIntelligence(use_structured_output=False)
         decision = await intel.analyze(
             "Research quantum computing developments in 2024"
         )
@@ -132,7 +132,7 @@ class TestRoutingIntelligence:
         }
         """
 
-        intel = RoutingIntelligence()
+        intel = RoutingIntelligence(use_structured_output=False)
 
         history = [
             {"role": "user", "content": "Research quantum computing"},
@@ -180,7 +180,7 @@ class TestRoutingIntelligence:
         }
         """
 
-        intel = RoutingIntelligence()
+        intel = RoutingIntelligence(use_structured_output=False)
 
         history = [
             {"role": "user", "content": "Build me a website"},
@@ -220,7 +220,7 @@ class TestRoutingIntelligence:
         }
         """
 
-        intel = RoutingIntelligence()
+        intel = RoutingIntelligence(use_structured_output=False)
 
         history = [
             {"role": "user", "content": "Research quantum computing"},
@@ -269,7 +269,7 @@ class TestRoutingIntelligence:
         }
         """
 
-        intel = RoutingIntelligence()
+        intel = RoutingIntelligence(use_structured_output=False)
         decision = await intel.analyze(
             "Analyze all my recent emails and summarize by topic"
         )
@@ -284,7 +284,7 @@ class TestRoutingIntelligence:
         """Test graceful fallback when LLM fails."""
         mock_async_llm_service.generate_async.side_effect = Exception("LLM timeout")
 
-        intel = RoutingIntelligence()
+        intel = RoutingIntelligence(use_structured_output=False)
         decision = await intel.analyze("anything")
 
         # Should default to ORCHESTRATE (most conservative)
@@ -300,7 +300,7 @@ class TestRoutingIntelligence:
             '{"action": "ORCHESTRATE", "reasoning": "research", "confidence": 0.85, "requires_agents": true, "conversation_type": "research", "complexity_estimate": 0.75, "user_goal": "research", "topic_change_detected": false, "should_seek_approval": false, "risk_level": "LOW", "conversation_phase": "INITIATING", "requires_followup": false, "awaiting_user_input": false, "builds_on_previous": false, "references_conversation_context": false}',
         ]
 
-        intel = RoutingIntelligence()
+        intel = RoutingIntelligence(use_structured_output=False)
         messages = ["hi", "research AI"]
         decisions = await intel.analyze_batch(messages)
 

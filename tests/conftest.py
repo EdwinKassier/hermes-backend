@@ -8,7 +8,7 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
 
 import pytest
 
@@ -150,11 +150,10 @@ def mock_redis():
 
 
 @pytest.fixture
-def mock_gemini_service():
-    """Mock Gemini service"""
-    mock = Mock()
-    mock.generate_gemini_response.return_value = "Mock AI response"
-    mock.generate_gemini_response.return_value = "Mock response"
+def mock_llm_service():
+    """Mock LLMService."""
+    mock = MagicMock()
+    mock.generate_response.return_value = "Mock response"
     return mock
 
 

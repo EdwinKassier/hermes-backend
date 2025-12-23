@@ -81,10 +81,10 @@ class TestTTSCloudURLErrorHandling:
         """
         service = HermesService()
 
-        # Mock Gemini service
-        mock_gemini = Mock()
-        mock_gemini.generate_gemini_response.return_value = "AI response text"
-        service._gemini_service = mock_gemini
+        # Mock LLM service
+        mock_llm = Mock()
+        mock_llm.generate_response.return_value = "AI response text"
+        service._llm_service = mock_llm
 
         # Mock TTS service - returns result without cloud_url
         mock_tts = Mock()
@@ -140,10 +140,10 @@ class TestTTSCloudURLErrorHandling:
         """Test full process_request flow with TTS mode when cloud_url is valid"""
         service = HermesService()
 
-        # Mock Gemini service
-        mock_gemini = Mock()
-        mock_gemini.generate_gemini_response.return_value = "AI response"
-        service._gemini_service = mock_gemini
+        # Mock LLM service
+        mock_llm = Mock()
+        mock_llm.generate_response.return_value = "AI response"
+        service._llm_service = mock_llm
 
         # Mock TTS service - returns complete result
         mock_tts = Mock()
@@ -262,12 +262,12 @@ class TestProductionLogErrors:
         """
         service = HermesService()
 
-        # Mock successful Gemini response
-        mock_gemini = Mock()
-        mock_gemini.generate_gemini_response.return_value = (
+        # Mock successful LLM response
+        mock_llm = Mock()
+        mock_llm.generate_response.return_value = (
             "Edwin Kassier attended the University of Cape Town..."
         )
-        service._gemini_service = mock_gemini
+        service._llm_service = mock_llm
 
         # Mock TTS - audio generated but no cloud_url (production scenario)
         mock_tts = Mock()
@@ -309,9 +309,9 @@ class TestProductionLogErrors:
         """
         service = HermesService()
 
-        mock_gemini = Mock()
-        mock_gemini.generate_gemini_response.return_value = "Response"
-        service._gemini_service = mock_gemini
+        mock_llm = Mock()
+        mock_llm.generate_response.return_value = "Response"
+        service._llm_service = mock_llm
 
         # TTS works but no cloud storage available
         mock_tts = Mock()

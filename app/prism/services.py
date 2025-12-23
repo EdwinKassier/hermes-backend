@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional
 from simple_websocket import Server as WebSocketServer
 
 from app.shared.services.IdentityService import IdentityService
-from app.shared.utils.service_loader import get_gemini_service, get_tts_service
+from app.shared.utils.service_loader import get_llm_service, get_tts_service
 
 from .attendee_client import AttendeeClient
 from .audio_processor import AudioProcessor
@@ -80,22 +80,22 @@ class PrismService:
         self.identity_service = IdentityService()
 
         # AI services (lazy loaded)
-        self._gemini_service = None
+        self._llm_service = None
         self._tts_service = None
 
         # OPTIMIZATION: Pre-warm AI services to avoid first-request delay
         # This saves 1-2 seconds on the first response by eliminating lazy-load overhead
-        _ = self.gemini_service  # Force lazy initialization
+        _ = self.llm_service  # Force lazy initialization
         _ = self.tts_service  # Force lazy initialization
 
         logger.info("PrismService initialized with pre-warmed AI services")
 
     @property
-    def gemini_service(self):
-        """Lazy load Gemini service."""
-        if self._gemini_service is None:
-            self._gemini_service = get_gemini_service()
-        return self._gemini_service
+    def llm_service(self):
+        """Lazy load LLM service"""
+        if self._llm_service is None:
+            self._llm_service = get_llm_service()
+        return self._llm_service
 
     @property
     def tts_service(self):
@@ -426,7 +426,13 @@ class PrismService:
             )
             logger.info(f"🤖 Generating dynamic introduction message using Gemini...")
 
-            introduction_prompt = """You are joining a Google Meet meeting for the first time.
+            # Get the attendee associated with the session
+            attendee = self.session_store.get_attendee(session.attendee_id)
+            if not attendee:
+                logger.error(f"Attendee not found for session {session_id}")
+                raise ValueError("Attendee not found for session")
+
+            prompt = """You are joining a Google Meet meeting for the first time.
 Generate a natural, friendly introduction message (2-3 sentences max) that:
 1. Introduces yourself
 2. Explains you're here to assist with the meeting
@@ -435,8 +441,10 @@ Generate a natural, friendly introduction message (2-3 sentences max) that:
 Keep it conversational and warm. This will be spoken aloud, so make it sound natural."""
 
             try:
-                introduction_message = self.gemini_service.generate_gemini_response(
-                    prompt=introduction_prompt, persona="prism"
+                introduction_message = self.llm_service.generate_response(
+                    prompt=prompt,
+                    persona="prism",
+                    user_id=attendee.id,
                 ).strip()
                 logger.info(
                     f"✅ Generated introduction: {introduction_message[:100]}..."
@@ -787,8 +795,8 @@ DO NOT RESPOND IF:
 ANSWER: YES or NO"""
 
         try:
-            # Use Gemini to decide
-            response = self.gemini_service.generate_gemini_response(
+            # Use LLM to decide
+            response = self.llm_service.generate_response(
                 prompt=decision_prompt, persona="prism"
             )
 
@@ -1045,7 +1053,7 @@ Generate a natural, conversational response. Keep it concise (1-2 sentences) sin
             # OPTIMIZATION: Use standard generation for real-time meetings (no RAG)
             # Meeting context is in transcript history, not vector DB
             # This saves 1.5-3 seconds per response with no quality loss
-            response = self.gemini_service.generate_gemini_response(
+            response = self.llm_service.generate_response(
                 prompt=prompt, persona="prism"
             )
 

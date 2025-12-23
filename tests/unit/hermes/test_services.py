@@ -22,18 +22,18 @@ from app.hermes.services import HermesService
 def hermes_service():
     """Create HermesService with mocked dependencies"""
     with (
-        patch("app.hermes.services.get_gemini_service") as mock_gemini_getter,
+        patch("app.hermes.services.get_llm_service") as mock_llm_getter,
         patch("app.hermes.services.get_tts_service") as mock_tts_getter,
     ):
 
-        mock_gemini = Mock()
+        mock_llm = Mock()
         mock_tts = Mock()
 
-        mock_gemini_getter.return_value = mock_gemini
+        mock_llm_getter.return_value = mock_llm
         mock_tts_getter.return_value = mock_tts
 
         service = HermesService()
-        service._gemini_service = mock_gemini
+        service._llm_service = mock_llm
         service._tts_service = mock_tts
 
         yield service
@@ -57,9 +57,7 @@ class TestProcessRequest:
     def test_process_request_text_mode(self, hermes_service, user_identity):
         """Test processing request in text mode"""
         # Mock Gemini response
-        hermes_service.gemini_service.generate_gemini_response.return_value = (
-            "AI response"
-        )
+        hermes_service.llm_service.generate_response.return_value = "AI response"
 
         result = hermes_service.process_request(
             text="What is the weather?",
@@ -73,14 +71,12 @@ class TestProcessRequest:
         assert result.user_id == "test_user"
 
         # Verify Gemini was called correctly
-        hermes_service.gemini_service.generate_gemini_response.assert_called_once()
+        hermes_service.llm_service.generate_response.assert_called_once()
 
     def test_process_request_tts_mode(self, hermes_service, user_identity):
         """Test processing request in TTS mode"""
         # Mock services
-        hermes_service.gemini_service.generate_gemini_response.return_value = (
-            "AI response"
-        )
+        hermes_service.llm_service.generate_response.return_value = "AI response"
         hermes_service.tts_service.generate_audio.return_value = {
             "cloud_url": "https://storage.example.com/audio.wav"
         }
@@ -115,7 +111,7 @@ class TestProcessRequest:
 
     def test_process_request_ai_service_error(self, hermes_service, user_identity):
         """Test handling of AI service errors"""
-        hermes_service.gemini_service.generate_gemini_response.side_effect = Exception(
+        hermes_service.llm_service.generate_response.side_effect = Exception(
             "API error"
         )
 
@@ -125,7 +121,7 @@ class TestProcessRequest:
 
     def test_process_request_tts_error(self, hermes_service, user_identity):
         """Test handling of TTS errors"""
-        hermes_service.gemini_service.generate_gemini_response.return_value = "Response"
+        hermes_service.llm_service.generate_response.return_value = "Response"
         hermes_service.tts_service.generate_audio.side_effect = KeyError("Missing key")
 
         with pytest.raises(TTSServiceError):
@@ -135,7 +131,7 @@ class TestProcessRequest:
 
     def test_process_request_includes_metadata(self, hermes_service, user_identity):
         """Test that result includes metadata"""
-        hermes_service.gemini_service.generate_gemini_response.return_value = "Response"
+        hermes_service.llm_service.generate_response.return_value = "Response"
 
         result = hermes_service.process_request(
             text="Test question", user_identity=user_identity
@@ -152,7 +148,7 @@ class TestChat:
 
     def test_chat_with_context(self, hermes_service, user_identity):
         """Test chat maintains conversation context"""
-        hermes_service.gemini_service.generate_gemini_response.return_value = "Response"
+        hermes_service.llm_service.generate_response.return_value = "Response"
 
         # First message
         result1 = hermes_service.chat(
@@ -170,7 +166,7 @@ class TestChat:
 
     def test_chat_without_context(self, hermes_service, user_identity):
         """Test chat without conversation context"""
-        hermes_service.gemini_service.generate_gemini_response.return_value = "Response"
+        hermes_service.llm_service.generate_response.return_value = "Response"
 
         result = hermes_service.chat(
             message="Hello", user_identity=user_identity, include_context=False
@@ -186,9 +182,7 @@ class TestChat:
 
     def test_chat_returns_gemini_response(self, hermes_service, user_identity):
         """Test that chat returns GeminiResponse object"""
-        hermes_service.gemini_service.generate_gemini_response.return_value = (
-            "Test response"
-        )
+        hermes_service.llm_service.generate_response.return_value = "Test response"
 
         result = hermes_service.chat(message="Hello", user_identity=user_identity)
 
@@ -275,7 +269,7 @@ class TestServiceSingleton:
         from app.hermes.services import get_hermes_service
 
         with (
-            patch("app.hermes.services.get_gemini_service"),
+            patch("app.hermes.services.get_llm_service"),
             patch("app.hermes.services.get_tts_service"),
         ):
             service1 = get_hermes_service()
