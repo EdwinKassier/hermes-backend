@@ -34,28 +34,28 @@ class TestSupabaseDatabaseService:
         )
 
     @pytest.fixture
-    def mock_gemini_service(self):
-        """Mock GeminiService."""
-        with patch("app.shared.services.GeminiService.GeminiService") as mock_cls:
+    def mock_llm_service(self):
+        """Mock LLMService (renamed from GeminiService)."""
+        with patch("app.shared.services.LLMService.LLMService") as mock_cls:
             mock_instance = MagicMock()
             mock_cls.return_value = mock_instance
             yield mock_instance
 
     @pytest.mark.asyncio
     async def test_execute_query_success_select(
-        self, service, mock_supabase_client, mock_gemini_service
+        self, service, mock_supabase_client, mock_llm_service
     ):
         """Test successful SELECT query execution."""
         # Mock table list
         with patch.object(service, "_get_table_list", return_value=["users"]):
-            # Mock Gemini response
+            # Mock LLM response
             query_plan = {
                 "operation": "select",
                 "table": "users",
                 "columns": "*",
                 "limit": 10,
             }
-            mock_gemini_service.generate_gemini_response.return_value = json.dumps(
+            mock_llm_service.generate_gemini_response.return_value = json.dumps(
                 query_plan
             )
 
@@ -73,8 +73,8 @@ class TestSupabaseDatabaseService:
             assert "Query Results from 'users'" in result
             assert "Test User" in result
 
-            # Verify Gemini called
-            mock_gemini_service.generate_gemini_response.assert_called_once()
+            # Verify LLM service called
+            mock_llm_service.generate_gemini_response.assert_called_once()
 
             # Verify Supabase called
             mock_supabase_client.table.assert_called_with("users")
@@ -119,13 +119,13 @@ class TestSupabaseDatabaseService:
 
     @pytest.mark.asyncio
     async def test_execute_query_count(
-        self, service, mock_supabase_client, mock_gemini_service
+        self, service, mock_supabase_client, mock_llm_service
     ):
         """Test COUNT query execution."""
         with patch.object(service, "_get_table_list", return_value=["users"]):
-            # Mock Gemini response
+            # Mock LLM response
             query_plan = {"operation": "count", "table": "users"}
-            mock_gemini_service.generate_gemini_response.return_value = json.dumps(
+            mock_llm_service.generate_gemini_response.return_value = json.dumps(
                 query_plan
             )
 

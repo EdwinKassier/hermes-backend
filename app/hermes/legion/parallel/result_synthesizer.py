@@ -3,7 +3,7 @@
 import logging
 from typing import Any, Dict, List, Optional
 
-from app.shared.utils.service_loader import get_gemini_service
+from app.shared.utils.service_loader import get_async_llm_service, get_gemini_service
 
 logger = logging.getLogger(__name__)
 
@@ -14,11 +14,16 @@ class ResultSynthesizer:
 
     Combines outputs from parallel agent execution, detects gaps,
     and generates clarifying questions when needed.
+
+    Supports both sync and async LLM calls:
+    - Use synthesize_results() for sync contexts
+    - Use synthesize_results_async() for async contexts (recommended)
     """
 
     def __init__(self):
         """Initialize result synthesizer."""
         self._gemini_service = None
+        self._async_llm_service = None
 
     @property
     def gemini_service(self):
@@ -26,6 +31,13 @@ class ResultSynthesizer:
         if self._gemini_service is None:
             self._gemini_service = get_gemini_service()
         return self._gemini_service
+
+    @property
+    def async_llm_service(self):
+        """Lazy load async LLM service."""
+        if self._async_llm_service is None:
+            self._async_llm_service = get_async_llm_service()
+        return self._async_llm_service
 
     def synthesize_results(
         self,
@@ -211,6 +223,112 @@ Provide a well-structured, comprehensive response that naturally weaves together
 
         except Exception as e:
             logger.error(f"Result synthesis failed: {e}")
+            # Fallback: enhanced concatenation
+            return self._enhanced_concatenation(original_query, agent_results)
+
+    async def synthesize_results_async(
+        self,
+        original_query: str,
+        agent_results: Dict[str, Dict[str, Any]],
+        persona: str = "hermes",
+    ) -> str:
+        """
+        Async version of synthesize_results using native async LLM calls.
+
+        Combines results from multiple agents into coherent response.
+        Preferred method for async contexts (LangGraph nodes).
+
+        Args:
+            original_query: User's original question
+            agent_results: Dictionary of agent results
+            persona: AI persona to use for synthesis
+
+        Returns:
+            Synthesized response as a string
+        """
+        if not agent_results:
+            return "No results to synthesize."
+
+        # Build the same prompt as sync version
+        results_by_type = self._group_results_by_type(agent_results)
+        results_context = []
+
+        for agent_type, type_results in results_by_type.items():
+            for item in type_results:
+                status_emoji = "✅" if item["status"] == "success" else "⚠️"
+                results_context.append(
+                    f"{status_emoji} **{agent_type.upper()}** (Task: {item['task']}):\n{item['result']}"
+                )
+
+        combined_context = "\n\n---\n\n".join(results_context)
+
+        prompt = f"""You are synthesizing results from multiple specialized AI agents into a single, comprehensive response.
+
+ORIGINAL USER QUESTION: "{original_query}"
+
+AGENT RESULTS:
+{combined_context}
+
+YOUR TASK:
+1. **Integrate All Perspectives**: Combine insights from all agents into one cohesive narrative
+2. **Maintain Structure**: Organize information logically based on the original question
+3. **Remove Redundancy**: Eliminate repetitive information while preserving unique insights
+4. **Add Transitions**: Use smooth transitions between different agent contributions
+5. **Stay Focused**: Directly answer the user's original question
+6. **Be Comprehensive**: Include all relevant information from each agent
+7. **Natural Tone**: Write conversationally, not like a concatenated document
+8. **No Agent Lists**: Do NOT create sections listing agent names, contributions, or roles. Do NOT mention "agent contributions" or similar meta-information.
+9. **No Meta-References**: Do NOT mention or reference any filtered, irrelevant, excluded, or additional results. Only discuss and integrate the actual results provided.
+
+FORMATTING GUIDELINES:
+- Use clear section headings when appropriate
+- Employ bullet points for lists
+- Include code blocks if code was generated
+- Maintain markdown formatting from agent outputs
+
+**CRITICAL OUTPUT FORMATTING REQUIREMENTS** (MUST FOLLOW):
+
+Your response MUST be parseable by a frontend markdown renderer:
+
+1. **Code Blocks**: ALL code MUST be in fenced code blocks with language identifiers:
+   - Use triple backticks with language, e.g.: ```python, ```javascript, ```bash
+   - NEVER output raw code without proper fencing
+   - The opening fence MUST include the language identifier
+   - The closing ``` MUST be on its own line
+   - Example of correct formatting:
+     ```python
+     def example():
+         return "value"
+     ```
+
+2. **Section Spacing**:
+   - Separate ALL major sections with double newlines (\\n\\n)
+   - Use horizontal rules (---) surrounded by blank lines to separate distinct topics
+
+3. **Section Headers**: Use Markdown headers (##, ###) for major sections, always preceded and followed by a blank line
+
+4. **Lists**: Use proper Markdown list syntax
+   - Unordered: Use - or * prefix
+   - Ordered: Use 1. 2. 3. prefix
+   - Ensure blank lines before and after the list
+
+5. **Inline Code**: Use single backticks for filenames, function names, variables: `filename.py`
+
+6. **Block Quotes**: Use > for important notes or warnings
+
+7. **Maintain Original Formatting**: Preserve any markdown formatting from agent outputs
+
+Provide a well-structured, comprehensive response that naturally weaves together all agent contributions while directly addressing "{original_query}"."""
+
+        try:
+            # Use native async LLM call - no executor overhead
+            synthesized = await self.async_llm_service.generate_async(
+                prompt, persona=persona
+            )
+            return synthesized
+
+        except Exception as e:
+            logger.error(f"Async result synthesis failed: {e}")
             # Fallback: enhanced concatenation
             return self._enhanced_concatenation(original_query, agent_results)
 

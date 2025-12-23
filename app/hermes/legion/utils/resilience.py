@@ -149,3 +149,8 @@ def with_circuit_breaker(circuit_breaker: CircuitBreaker):
 def get_llm_circuit_breaker() -> CircuitBreaker:
     """Get the global LLM circuit breaker."""
     return _llm_circuit_breaker
+
+
+def get_db_circuit_breaker() -> CircuitBreaker:
+    """Get the global database circuit breaker."""
+    return _db_circuit_breaker

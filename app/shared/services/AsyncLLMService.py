@@ -2,7 +2,7 @@
 Async wrapper for LLM services.
 
 Provides async interface for LLM calls to prevent blocking in async context.
-Wraps the existing GeminiService for backwards compatibility.
+Provider-agnostic: wraps the LLMService for backwards compatibility.
 """
 
 import asyncio
@@ -10,27 +10,34 @@ import logging
 from functools import lru_cache
 from typing import Optional
 
-from app.shared.services.GeminiService import GeminiService
+from app.shared.services.LLMService import LLMService
 
 logger = logging.getLogger(__name__)
 
 
 class AsyncLLMService:
     """
-    Async wrapper for Gemini LLM service.
+    Async wrapper for LLM service.
 
     This service wraps synchronous LLM calls in asyncio.to_thread() to prevent
     blocking the event loop in async contexts while maintaining backward compatibility.
     """
 
-    def __init__(self, gemini_service: Optional[GeminiService] = None):
+    def __init__(
+        self,
+        llm_service: Optional[LLMService] = None,
+        gemini_service: Optional[LLMService] = None,
+    ):
         """
         Initialize async LLM service.
 
         Args:
-            gemini_service: Optional GeminiService instance. If None, creates one.
+            llm_service: Optional LLMService instance. If None, creates one.
+            gemini_service: Deprecated alias for llm_service (backward compat).
         """
-        self._gemini_service = gemini_service or GeminiService()
+        # Support both parameter names for backward compatibility
+        service = llm_service or gemini_service
+        self._llm_service = service or LLMService()
         logger.info("AsyncLLMService initialized")
 
     async def generate_async(
@@ -56,7 +63,7 @@ class AsyncLLMService:
         try:
             # Execute blocking call in thread pool
             response = await asyncio.to_thread(
-                self._gemini_service.generate_gemini_response, prompt, persona, **kwargs
+                self._llm_service.generate_gemini_response, prompt, persona, **kwargs
             )
             return response
         except Exception as e:
@@ -75,12 +82,17 @@ class AsyncLLMService:
         Returns:
             Generated response string
         """
-        return self._gemini_service.generate_gemini_response(prompt, persona, **kwargs)
+        return self._llm_service.generate_gemini_response(prompt, persona, **kwargs)
 
     @property
-    def gemini_service(self) -> GeminiService:
-        """Access underlying GeminiService for direct operations if needed."""
-        return self._gemini_service
+    def llm_service(self) -> LLMService:
+        """Access underlying LLMService for direct operations if needed."""
+        return self._llm_service
+
+    @property
+    def gemini_service(self) -> LLMService:
+        """Backward compatibility alias for llm_service."""
+        return self._llm_service
 
 
 @lru_cache(maxsize=1)

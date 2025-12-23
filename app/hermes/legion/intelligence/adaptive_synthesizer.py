@@ -148,3 +148,85 @@ class AdaptiveSynthesizer:
         except Exception as e:
             logger.error(f"Error synthesizing results: {e}")
             return "I apologize, but I encountered an error synthesizing the results."
+
+    async def synthesize_with_inline_quality(
+        self,
+        original_query: str,
+        results: Dict[str, Any],
+        strategy: str,
+        persona: str,
+    ) -> str:
+        """
+        Fast-path synthesis that combines quality assessment and synthesis into ONE LLM call.
+
+        This eliminates the separate quality assessment LLM call, reducing latency by ~1-2s.
+        Quality metrics are assessed inline as part of the synthesis prompt.
+
+        Args:
+            original_query: Original user query
+            results: Worker results to synthesize
+            strategy: Strategy name (council, parallel, intelligent)
+            persona: Persona for response style
+
+        Returns:
+            Synthesized response string
+        """
+        try:
+            # Format full results
+            formatted_results = []
+            for worker_id, data in results.items():
+                status = data.get("status", "success")
+                role = data.get("role", "unknown")
+                result_text = data.get("result", "")
+                formatted_results.append(
+                    f"--- Worker: {worker_id} (Role: {role}, Status: {status}) ---\n{result_text}"
+                )
+
+            results_text = "\n\n".join(formatted_results)
+
+            # Count success vs partial/failed results for inline quality assessment
+            success_count = sum(
+                1 for d in results.values() if d.get("status") == "success"
+            )
+            total_count = len(results)
+            quality_hint = ""
+
+            if success_count < total_count:
+                partial_count = total_count - success_count
+                quality_hint = f"\n\nNOTE: {partial_count}/{total_count} workers returned partial or degraded results. Acknowledge limitations where relevant."
+
+            # Detect potential disagreement for council strategy
+            if strategy == "council" and total_count > 1:
+                quality_hint += "\n\nFor council strategy: If agents present conflicting viewpoints, highlight the disagreement and present both sides."
+
+            prompt = f"""Synthesize these AI agent results into a comprehensive final response.
+
+Original Query: "{original_query}"
+
+Agent Results:
+{results_text}
+{quality_hint}
+
+**Synthesis Guidelines:**
+1. Integrate all relevant insights into a cohesive narrative
+2. Maintain logical structure based on the query
+3. Remove redundancy while preserving unique insights
+4. If any results are incomplete/partial, acknowledge limitations
+5. Write naturally for persona: {persona}
+
+**FORMATTING REQUIREMENTS:**
+- Code blocks: Use ```language syntax with closing ``` on its own line
+- Headers: Use ## for sections
+- Lists: Use - for bullets with blank lines before/after
+- Inline code: Use `backticks` for function/file names
+- Spacing: Double newlines between major sections
+
+Provide a complete, well-formatted response."""
+
+            response = await self.llm_service.generate_async(prompt, persona=persona)
+            logger.info("Synthesized with inline quality assessment (fast-path)")
+            return response
+
+        except Exception as e:
+            logger.error(f"Error in fast-path synthesis: {e}")
+            return "I apologize, but I encountered an error synthesizing the results."

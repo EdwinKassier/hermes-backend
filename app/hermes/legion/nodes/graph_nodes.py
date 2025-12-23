@@ -5,7 +5,7 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List
 
-from app.shared.utils.service_loader import get_async_llm_service, get_gemini_service
+from app.shared.utils.service_loader import get_async_llm_service, get_llm_service
 
 from ..agents.factory import AgentFactory
 from ..intelligence.information_extractor import InformationExtractor
@@ -210,31 +210,6 @@ async def orchestrator_node(state: OrchestratorState) -> OrchestratorState:
                 {"node": "orchestrator", "timestamp": datetime.now().isoformat()}
             ],
         }
-
-        # Single agent orchestration - infer agent type from routing decision
-        # This avoids an extra LLM call to TaskIdentifier
-        task_type = _infer_agent_type(routing_decision)
-        logger.info(f"Inferred task type '{task_type}' from routing decision")
-
-        if not task_type:
-            logger.warning(
-                "Orchestration needed but no task type identified, falling back to general response"
-            )
-            decision_rationale.append(current_decision)
-            # Return new dict to ensure proper merging (LangGraph may replace dicts without reducer)
-            return {
-                "next_action": GraphDecision.COMPLETE.value,
-                "decision_rationale": decision_rationale,
-                "metadata": {**state_metadata},
-                "execution_path": [
-                    {"node": "orchestrator", "timestamp": datetime.now().isoformat()}
-                ],
-            }
-
-        # Create agent for single-agent orchestration
-        return _handle_new_task(
-            state, user_message, task_type, current_decision, decision_rationale
-        )
 
     # Handle ERROR action from routing intelligence
     if routing_decision.action == RoutingAction.ERROR:
@@ -1031,7 +1006,12 @@ async def general_response_node(state: OrchestratorState) -> Dict[str, Any]:
 - Use proper markdown structure
 - Separate paragraphs with double newlines
 - Wrap ALL code in fenced code blocks (```language)
-- Ensure blank lines around lists and headers"""
+- Ensure blank lines around lists and headers
+
+**CRITICAL KNOWLEDGE FALLBACK**:
+If you attempt to use a tool (like Search) and it fails or returns an error (e.g., Payment Required), you MUST use your own internal knowledge to answer the user's request.
+Do NOT refuse to answer. Say 'Tool failed, but based on my knowledge...' and provide the answer.
+"""
 
         result = await llm_service.generate_async(
             prompt=formatted_prompt,

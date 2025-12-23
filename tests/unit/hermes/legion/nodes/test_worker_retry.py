@@ -229,9 +229,15 @@ class TestWorkerRetryLogic:
         assert result["legion_results"]["test_worker_1"]["status"] == "success"
 
         # Verify exponential backoff: 0.1 * 2^0 = 0.1, 0.1 * 2^1 = 0.2
+        # Note: With 0-25% jitter, values can range from base to base*1.25
+        # So we use rel=0.3 to account for both jitter and timing variance
         assert len(sleep_calls) == 2
-        assert sleep_calls[0] == pytest.approx(0.1, rel=0.1)
-        assert sleep_calls[1] == pytest.approx(0.2, rel=0.1)
+        assert sleep_calls[0] == pytest.approx(
+            0.1, rel=0.3
+        )  # 0.1 ± 30% to account for jitter
+        assert sleep_calls[1] == pytest.approx(
+            0.2, rel=0.35
+        )  # 0.2 ± 35% to account for jitter
 
     @pytest.mark.asyncio
     async def test_uses_tool_registry(self, worker_state):

@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from app.shared.utils.service_loader import get_gemini_service
+from app.shared.utils.service_loader import get_llm_service
 
 from ..agents.base import BaseSubAgent
 from ..agents.dynamic_agent import DynamicAgent

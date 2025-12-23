@@ -1,7 +1,7 @@
 # Hermes Backend Makefile
 
 # Use 'venv' as the virtual environment directory name for consistency.
-VENV_DIR=venv
+VENV_DIR=.venv
 
 .PHONY: help install dev dev-ngrok test lint clean
 

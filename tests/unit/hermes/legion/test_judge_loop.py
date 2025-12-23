@@ -1,5 +1,5 @@
 from datetime import datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -13,13 +13,16 @@ from app.hermes.legion.state import (
 
 
 @pytest.fixture
-def mock_gemini_service():
-    with patch("app.hermes.legion.nodes.judge_node.get_gemini_service") as mock:
-        yield mock
+def mock_async_llm_service():
+    with patch("app.hermes.legion.nodes.judge_node.get_async_llm_service") as mock:
+        mock_instance = MagicMock()
+        mock_instance.generate_async = AsyncMock()
+        mock.return_value = mock_instance
+        yield mock_instance
 
 
 @pytest.mark.asyncio
-async def test_judge_node_approval(mock_gemini_service):
+async def test_judge_node_approval(mock_async_llm_service):
     """Test that the judge approves valid output."""
     # Setup state
     task_id = "task_1"
@@ -42,8 +45,8 @@ async def test_judge_node_approval(mock_gemini_service):
     }
 
     # Mock Gemini response for approval
-    mock_service_instance = mock_gemini_service.return_value
-    mock_service_instance.generate_gemini_response.return_value = """
+    mock_service_instance = mock_async_llm_service
+    mock_service_instance.generate_async.return_value = """
     {
         "is_clarification": false,
         "is_valid": true,
@@ -67,7 +70,7 @@ async def test_judge_node_approval(mock_gemini_service):
 
 
 @pytest.mark.asyncio
-async def test_judge_node_rejection_retry(mock_gemini_service):
+async def test_judge_node_rejection_retry(mock_async_llm_service):
     """Test that the judge rejects invalid output and triggers retry."""
     # Setup state
     task_id = "task_1"
@@ -91,8 +94,8 @@ async def test_judge_node_rejection_retry(mock_gemini_service):
     }
 
     # Mock Gemini response for rejection
-    mock_service_instance = mock_gemini_service.return_value
-    mock_service_instance.generate_gemini_response.return_value = """
+    mock_service_instance = mock_async_llm_service
+    mock_service_instance.generate_async.return_value = """
     {
         "is_clarification": false,
         "is_valid": false,
@@ -119,7 +122,7 @@ async def test_judge_node_rejection_retry(mock_gemini_service):
 
 
 @pytest.mark.asyncio
-async def test_judge_node_max_retries(mock_gemini_service):
+async def test_judge_node_max_retries(mock_async_llm_service):
     """Test that the judge accepts best effort after max retries."""
     # Setup state
     task_id = "task_1"
@@ -143,8 +146,8 @@ async def test_judge_node_max_retries(mock_gemini_service):
     }
 
     # Mock Gemini response for rejection
-    mock_service_instance = mock_gemini_service.return_value
-    mock_service_instance.generate_gemini_response.return_value = """
+    mock_service_instance = mock_async_llm_service
+    mock_service_instance.generate_async.return_value = """
     {
         "is_clarification": false,
         "is_valid": false,
@@ -167,7 +170,7 @@ async def test_judge_node_max_retries(mock_gemini_service):
 
 
 @pytest.mark.asyncio
-async def test_judge_node_clarification(mock_gemini_service):
+async def test_judge_node_clarification(mock_async_llm_service):
     """Test that the judge passes through clarification requests."""
     # Setup state
     task_id = "task_1"
@@ -190,8 +193,8 @@ async def test_judge_node_clarification(mock_gemini_service):
     }
 
     # Mock Gemini response for clarification
-    mock_service_instance = mock_gemini_service.return_value
-    mock_service_instance.generate_gemini_response.return_value = """
+    mock_service_instance = mock_async_llm_service
+    mock_service_instance.generate_async.return_value = """
     {
         "is_clarification": true,
         "is_valid": false,
@@ -211,7 +214,7 @@ async def test_judge_node_clarification(mock_gemini_service):
 
 
 @pytest.mark.asyncio
-async def test_judge_custom_strictness(mock_gemini_service):
+async def test_judge_custom_strictness(mock_async_llm_service):
     """Test that the judge respects custom strictness threshold."""
     # Setup state
     task_id = "task_1"
@@ -235,8 +238,8 @@ async def test_judge_custom_strictness(mock_gemini_service):
     }
 
     # Mock Gemini response with score 0.6 (would fail default 0.7, but pass 0.5)
-    mock_service_instance = mock_gemini_service.return_value
-    mock_service_instance.generate_gemini_response.return_value = """
+    mock_service_instance = mock_async_llm_service
+    mock_service_instance.generate_async.return_value = """
     {
         "is_clarification": false,
         "is_valid": true,
@@ -257,7 +260,7 @@ async def test_judge_custom_strictness(mock_gemini_service):
 
 
 @pytest.mark.asyncio
-async def test_judge_custom_persona(mock_gemini_service):
+async def test_judge_custom_persona(mock_async_llm_service):
     """Test that the judge uses the custom persona."""
     # Setup state
     task_id = "task_1"
@@ -281,8 +284,8 @@ async def test_judge_custom_persona(mock_gemini_service):
     }
 
     # Mock Gemini response
-    mock_service_instance = mock_gemini_service.return_value
-    mock_service_instance.generate_gemini_response.return_value = """
+    mock_service_instance = mock_async_llm_service
+    mock_service_instance.generate_async.return_value = """
     {
         "is_clarification": false,
         "is_valid": true,
@@ -296,5 +299,5 @@ async def test_judge_custom_persona(mock_gemini_service):
     await judge_node(state)
 
     # Verify call arguments
-    call_args = mock_service_instance.generate_gemini_response.call_args
+    call_args = mock_service_instance.generate_async.call_args
     assert call_args.kwargs["persona"] == "poet_laureate"

@@ -6,15 +6,25 @@ and integration with external systems.
 """
 
 from .CloudStorageService import CloudStorageService
-from .GeminiService import GeminiService
 
 # Import services to make them available when importing from app.services
 from .IdentityService import IdentityService
+from .LLMService import (  # Backward compat aliases
+    GeminiService,
+    GeminiServiceError,
+    LLMService,
+    LLMServiceError,
+    PersonaConfig,
+)
 from .TTSService import TTSService
 
 __all__ = [
     "IdentityService",
     "CloudStorageService",
-    "GeminiService",
+    "LLMService",
+    "LLMServiceError",
+    "PersonaConfig",
+    "GeminiService",  # Backward compat alias
+    "GeminiServiceError",  # Backward compat alias
     "TTSService",
 ]

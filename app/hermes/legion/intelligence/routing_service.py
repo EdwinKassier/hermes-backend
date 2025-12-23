@@ -2,12 +2,24 @@
 RoutingIntelligence service implementation.
 
 LLM-powered routing analysis with no predefined categories.
+
+Now with structured output support for guaranteed schema compliance.
 """
 
 import asyncio
 import json
 import logging
+import os
 from typing import Any, Dict, List, Optional
+
+# LangChain imports for structured output
+try:
+    from langchain.chat_models import init_chat_model
+    from langchain_core.messages import HumanMessage
+
+    STRUCTURED_OUTPUT_AVAILABLE = True
+except ImportError:
+    STRUCTURED_OUTPUT_AVAILABLE = False
 
 from app.shared.utils.service_loader import get_async_llm_service
 
@@ -22,6 +34,9 @@ from .routing_intelligence import (
 
 logger = logging.getLogger(__name__)
 
+# Configuration for structured output (can be overridden via environment)
+USE_STRUCTURED_OUTPUT = os.getenv("USE_STRUCTURED_OUTPUT", "true").lower() == "true"
+
 
 class RoutingIntelligence:
     """
@@ -29,10 +44,26 @@ class RoutingIntelligence:
 
     Analyzes messages and conversation context to determine the best
     routing action, providing rich reasoning about decisions.
+
+    Features:
+    - Structured output: Uses with_structured_output() for guaranteed schema compliance
+    - Graceful fallback: Falls back to JSON parsing if structured output fails
+    - Rich context: Provides detailed reasoning for routing decisions
     """
 
-    def __init__(self):
+    def __init__(self, use_structured_output: bool = USE_STRUCTURED_OUTPUT):
         self.llm_service = get_async_llm_service()
+        self.use_structured_output = (
+            use_structured_output and STRUCTURED_OUTPUT_AVAILABLE
+        )
+        self._structured_model = None  # Cached structured output model
+
+        if self.use_structured_output:
+            logger.info(
+                "RoutingIntelligence initialized with structured output support"
+            )
+        else:
+            logger.info("RoutingIntelligence using JSON extraction fallback")
 
     async def analyze(
         self,
@@ -185,6 +216,22 @@ When is_answer_refinement is true:
 Be thoughtful and context-aware. The same words can mean different things in different contexts. **Prioritize intelligent inference to create fluid, natural conversations.**"""
 
         try:
+            # Try structured output first if available (guaranteed schema compliance)
+            if self.use_structured_output:
+                try:
+                    decision = await self._analyze_with_structured_output(prompt)
+                    logger.info(
+                        f"Routing decision (structured): {decision.action} "
+                        f"(type: '{decision.conversation_type}', "
+                        f"confidence: {decision.confidence:.2f})"
+                    )
+                    return decision
+                except Exception as structured_error:
+                    logger.warning(
+                        f"Structured output failed, falling back to JSON: {structured_error}"
+                    )
+
+            # Fallback: Use AsyncLLMService with JSON extraction
             response = await self.llm_service.generate_async(
                 prompt, persona=get_current_legion_persona()
             )
@@ -229,7 +276,7 @@ Be thoughtful and context-aware. The same words can mean different things in dif
             )
 
             logger.info(
-                f"Routing decision: {decision.action} "
+                f"Routing decision (JSON): {decision.action} "
                 f"(type: '{decision.conversation_type}', "
                 f"confidence: {decision.confidence:.2f})"
             )
@@ -261,6 +308,47 @@ Be thoughtful and context-aware. The same words can mean different things in dif
                 user_goal="unknown",
                 conversation_phase=ConversationPhase.INITIATING,
             )
+
+    async def _analyze_with_structured_output(self, prompt: str) -> RoutingDecision:
+        """
+        Analyze using LangChain's structured output for guaranteed schema compliance.
+
+        Uses with_structured_output() to ensure the LLM response matches the
+        RoutingDecision Pydantic model exactly. This eliminates JSON parsing errors
+        and provides type-safe routing decisions.
+
+        Args:
+            prompt: The analysis prompt to send to the LLM
+
+        Returns:
+            RoutingDecision validated by Pydantic
+
+        Raises:
+            Exception if structured output fails (caller should fall back to JSON)
+        """
+        import os
+
+        # Get or create the structured model (cached for performance)
+        if self._structured_model is None:
+            model_name = os.getenv("LLM_MODEL", "gemini-2.5-flash")
+            base_model = init_chat_model(
+                model_name,
+                temperature=0.3,
+                max_retries=2,
+            )
+            self._structured_model = base_model.with_structured_output(RoutingDecision)
+            logger.info(
+                f"Created structured output model for RoutingDecision ({model_name})"
+            )
+
+        # Use ainvoke for async structured output
+        import asyncio
+
+        decision = await asyncio.to_thread(
+            self._structured_model.invoke, [HumanMessage(content=prompt)]
+        )
+
+        return decision
 
     def _build_context(
         self,

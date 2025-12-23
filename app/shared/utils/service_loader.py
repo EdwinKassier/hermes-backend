@@ -4,7 +4,7 @@ from typing import Optional
 
 from app.shared.services.AsyncLLMService import AsyncLLMService
 from app.shared.services.CloudStorageService import CloudStorageService
-from app.shared.services.GeminiService import GeminiService
+from app.shared.services.LLMService import LLMService
 from app.shared.services.TTSService import TTSService
 
 # Set credentials path only if file exists (for local development)
@@ -29,9 +29,9 @@ EL_API_KEY = os.getenv("EL_API_KEY")  # ElevenLabs API key
 
 
 @lru_cache(maxsize=1)
-def get_gemini_service():
-    """Lazy load and cache the GeminiService instance."""
-    service = GeminiService()
+def get_llm_service():
+    """Lazy load and cache the LLMService instance."""
+    service = LLMService()
 
     # Register Legion personas with the service
     try:
@@ -42,7 +42,7 @@ def get_gemini_service():
         import logging
 
         logging.info(
-            f"Successfully registered {len(legion_personas)} Legion personas with GeminiService"
+            f"Successfully registered {len(legion_personas)} Legion personas with LLMService"
         )
     except Exception as e:
         # Log error but don't fail if Legion personas can't be loaded
@@ -56,18 +56,22 @@ def get_gemini_service():
     return service
 
 
+# Backward compatibility alias
+get_gemini_service = get_llm_service
+
+
 @lru_cache(maxsize=1)
 def get_async_llm_service() -> AsyncLLMService:
     """
     Lazy load and cache the AsyncLLMService instance.
 
-    This wraps the synchronous GeminiService in an async interface
+    This wraps the synchronous LLMService in an async interface
     to prevent blocking the event loop in async contexts.
 
     Returns:
-        AsyncLLMService instance wrapping the cached GeminiService
+        AsyncLLMService instance wrapping the cached LLMService
     """
-    return AsyncLLMService(gemini_service=get_gemini_service())
+    return AsyncLLMService(llm_service=get_llm_service())
 
 
 @lru_cache(maxsize=1)

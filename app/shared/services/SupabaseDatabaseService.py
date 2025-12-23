@@ -143,7 +143,7 @@ class SupabaseDatabaseService:
         Returns:
             Formatted results
         """
-        from app.shared.services.GeminiService import GeminiService
+        from app.shared.services.LLMService import LLMService
 
         # Get available tables
         tables = await self._get_table_list()
@@ -185,9 +185,9 @@ Examples:
 
 Return ONLY the JSON object, nothing else."""
 
-        gemini = GeminiService()
+        llm_service = LLMService()
         llm_response = await asyncio.create_task(
-            asyncio.to_thread(gemini.generate_gemini_response, prompt, "hermes")
+            asyncio.to_thread(llm_service.generate_gemini_response, prompt, "hermes")
         )
 
         # Parse LLM response

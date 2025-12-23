@@ -4,7 +4,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from app.hermes.legion.models import RequiredInfoField
-from app.shared.utils.service_loader import get_gemini_service
+from app.shared.utils.service_loader import get_async_llm_service, get_gemini_service
 
 from ..utils.persona_context import get_current_legion_persona
 
@@ -17,6 +17,7 @@ class InformationExtractor:
     def __init__(self):
         """Initialize information extractor."""
         self._gemini_service = None
+        self._async_llm_service = None
 
     @property
     def gemini_service(self):
@@ -24,6 +25,13 @@ class InformationExtractor:
         if self._gemini_service is None:
             self._gemini_service = get_gemini_service()
         return self._gemini_service
+
+    @property
+    def async_llm_service(self):
+        """Lazy load async LLM service."""
+        if self._async_llm_service is None:
+            self._async_llm_service = get_async_llm_service()
+        return self._async_llm_service
 
     def extract_information(
         self,
@@ -175,4 +183,142 @@ Return a value for EVERY field - use null only as last resort."""
             return {k: v for k, v in inferred.items() if v is not None}
         except Exception as e:
             logger.error(f"Default inference failed: {e}")
+            return {}
+
+    async def extract_information_async(
+        self,
+        user_message: str,
+        required_info: Dict[str, RequiredInfoField],
+        conversation_history: Optional[List[Dict[str, str]]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Async version of extract_information using native async LLM calls.
+
+        Args:
+            user_message: User's message
+            required_info: Dictionary of required information fields
+            conversation_history: Optional conversation history for context
+
+        Returns:
+            Dictionary of extracted information
+        """
+        if not required_info:
+            return {}
+
+        # Build extraction prompt (same as sync version)
+        fields_description = "\n".join(
+            [
+                f"- {field.field_name} ({field.field_type}): {field.question}"
+                for field in required_info.values()
+            ]
+        )
+
+        history_text = ""
+        if conversation_history:
+            history_text = "\n".join(
+                [
+                    f"{msg.get('role', 'user')}: {msg.get('content', '')}"
+                    for msg in conversation_history[-5:]
+                ]
+            )
+            history_text = f"Previous conversation:\n{history_text}\n\n"
+
+        prompt = f"""{history_text}Extract the following information from the user's message:
+
+Required fields:
+{fields_description}
+
+User message: "{user_message}"
+
+For each field, extract the value if mentioned, otherwise return null.
+Respond in JSON format: {{"field_name": "value or null", ...}}"""
+
+        try:
+            response = await self.async_llm_service.generate_async(
+                prompt, persona=get_current_legion_persona()
+            )
+            from app.hermes.legion.utils.llm_utils import extract_json_from_llm_response
+
+            extracted = extract_json_from_llm_response(response)
+            return {k: v for k, v in extracted.items() if v is not None}
+        except Exception as e:
+            logger.error(f"Async information extraction failed: {e}")
+            return {}
+
+    async def infer_defaults_async(
+        self,
+        required_info: Dict[str, RequiredInfoField],
+        task_description: str,
+        conversation_history: Optional[List[Dict[str, str]]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Async version of infer_defaults using native async LLM calls.
+
+        Args:
+            required_info: Dictionary of required information fields
+            task_description: The task being performed
+            conversation_history: Optional conversation history for context
+
+        Returns:
+            Dictionary of inferred default values
+        """
+        if not required_info:
+            return {}
+
+        fields_description = "\n".join(
+            [
+                f"- {field.field_name} ({field.field_type}): {field.question}"
+                for field in required_info.values()
+            ]
+        )
+
+        history_text = ""
+        if conversation_history:
+            history_text = "\n".join(
+                [
+                    f"{msg.get('role', 'user')}: {msg.get('content', '')}"
+                    for msg in conversation_history[-5:]
+                ]
+            )
+            history_text = f"Previous conversation:\n{history_text}\n\n"
+
+        prompt = f"""{history_text}You are an intelligent inference system. Infer reasonable defaults for missing information.
+
+Task: "{task_description}"
+
+Missing fields that need reasonable defaults:
+{fields_description}
+
+**Your Philosophy:**
+- ALWAYS prefer making a reasonable inference over returning null
+- Use context clues from the task and conversation to inform your defaults
+- When multiple options are valid, pick the most commonly useful one
+- Only return null if there is genuinely no reasonable default
+
+**Common Inference Rules:**
+- time_period: "trends" = last 6 months, "history" = comprehensive, otherwise = recent
+- programming_language: Default to Python unless context suggests otherwise
+- depth/scope: Infer from query complexity - simple queries = concise, complex = comprehensive
+- format: Default to the most commonly expected format for the task type
+- count/quantity: Default to a reasonable number (e.g., "top 5", "recent 10")
+
+Respond with ONLY valid JSON: {{"field_name": "inferred_value", ...}}
+Return a value for EVERY field - use null only as last resort."""
+
+        try:
+            response = await self.async_llm_service.generate_async(
+                prompt, persona=get_current_legion_persona()
+            )
+            from app.hermes.legion.utils.llm_utils import extract_json_from_llm_response
+
+            inferred = extract_json_from_llm_response(response)
+
+            if inferred:
+                logger.info(
+                    f"Async inferred defaults for missing fields: {list(inferred.keys())}"
+                )
+
+            return {k: v for k, v in inferred.items() if v is not None}
+        except Exception as e:
+            logger.error(f"Async default inference failed: {e}")
             return {}

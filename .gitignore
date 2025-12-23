@@ -63,6 +63,7 @@ junit.xml
 test-results.xml
 performance-results/
 benchmark-results/
+benchmarks/reports/
 test-artifacts/
 test-fixtures/
 test-data/

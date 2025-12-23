@@ -75,7 +75,7 @@ class LegionGraphService:
             "orchestration_structure": self._get_orchestration_structure(
                 analysis, decisions
             ),
-            "agents": self._get_agents_explanation(agents_used, result),  # noqa: F821
+            "agents": self._get_agents_explanation(agents_used, None),
             "toolsets": self._get_toolsets_explanation(tools_used, agents_used),
         }
 

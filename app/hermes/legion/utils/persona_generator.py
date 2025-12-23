@@ -1,127 +1,30 @@
 """Persona generation service for Legion workers."""
 
-import asyncio
 import logging
+from functools import lru_cache
 from typing import TYPE_CHECKING, Dict, List, Optional
 
-from app.shared.utils.service_loader import get_async_llm_service
-
-from .persona_selector import PersonaSelector
-from .persona_validator import PersonaInputValidator
-
 if TYPE_CHECKING:
-    from app.shared.services.GeminiService import PersonaConfig
+    from app.shared.services.LLMService import PersonaConfig
 
 logger = logging.getLogger(__name__)
-
-
-class LegionPersonaGenerator:
-    """Generates appropriate personas for Legion workers."""
-
-    def __init__(self):
-        self.llm_service = get_async_llm_service()
-        # Template store removed - using dynamic personas only
-        self.template_store = None
-        self.selector = PersonaSelector()
-        self.validator = PersonaInputValidator()
-
-    async def generate_persona_for_worker(
-        self, role: str, task_description: str, context: Optional[Dict] = None
-    ) -> str:
-        """Generate a unique persona for a worker based on role and task."""
-        try:
-            # Input validation
-            validated_role = self.validator.validate_role(role)
-            validated_task = self.validator.validate_task_description(task_description)
-
-            # Normalize role to match our templates
-            normalized_role = self._normalize_role(validated_role)
-
-            # Template-based personas removed - using dynamic generation only
-            # Always fall back to basic persona generation
-
-            # For unknown roles, generate a basic persona
-            basic_persona = f"{normalized_role}_specialist"
-            logger.debug(
-                f"Generated basic persona '{basic_persona}' for unknown role '{validated_role}'"
-            )
-            return basic_persona
-
-        except Exception as e:
-            logger.error(f"Error generating persona for role '{role}': {e}")
-            # Structured error with fallback
-            try:
-                fallback_role = self._normalize_role(self.validator.validate_role(role))
-                fallback_persona = f"{fallback_role}_specialist"
-            except Exception:
-                fallback_persona = "general_specialist"
-            logger.warning(f"Using fallback persona: {fallback_persona}")
-            return fallback_persona
-
-    def _normalize_role(self, role: str) -> str:
-        """Normalize role names - legacy function, personas now handled by dynamic agents."""
-        # Dynamic agent system handles personas directly in agent configurations
-        return role.lower().replace(" ", "_").replace("-", "_")
-
-    async def generate_personas_for_workers(
-        self, workers: List[Dict], context: Optional[Dict] = None
-    ) -> List[Dict]:
-        """Generate personas for a list of workers with parallel processing."""
-        if not workers:
-            return []
-
-        # Create tasks for parallel execution to avoid N+1 queries
-        tasks = [
-            self.generate_persona_for_worker(
-                role=worker.get("role", "general"),
-                task_description=worker.get("task_description", ""),
-                context=context,
-            )
-            for worker in workers
-        ]
-
-        # Execute all persona generations in parallel
-        persona_results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        # Process results and handle any exceptions
-        updated_workers = []
-        for worker, persona_result in zip(workers, persona_results):
-            if isinstance(persona_result, Exception):
-                # Handle generation failure gracefully
-                logger.error(
-                    f"Failed to generate persona for worker {worker.get('worker_id', 'unknown')}: {persona_result}"
-                )
-                # Use fallback persona based on role
-                fallback_persona = (
-                    f"{self._normalize_role(worker.get('role', 'general'))}_specialist"
-                )
-                persona = fallback_persona
-            else:
-                persona = persona_result
-
-            # Create updated worker with persona
-            worker_copy = worker.copy()
-            worker_copy["persona"] = persona
-            updated_workers.append(worker_copy)
-
-        logger.info(
-            f"Generated personas for {len(updated_workers)} workers (parallel processing)"
-        )
-        return updated_workers
 
 
 class LegionPersonaProvider:
     """Provides Legion-specific personas to services that need them."""
 
     @staticmethod
+    @lru_cache(maxsize=1)
     def get_legion_personas() -> Dict[str, "PersonaConfig"]:
         """
         Get all Legion-generated personas.
 
+        Cached to avoid recreating PersonaConfig objects on every call.
+
         Returns:
             Dictionary of persona name to PersonaConfig objects
         """
-        from app.shared.services.GeminiService import PersonaConfig
+        from app.shared.services.LLMService import PersonaConfig
 
         legion_personas_data = {
             # Research personas

@@ -3,7 +3,7 @@
 import logging
 from typing import Any, Dict, List, Optional
 
-from app.shared.utils.service_loader import get_gemini_service
+from app.shared.utils.service_loader import get_async_llm_service, get_gemini_service
 
 from .dynamic_agent import DynamicAgent
 
@@ -17,10 +17,29 @@ class TaskAgentPlanner:
     This is the core of the flexible agent system - it can analyze any task and
     determine what types of agents (research, coding, analysis, etc.) are needed,
     then creates them dynamically without any hardcoded logic.
+
+    Supports both sync and async LLM calls:
+    - Use analyze_task_and_plan_agents() for sync contexts
+    - Use analyze_task_and_plan_agents_async() for async contexts (recommended)
     """
 
     def __init__(self):
-        self.gemini_service = get_gemini_service()
+        self._gemini_service = None
+        self._async_llm_service = None
+
+    @property
+    def gemini_service(self):
+        """Lazy load sync LLM service."""
+        if self._gemini_service is None:
+            self._gemini_service = get_gemini_service()
+        return self._gemini_service
+
+    @property
+    def async_llm_service(self):
+        """Lazy load async LLM service."""
+        if self._async_llm_service is None:
+            self._async_llm_service = get_async_llm_service()
+        return self._async_llm_service
 
     def analyze_task_and_plan_agents(
         self,
@@ -69,6 +88,10 @@ For each agent, you must define:
 - capabilities: Specific skills, tools, and expertise areas
 - prompts: Complete prompt templates for identify_required_info and execute_task
 - persona: Appropriate AI persona for this agent
+
+CRITICAL REQUIREMENT: In the 'execute_task' prompt for each agent, you MUST include instructions for a 'Knowledge Fallback Strategy'.
+If tools fail, are unavailable, or return no results, the agent MUST use its own internal knowledge to answer the user's request as best as possible.
+It should NOT refuse to answer or say 'I cannot do that because the tool failed'. It should say 'Tool [name] failed, but based on my knowledge...' and provide the answer.
 
 Response Format (JSON):
 {{
@@ -135,6 +158,127 @@ Analyze the task and create completely custom agent types as needed."""
 
         except Exception as e:
             logger.error(f"Failed to analyze task and plan agents: {e}")
+            return self._create_fallback_plan(task_description)
+
+    async def analyze_task_and_plan_agents_async(
+        self,
+        task_description: str,
+        user_context: Optional[str] = None,
+        complexity_estimate: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Async version of analyze_task_and_plan_agents for use in async contexts.
+
+        This uses AsyncLLMService to prevent blocking the event loop.
+
+        Args:
+            task_description: The task to analyze
+            user_context: Additional context about the user or requirements
+            complexity_estimate: Estimated complexity (simple, moderate, complex)
+
+        Returns:
+            Dictionary containing agent plan with configurations
+        """
+        analysis_prompt = f"""Analyze this task and determine what types of AI agents are needed to complete it effectively.
+
+Task: "{task_description}"
+{f'User Context: {user_context}' if user_context else ''}
+{f'Complexity Estimate: {complexity_estimate}' if complexity_estimate else ''}
+
+Your goal is to create a dynamic team of AI agents that will work together to solve this task. Each agent should have:
+- A specific role/purpose
+- Required capabilities and expertise
+- Appropriate tools and approaches
+
+You have the ability to create ANY type of agent dynamically. Analyze the task and determine what specialized agents are needed, then define each agent's complete configuration from scratch.
+
+Consider:
+1. What specific skills/knowledge areas does this task require?
+2. Should work be divided among different specialists?
+3. What would be the most effective combination of agents?
+4. Are there dependencies between different parts of the work?
+5. What unique agent types need to be invented for this task?
+
+For each agent, you must define:
+- agent_id: A human-readable name like "Research Specialist" or "Technical Writer" (avoid camelCase)
+- agent_type: A descriptive role name like "quantum_computing_researcher" or "technical_explanation_specialist"
+- task_types: What types of tasks this agent handles
+- capabilities: Specific skills, tools, and expertise areas
+- prompts: Complete prompt templates for identify_required_info and execute_task
+- persona: Appropriate AI persona for this agent
+
+CRITICAL REQUIREMENT: In the 'execute_task' prompt for each agent, you MUST include instructions for a 'Knowledge Fallback Strategy'.
+If tools fail, are unavailable, or return no results, the agent MUST use its own internal knowledge to answer the user's request as best as possible.
+It should NOT refuse to answer or say 'I cannot do that because the tool failed'. It should say 'Tool [name] failed, but based on my knowledge...' and provide the answer.
+
+Response Format (JSON):
+{{
+  "task_analysis": {{
+    "primary_domain": "main area of expertise needed",
+    "required_skills": ["skill1", "skill2"],
+    "complexity_level": "simple|moderate|complex",
+    "parallel_work_needed": true|false,
+    "estimated_steps": 3-8
+  }},
+  "agent_plan": [
+    {{
+      "agent_id": "Research Specialist",
+      "agent_type": "quantum_computing_research_specialist",
+      "task_types": ["task_type1", "task_type2"],
+      "capabilities": {{
+        "primary_focus": "main responsibility area",
+        "tools_needed": ["tool1", "tool2", "tool3"],
+        "expertise_level": "beginner|intermediate|expert",
+        "specializations": ["specific_area1", "specific_area2"],
+        "knowledge_domains": ["domain1", "domain2"]
+      }},
+      "prompts": {{
+        "identify_required_info": "Complete prompt template for gathering requirements...",
+        "execute_task": "Complete prompt template for task execution..."
+      }},
+      "persona": "appropriate_persona_name",
+      "task_portion": "what part of the overall task this agent handles",
+      "dependencies": ["other_agent_ids_this_depends_on"]
+    }}
+  ],
+  "execution_strategy": {{
+    "parallel_execution": true|false,
+    "sequential_dependencies": true|false,
+    "coordination_needed": true|false
+  }},
+  "rationale": "why this combination of agents was chosen"
+}}
+
+Analyze the task and create completely custom agent types as needed."""
+
+        try:
+            # Use async LLM service for non-blocking call
+            response = await self.async_llm_service.generate_async(
+                prompt=analysis_prompt, persona="hermes"
+            )
+
+            # Extract JSON from response
+            import json
+            import re
+
+            json_match = re.search(r"\{.*\}", response, re.DOTALL)
+            if json_match:
+                plan = json.loads(json_match.group(0))
+
+                # Validate the plan structure
+                if self._validate_agent_plan(plan):
+                    logger.info(
+                        f"Generated agent plan (async) with {len(plan.get('agent_plan', []))} agents"
+                    )
+                    return plan
+                else:
+                    logger.warning(
+                        "Invalid agent plan structure (async), using fallback"
+                    )
+                    return self._create_fallback_plan(task_description)
+
+        except Exception as e:
+            logger.error(f"Failed to analyze task and plan agents (async): {e}")
             return self._create_fallback_plan(task_description)
 
     def create_worker_plan_from_analysis(

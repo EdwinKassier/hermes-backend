@@ -14,11 +14,11 @@ env:
   ARTIFACT_REGISTRY_REPO_NAME: ashes
   # Resource configuration (optimized for I/O-bound TTS operations)
   # Increased CPU for better parallelism, reduced memory for cost efficiency
-  CPU_COUNT: 4
-  MEMORY_LIMIT: 2Gi
+  CPU_COUNT: 2
+  MEMORY_LIMIT: 8Gi
   MIN_INSTANCES: 1  # Keep warm to avoid Redis startup latency
   MAX_INSTANCES: 1  # Increased for better burst handling
-  CONCURRENCY: 2   # Increased for better throughput
+  CONCURRENCY: 2   # IncƒCreased for better throughput
   REQUEST_TIMEOUT: 120s  # Reduced timeout (TTS operations are fast)
 
 jobs:

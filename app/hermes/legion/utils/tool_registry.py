@@ -7,6 +7,7 @@ This improves performance and ensures consistent tool behavior.
 """
 
 import logging
+import threading
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,8 @@ class ToolRegistry:
     to re-instantiate tools in each worker. This is particularly useful
     for Legion workers that receive tool names via the Send API.
 
+    Thread-safe: Uses a lock to prevent race conditions during initialization.
+
     Usage:
         registry = ToolRegistry.get_instance()
         tools = registry.get_tools(["web_search", "database_query"])
@@ -27,25 +30,45 @@ class ToolRegistry:
 
     _instance: Optional["ToolRegistry"] = None
     _initialized: bool = False
+    _lock: threading.Lock = threading.Lock()
+
+    # Circuit breaker settings
+    DEGRADATION_TIMEOUT_SECONDS = 300  # 5 minutes
+    MAX_TRANSIENT_ERRORS = 3
 
     def __init__(self):
         """Initialize the tool registry."""
         self._tools: Dict[str, Any] = {}
         self._gemini_service = None
 
+        # Tool health tracking
+        self._degraded_tools: Dict[str, float] = (
+            {}
+        )  # name -> timestamp when it can recover
+        self._transient_errors: Dict[str, int] = {}  # name -> error count
+        self._health_lock: threading.Lock = threading.Lock()
+
     @classmethod
     def get_instance(cls) -> "ToolRegistry":
         """
         Get the singleton instance of ToolRegistry.
 
+        Thread-safe: Uses double-checked locking pattern for efficiency.
+
         Returns:
             ToolRegistry singleton instance
         """
-        if cls._instance is None:
-            cls._instance = cls()
-        if not cls._initialized:
-            cls._instance._initialize_tools()
-            cls._initialized = True
+        # Fast path: already initialized
+        if cls._initialized and cls._instance is not None:
+            return cls._instance
+
+        # Slow path: need initialization with lock
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = cls()
+            if not cls._initialized:
+                cls._instance._initialize_tools()
+                cls._initialized = True
         return cls._instance
 
     @classmethod
@@ -53,7 +76,7 @@ class ToolRegistry:
         """
         Reset the singleton instance.
 
-        Useful for testing or when tool configuration changes.
+        Useful for test isolation or when tool configuration changes.
         """
         cls._instance = None
         cls._initialized = False
@@ -184,6 +207,68 @@ class ToolRegistry:
             logger.info(f"Unregistered tool: {tool_name}")
             return True
         return False
+
+    def is_tool_healthy(self, tool_name: str) -> bool:
+        """
+        Check if a tool is currently healthy (not degraded).
+
+        Returns True if tool is healthy, False if degraded.
+        Auto-recovers if timeout has passed.
+        """
+        with self._health_lock:
+            # Check if degraded
+            if tool_name in self._degraded_tools:
+                recovery_time = self._degraded_tools[tool_name]
+                import time
+
+                if time.time() > recovery_time:
+                    # Auto-recover
+                    del self._degraded_tools[tool_name]
+                    if tool_name in self._transient_errors:
+                        del self._transient_errors[tool_name]
+                    logger.info(
+                        f"Tool '{tool_name}' has auto-recovered from degradation."
+                    )
+                    return True
+                else:
+                    return False
+            return True
+
+    def mark_tool_failed(self, tool_name: str, error_msg: str) -> None:
+        """
+        Record a failure for a tool. May trigger degradation.
+
+        Args:
+            tool_name: Name of the failed tool
+            error_msg: Error message for logging
+        """
+        import time
+
+        with self._health_lock:
+            current_errors = self._transient_errors.get(tool_name, 0) + 1
+            self._transient_errors[tool_name] = current_errors
+
+            if current_errors >= self.MAX_TRANSIENT_ERRORS:
+                # Trigger degradation
+                recovery_time = time.time() + self.DEGRADATION_TIMEOUT_SECONDS
+                self._degraded_tools[tool_name] = recovery_time
+                logger.warning(
+                    f"Tool '{tool_name}' marked as DEGRADED until {recovery_time}. "
+                    f"Reason: {self.MAX_TRANSIENT_ERRORS} failures. Last error: {error_msg}"
+                )
+            else:
+                logger.warning(
+                    f"Tool '{tool_name}' failed ({current_errors}/{self.MAX_TRANSIENT_ERRORS}). "
+                    f"Error: {error_msg}"
+                )
+
+    def mark_tool_success(self, tool_name: str) -> None:
+        """
+        Record a successful execution. Resets transient error count.
+        """
+        with self._health_lock:
+            if tool_name in self._transient_errors:
+                del self._transient_errors[tool_name]
 
 
 def get_tool_registry() -> ToolRegistry:

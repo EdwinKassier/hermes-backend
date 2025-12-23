@@ -12,7 +12,7 @@ import re
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from app.shared.utils.service_loader import get_gemini_service
+from app.shared.utils.service_loader import get_async_llm_service
 
 from ..state import GraphDecision, OrchestratorState, TaskInfo, TaskStatus
 
@@ -71,8 +71,8 @@ async def judge_node(state: OrchestratorState) -> Dict[str, Any]:
             ],
         }
 
-    # Get Gemini Service
-    gemini_service = get_gemini_service()
+    # Get Async LLM Service for non-blocking calls
+    async_llm_service = get_async_llm_service()
 
     # Get strictness and persona from metadata
     # ENHANCEMENT (Issue 1 & 2): Lowered default strictness from 0.7 to 0.5
@@ -118,13 +118,10 @@ Analyze the output and provide your judgment in JSON format.
         # Get user_id from state for proper Langfuse tracing linkage
         user_id = state.get("user_id")
 
-        # Call LLM
-        # Note: temperature parameter not supported in generate_gemini_response
-        # Persona config should handle temperature settings
-        response = gemini_service.generate_gemini_response(
+        # Call LLM asynchronously for non-blocking execution
+        response = await async_llm_service.generate_async(
             prompt=judge_prompt,
             persona=persona,  # Use configured persona
-            user_id=user_id,  # Pass user_id for Langfuse tracing
         )
 
         # Parse JSON

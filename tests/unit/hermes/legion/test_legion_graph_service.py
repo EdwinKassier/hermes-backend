@@ -28,7 +28,7 @@ def legion_graph_service():
             "app.hermes.legion.intelligence.routing_service.get_async_llm_service"
         ) as mock_get_llm,
         patch(
-            "app.hermes.legion.nodes.graph_nodes.get_gemini_service"
+            "app.hermes.legion.nodes.graph_nodes.get_llm_service"
         ) as mock_nodes_service,
         patch(
             "app.hermes.legion.nodes.graph_nodes.get_async_llm_service"

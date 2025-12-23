@@ -4,7 +4,7 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
-from app.shared.utils.service_loader import get_gemini_service
+from app.shared.utils.service_loader import get_async_llm_service, get_llm_service
 
 from ..models import RequiredInfoField, SubAgentState
 from .base import BaseSubAgent
@@ -75,7 +75,7 @@ class DynamicAgent(BaseSubAgent):
         what information (if any) is required.
         """
         try:
-            gemini_service = get_gemini_service()
+            llm_service = get_llm_service()
 
             # Get the analysis prompt template and fill it
             prompt_template = self._prompts["identify_required_info"]
@@ -92,7 +92,7 @@ class DynamicAgent(BaseSubAgent):
             persona = get_current_legion_persona() or self.persona
 
             # Call LLM directly - already wrapped in try/except with fail-open
-            response = gemini_service.generate_gemini_response(
+            response = llm_service.generate_gemini_response(
                 prompt=analysis_prompt,
                 persona=persona,
             )
@@ -200,7 +200,7 @@ class DynamicAgent(BaseSubAgent):
         """
         try:
             # Get GeminiService
-            gemini_service = get_gemini_service()
+            llm_service = get_llm_service()
 
             # Build execution prompt from template
             prompt_template = self._prompts["execute_task"]
@@ -242,7 +242,7 @@ Use these tools when they would enhance your performance."""
             persona = get_current_legion_persona() or self.persona
 
             result = circuit_breaker.call(
-                gemini_service.generate_gemini_response,
+                llm_service.generate_gemini_response,
                 prompt=execution_prompt,
                 persona=persona,
                 user_id=state.metadata.get("user_id", "default"),
@@ -252,4 +252,67 @@ Use these tools when they would enhance your performance."""
 
         except Exception as e:
             logger.error(f"Dynamic agent {self.agent_id} execution failed: %s", e)
+            raise
+
+    async def execute_task_async(self, state: SubAgentState) -> str:
+        """
+        Execute the task asynchronously using native async LLM calls.
+
+        This is the preferred method for async contexts (like LangGraph nodes)
+        as it avoids the overhead of run_in_executor.
+
+        Args:
+            state: SubAgentState with task and collected information
+
+        Returns:
+            Task result as a string
+        """
+        try:
+            # Get AsyncLLMService for native async calls
+            async_llm_service = get_async_llm_service()
+
+            # Build execution prompt from template
+            prompt_template = self._prompts["execute_task"]
+
+            # Prepare template variables
+            template_vars = {
+                "task": state.task,
+                "capabilities": json.dumps(self._capabilities, indent=2),
+                "collected_info": json.dumps(state.collected_info, indent=2),
+                "judge_feedback": state.judge_feedback or "",
+                "user_id": state.metadata.get("user_id", "default"),
+                **self._config,
+            }
+
+            # Add tool context if tools are available
+            if self._tools:
+                tool_names = [getattr(t, "name", str(t)) for t in self._tools]
+                template_vars[
+                    "tool_context"
+                ] = f"""
+**Available Tools**: You have access to the following tools:
+{', '.join(tool_names)}
+
+Use these tools when they would enhance your performance."""
+            else:
+                template_vars["tool_context"] = ""
+
+            # Format the prompt
+            execution_prompt = prompt_template.format(**template_vars)
+
+            # Use Legion persona context if available, otherwise fall back to agent persona
+            from ..utils.persona_context import get_current_legion_persona
+
+            persona = get_current_legion_persona() or self.persona
+
+            # Native async LLM call - no executor overhead
+            result = await async_llm_service.generate_async(
+                prompt=execution_prompt,
+                persona=persona,
+            )
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Dynamic agent {self.agent_id} async execution failed: %s", e)
             raise

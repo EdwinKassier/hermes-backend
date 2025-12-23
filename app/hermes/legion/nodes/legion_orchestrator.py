@@ -8,6 +8,7 @@ modes into a single, flexible system.
 
 import asyncio
 import logging
+import random
 from datetime import datetime
 from typing import Any, Dict, List, Optional, TypedDict
 
@@ -223,7 +224,6 @@ async def legion_orchestrator_node(state: OrchestratorState) -> Dict[str, Any]:
         "current_execution_level": 0,  # Start at level 0
         "total_execution_levels": total_levels,
         "level_results": {},  # Initialize per-level results storage
-        "fail_on_level_error": fail_on_level_error,
         "fail_on_level_error": fail_on_level_error,
         "metadata": {**state.get("metadata", {}), "legion_worker_plans": workers},
         "execution_path": [
@@ -536,8 +536,11 @@ async def legion_worker_node(state: LegionWorkerState) -> Dict[str, Any]:
         except (ValueError, RuntimeError, ConnectionError) as e:
             last_error = e
             if attempt < max_retries:
-                # Calculate exponential backoff delay
-                delay = retry_delay * (2**attempt)
+                # Calculate exponential backoff delay with jitter
+                # Jitter prevents thundering herd when multiple workers retry
+                base_delay = retry_delay * (2**attempt)
+                jitter = random.uniform(0, base_delay * 0.25)  # 0-25% jitter
+                delay = base_delay + jitter
                 logger.warning(
                     "Legion worker %s attempt %d/%d failed: %s. Retrying in %.1fs...",
                     worker_id,
@@ -675,7 +678,6 @@ async def legion_level_complete_node(state: OrchestratorState) -> Dict[str, Any]
                 "stopped_at_level": current_level,
                 "failed_workers": failed_workers,
                 "dispatched_worker_ids": dispatched_ids,
-                "dispatched_worker_ids": dispatched_ids,
             },
             "execution_path": [
                 {
@@ -700,7 +702,6 @@ async def legion_level_complete_node(state: OrchestratorState) -> Dict[str, Any]
                 **state.get("metadata", {}),
                 "dispatched_worker_ids": dispatched_ids,
                 "pending_workers_in_level": True,
-                "pending_workers_in_level": True,
             },
             "execution_path": [
                 {
@@ -719,7 +720,6 @@ async def legion_level_complete_node(state: OrchestratorState) -> Dict[str, Any]
         "metadata": {
             **state.get("metadata", {}),
             "dispatched_worker_ids": [],  # Reset for next level
-            "pending_workers_in_level": False,
             "pending_workers_in_level": False,
         },
         "execution_path": [

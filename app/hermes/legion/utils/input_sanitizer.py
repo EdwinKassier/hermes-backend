@@ -2,7 +2,7 @@
 
 import logging
 import re
-from typing import Optional
+from typing import Optional, Pattern
 
 logger = logging.getLogger(__name__)
 
@@ -10,21 +10,27 @@ logger = logging.getLogger(__name__)
 MAX_USER_MESSAGE_LENGTH = 10000  # 10K characters
 MAX_QUESTION_LENGTH = 5000  # 5K characters for questions
 
-# Patterns to detect and remove
-PROMPT_INJECTION_PATTERNS = [
-    r"```.*?```",  # Code blocks that might contain instructions
-    r"<\|.*?\|>",  # Special tokens
-    r"###\s*System:",  # System prompts
-    r"###\s*Assistant:",  # Assistant prompts
+# Pre-compiled patterns to detect and remove (compiled once at module load)
+PROMPT_INJECTION_PATTERNS: list[Pattern] = [
+    re.compile(r"```.*?```", re.DOTALL | re.IGNORECASE),  # Code blocks
+    re.compile(r"<\|.*?\|>", re.DOTALL | re.IGNORECASE),  # Special tokens
+    re.compile(r"###\s*System:", re.IGNORECASE),  # System prompts
+    re.compile(r"###\s*Assistant:", re.IGNORECASE),  # Assistant prompts
 ]
 
-# PII patterns for redaction in logs
-PII_PATTERNS = {
-    "ssn": (r"\b\d{3}-\d{2}-\d{4}\b", "[SSN]"),
-    "email": (r"\b[\w\.-]+@[\w\.-]+\.\w+\b", "[EMAIL]"),
-    "phone": (r"\b\d{3}[-.]?\d{3}[-.]?\d{4}\b", "[PHONE]"),
-    "credit_card": (r"\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b", "[CARD]"),
+# Pre-compiled PII patterns for redaction in logs
+PII_PATTERNS: dict[str, tuple[Pattern, str]] = {
+    "ssn": (re.compile(r"\b\d{3}-\d{2}-\d{4}\b"), "[SSN]"),
+    "email": (re.compile(r"\b[\w\.-]+@[\w\.-]+\.\w+\b"), "[EMAIL]"),
+    "phone": (re.compile(r"\b\d{3}[-.]?\d{3}[-.]?\d{4}\b"), "[PHONE]"),
+    "credit_card": (
+        re.compile(r"\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b"),
+        "[CARD]",
+    ),
 }
+
+# Pre-compiled pattern for whitespace normalization
+WHITESPACE_PATTERN = re.compile(r"\s+")
 
 
 def sanitize_user_input(text: str, max_length: int = MAX_USER_MESSAGE_LENGTH) -> str:
@@ -64,12 +70,12 @@ def sanitize_user_input(text: str, max_length: int = MAX_USER_MESSAGE_LENGTH) ->
         logger.warning(f"Input truncated from {len(text)} to {max_length} characters")
         text = text[:max_length]
 
-    # Remove potential prompt injection patterns
+    # Remove potential prompt injection patterns (using pre-compiled patterns)
     for pattern in PROMPT_INJECTION_PATTERNS:
-        text = re.sub(pattern, "", text, flags=re.DOTALL | re.IGNORECASE)
+        text = pattern.sub("", text)
 
-    # Remove excessive whitespace
-    text = re.sub(r"\s+", " ", text)
+    # Remove excessive whitespace (using pre-compiled pattern)
+    text = WHITESPACE_PATTERN.sub(" ", text)
     text = text.strip()
 
     if not text:
@@ -119,9 +125,9 @@ def redact_pii_for_logging(text: str, max_len: int = 200) -> str:
     if not isinstance(text, str):
         return str(text)[:max_len]
 
-    # Redact PII
+    # Redact PII (using pre-compiled patterns)
     for pii_type, (pattern, replacement) in PII_PATTERNS.items():
-        text = re.sub(pattern, replacement, text)
+        text = pattern.sub(replacement, text)
 
     # Truncate
     if len(text) > max_len:

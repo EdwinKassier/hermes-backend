@@ -31,6 +31,7 @@ class HermesService:
         """Initialize the Hermes service."""
         self._gemini_service = None
         self._tts_service = None
+        self._legion_service = None  # Cached LegionGraphService
         self._conversation_contexts = {}  # In-memory store (use Redis in production)
 
     @property
@@ -46,6 +47,15 @@ class HermesService:
         if self._tts_service is None:
             self._tts_service = get_tts_service()
         return self._tts_service
+
+    @property
+    def legion_service(self):
+        """Lazy load Legion graph service (cached to avoid re-init per request)."""
+        if self._legion_service is None:
+            from .legion.graph_service import LegionGraphService
+
+            self._legion_service = LegionGraphService()
+        return self._legion_service
 
     def process_request(
         self,
@@ -73,16 +83,13 @@ class HermesService:
             AIServiceError: If AI generation fails
             TTSServiceError: If TTS generation fails
         """
-        # Route to legion service if requested
+        # Route to legion service if requested (using cached instance)
         if legion_mode:
             try:
-                from .legion.graph_service import LegionGraphService
-
-                legion_service = LegionGraphService()
-                logger.info("Using Legion service type: langgraph")
+                logger.info("Using Legion service type: langgraph (cached)")
 
                 return asyncio.run(
-                    legion_service.process_request(
+                    self.legion_service.process_request(
                         text=text,
                         user_identity=user_identity,
                         response_mode=response_mode,
@@ -166,16 +173,13 @@ class HermesService:
             InvalidRequestError: If the message is invalid
             AIServiceError: If AI generation fails
         """
-        # Route to legion service if requested
+        # Route to legion service if requested (using cached instance)
         if legion_mode:
             try:
-                from .legion.graph_service import LegionGraphService
-
-                legion_service = LegionGraphService()
-                logger.info("Using Legion service type: langgraph")
+                logger.info("Using Legion service type: langgraph (cached)")
 
                 return asyncio.run(
-                    legion_service.chat(
+                    self.legion_service.chat(
                         message=message, user_identity=user_identity, persona="legion"
                     )
                 )
