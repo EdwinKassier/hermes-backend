@@ -11,14 +11,14 @@ import os
 import numpy as np
 import pytest
 
-from app.shared.services.GeminiService import GeminiService
+from app.shared.services.LLMService import LLMService
 
 logger = logging.getLogger(__name__)
 
 
 @pytest.fixture(scope="module")
 def gemini_service():
-    """Create GeminiService with real Supabase connection"""
+    """Create LLMService with real Supabase connection"""
     # Ensure environment variables are set
     # Handle both SUPABASE_URL and SUPABASE_PROJECT_URL
     supabase_url = os.environ.get("SUPABASE_URL") or os.environ.get(
@@ -38,11 +38,11 @@ def gemini_service():
         )
 
     try:
-        service = GeminiService()
+        service = LLMService()
         assert service.vector_store is not None, "Vector store not initialized"
         yield service
     except Exception as e:
-        pytest.skip(f"Failed to initialize GeminiService: {e}")
+        pytest.skip(f"Failed to initialize LLMService: {e}")
 
 
 @pytest.mark.integration
@@ -208,7 +208,7 @@ class TestRAGPipeline:
         query = "Where did Edwin Kassier study?"
         user_id = "test_user_rag"
 
-        response = gemini_service.generate_gemini_response(
+        response = gemini_service.generate_response(
             prompt=query, user_id=user_id, persona="hermes"
         )
 
@@ -247,7 +247,7 @@ class TestRAGPipeline:
         query = "What is the capital of Atlantis?"
         user_id = "test_user_no_context"
 
-        response = gemini_service.generate_gemini_response(
+        response = gemini_service.generate_response(
             prompt=query, user_id=user_id, persona="hermes"
         )
 
@@ -299,7 +299,7 @@ class TestRAGQuality:
     )
     def test_rag_answer_quality(self, gemini_service, query, expected_keywords):
         """Test that RAG responses contain relevant keywords"""
-        response = gemini_service.generate_gemini_response(
+        response = gemini_service.generate_response(
             prompt=query, user_id="test_quality", persona="hermes"
         )
 
@@ -323,7 +323,7 @@ class TestRAGQuality:
         """Test that RAG doesn't hallucinate obvious fake facts"""
         query = "What programming languages does Edwin Kassier know?"
 
-        response = gemini_service.generate_gemini_response(
+        response = gemini_service.generate_response(
             prompt=query, user_id="test_accuracy", persona="hermes"
         )
 
@@ -341,7 +341,7 @@ class TestRAGQuality:
         # Ask about something clearly not in Edwin's portfolio
         query = "What is Edwin Kassier's favorite ice cream flavor?"
 
-        response = gemini_service.generate_gemini_response(
+        response = gemini_service.generate_response(
             prompt=query, user_id="test_dont_know", persona="hermes"
         )
 

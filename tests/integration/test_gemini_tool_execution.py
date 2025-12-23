@@ -17,13 +17,13 @@ from datetime import datetime
 import pytest
 from google.api_core import exceptions as google_exceptions
 
-from app.shared.services.GeminiService import GeminiService, PersonaConfig
+from app.shared.services.LLMService import LLMService, PersonaConfig
 
 
 @pytest.mark.integration
 @pytest.mark.requires_api_key
 class TestGeminiToolExecution:
-    """Test GeminiService tool execution with real LLM responses."""
+    """Test LLMService tool execution with real LLM responses."""
 
     @pytest.fixture(autouse=True)
     def setup_test_environment(self):
@@ -35,7 +35,7 @@ class TestGeminiToolExecution:
             pytest.skip(f"Missing required environment variables: {missing_keys}")
 
         # Initialize service with test persona that has access to time tool
-        self.service = GeminiService()
+        self.service = LLMService()
 
         # Create a test persona with time tool access
         test_persona = PersonaConfig(
@@ -81,7 +81,7 @@ class TestGeminiToolExecution:
 
         # Get response from real LLM
         response = self._call_api_safely(
-            self.service.generate_gemini_response,
+            self.service.generate_response,
             prompt=test_prompt,
             persona="test_tool_execution",
         )
@@ -125,7 +125,7 @@ class TestGeminiToolExecution:
 
         for prompt in test_prompts:
             response = self._call_api_safely(
-                self.service.generate_gemini_response,
+                self.service.generate_response,
                 prompt=prompt,
                 persona="test_tool_execution",
             )
@@ -163,7 +163,7 @@ class TestGeminiToolExecution:
 
         # Test with a prompt that might request tools
         response = self._call_api_safely(
-            self.service.generate_gemini_response,
+            self.service.generate_response,
             prompt="What time is it?",
             persona="no_tools_persona",
         )
@@ -179,7 +179,7 @@ class TestGeminiToolExecution:
         # First, establish some context
         context_prompt = "Hi, I'm working on a project and need to track time."
         context_response = self._call_api_safely(
-            self.service.generate_gemini_response,
+            self.service.generate_response,
             prompt=context_prompt,
             persona="test_tool_execution",
         )
@@ -190,7 +190,7 @@ class TestGeminiToolExecution:
         # Then ask for time with context
         time_prompt = "What's the current time so I can log it?"
         time_response = self._call_api_safely(
-            self.service.generate_gemini_response,
+            self.service.generate_response,
             prompt=time_prompt,
             persona="test_tool_execution",
         )
@@ -216,7 +216,7 @@ class TestGeminiToolExecution:
         responses = []
         for prompt in prompts:
             response = self._call_api_safely(
-                self.service.generate_gemini_response,
+                self.service.generate_response,
                 prompt=prompt,
                 persona="test_tool_execution",
             )
@@ -246,7 +246,7 @@ class TestGeminiToolExecution:
         start_time = time.time()
 
         response = self._call_api_safely(
-            self.service.generate_gemini_response,
+            self.service.generate_response,
             prompt="What is the current time?",
             persona="test_tool_execution",
         )
@@ -291,7 +291,7 @@ class TestGeminiToolExecution:
 
         for persona in personas_to_test:
             response = self._call_api_safely(
-                self.service.generate_gemini_response,
+                self.service.generate_response,
                 prompt="What time is it?",
                 persona=persona,
             )
@@ -312,7 +312,7 @@ class TestGeminiToolExecution:
 
         # First, get a successful response
         response1 = self._call_api_safely(
-            self.service.generate_gemini_response,
+            self.service.generate_response,
             prompt="What time is it?",
             persona="test_tool_execution",
         )
@@ -322,7 +322,7 @@ class TestGeminiToolExecution:
 
         # Then try another request to ensure service is still working
         response2 = self._call_api_safely(
-            self.service.generate_gemini_response,
+            self.service.generate_response,
             prompt="Can you tell me the current time again?",
             persona="test_tool_execution",
         )
@@ -343,7 +343,7 @@ class TestGeminiToolExecution:
 @pytest.mark.integration
 @pytest.mark.requires_api_key
 class TestGeminiToolExecutionEdgeCases:
-    """Test edge cases for GeminiService tool execution."""
+    """Test edge cases for LLMService tool execution."""
 
     @pytest.fixture(autouse=True)
     def setup_test_environment(self):
@@ -351,7 +351,7 @@ class TestGeminiToolExecutionEdgeCases:
         if not os.environ.get("GOOGLE_API_KEY"):
             pytest.skip("GOOGLE_API_KEY not available")
 
-        self.service = GeminiService()
+        self.service = LLMService()
 
     def _call_api_safely(self, func, *args, **kwargs):
         """Helper method to call API methods with error handling."""
@@ -388,7 +388,7 @@ class TestGeminiToolExecutionEdgeCases:
 
         # Test with minimal prompt
         response = self._call_api_safely(
-            self.service.generate_gemini_response,
+            self.service.generate_response,
             prompt="time",
             persona="edge_case_persona",
         )
@@ -414,7 +414,7 @@ class TestGeminiToolExecutionEdgeCases:
         )
 
         response = self._call_api_safely(
-            self.service.generate_gemini_response,
+            self.service.generate_response,
             prompt=long_prompt,
             persona="long_prompt_persona",
         )
@@ -443,7 +443,7 @@ class TestGeminiToolExecutionEdgeCases:
 
         for prompt in special_prompts:
             response = self._call_api_safely(
-                self.service.generate_gemini_response,
+                self.service.generate_response,
                 prompt=prompt,
                 persona="special_chars_persona",
             )
