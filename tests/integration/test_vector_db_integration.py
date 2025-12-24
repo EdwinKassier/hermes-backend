@@ -315,11 +315,11 @@ class TestRAGQuality:
         # Don't fail the test - just log warning
         # RAG might still give a valid answer without exact keywords
 
-    def test_rag_factual_accuracy(self, gemini_service):
+    def test_rag_factual_accuracy(self, llm_service):
         """Test that RAG doesn't hallucinate obvious fake facts"""
         query = "What programming languages does Edwin Kassier know?"
 
-        response = gemini_service.generate_response(
+        response = llm_service.generate_response(
             prompt=query, user_id="test_accuracy", persona="hermes"
         )
 
@@ -332,12 +332,12 @@ class TestRAGQuality:
 
         logger.info(f"✓ No hallucinated content detected: {response[:150]}")
 
-    def test_rag_returns_dont_know_when_appropriate(self, gemini_service):
+    def test_rag_returns_dont_know_when_appropriate(self, llm_service):
         """Test that RAG admits when it doesn't know something"""
         # Ask about something clearly not in Edwin's portfolio
         query = "What is Edwin Kassier's favorite ice cream flavor?"
 
-        response = gemini_service.generate_response(
+        response = llm_service.generate_response(
             prompt=query, user_id="test_dont_know", persona="hermes"
         )
 
@@ -365,14 +365,14 @@ class TestRAGQuality:
 class TestVectorDBPerformance:
     """Basic performance checks for vector operations"""
 
-    def test_embedding_latency(self, gemini_service):
+    def test_embedding_latency(self, llm_service):
         """Test that embedding generation is reasonably fast"""
         import time
 
         query = "Edwin Kassier software engineer"
 
         start = time.time()
-        embedding = gemini_service.embeddings_model.embed_query(query)
+        embedding = llm_service.embeddings_model.embed_query(query)
         latency = time.time() - start
 
         # Should complete within 5 seconds
@@ -380,14 +380,14 @@ class TestVectorDBPerformance:
 
         logger.info(f"✓ Embedding latency: {latency:.3f}s")
 
-    def test_search_latency(self, gemini_service):
+    def test_search_latency(self, llm_service):
         """Test that vector search is reasonably fast"""
         import time
 
         query = "Edwin Kassier background"
 
         start = time.time()
-        results = gemini_service._direct_similarity_search(query, k=5, threshold=0.6)
+        results = llm_service._direct_similarity_search(query, k=5, threshold=0.6)
         latency = time.time() - start
 
         # Should complete within 3 seconds

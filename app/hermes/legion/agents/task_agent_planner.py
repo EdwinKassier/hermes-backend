@@ -299,6 +299,10 @@ Analyze the task and create completely custom agent types as needed."""
         agent_configs = []
         execution_levels = []
 
+        # Get overall complexity from analysis
+        task_analysis = analysis_result.get("task_analysis", {})
+        complexity = task_analysis.get("complexity_level", "moderate")
+
         for i, agent_config in enumerate(analysis_result.get("agent_plan", [])):
             # Create complete agent configuration from scratch
             config = {
@@ -311,6 +315,12 @@ Analyze the task and create completely custom agent types as needed."""
                 "task_portion": agent_config.get("task_portion", ""),
                 "dependencies": agent_config.get("dependencies", []),
             }
+
+            # Calculate and add response constraints for latency optimization
+            response_constraints = self._calculate_response_constraints(
+                agent_config, complexity
+            )
+            config["response_constraints"] = response_constraints
 
             agent_configs.append(config)
 
@@ -328,15 +338,127 @@ Analyze the task and create completely custom agent types as needed."""
             task_description=task_description, agent_configs=agent_configs
         )
 
-        # Add execution levels
+        # Add execution levels and response constraints to worker plan
         for i, worker in enumerate(worker_plan):
             if i < len(execution_levels):
                 worker["execution_level"] = execution_levels[i]
+            if i < len(agent_configs):
+                constraints = agent_configs[i].get("response_constraints", {})
+                worker["max_response_tokens"] = constraints.get("max_tokens", 1500)
+                worker["response_format"] = constraints.get("format", "concise")
+                worker["thinking_level"] = constraints.get("thinking_level", "medium")
 
         logger.info(
             f"Created worker plan with {len(worker_plan)} dynamic agents from task analysis"
         )
         return worker_plan
+
+    def _calculate_response_constraints(
+        self,
+        agent_config: Dict[str, Any],
+        task_complexity: str,
+    ) -> Dict[str, Any]:
+        """
+        Calculate appropriate response constraints based on task type and complexity.
+
+        Industry Standard Token Budgets (2024/2025):
+        - Simple lookups/extractions: 100-500 tokens
+        - Moderate analysis: 500-2,000 tokens
+        - Complex reasoning/synthesis: 2,000-4,000 tokens
+        - Deep analysis with chain-of-thought: 4,000-8,000 tokens
+
+        Returns token budget, format, and thinking level recommendations.
+        """
+        # Base complexity-to-token mapping (industry standards)
+        complexity_tokens = {
+            "trivial": 200,  # Quick lookups, factual answers
+            "simple": 500,  # Basic retrieval, simple formatting
+            "moderate": 1500,  # Standard analysis, some synthesis
+            "complex": 3000,  # Multi-step reasoning, detailed analysis
+            "expert": 6000,  # Deep chain-of-thought, comprehensive reports
+        }
+
+        task_types = agent_config.get("task_types", [])
+        capabilities = agent_config.get("capabilities", {})
+
+        # Start with base complexity tokens
+        base_tokens = complexity_tokens.get(task_complexity, 1500)
+
+        # Task type categories
+        high_thinking_tasks = [
+            "research",
+            "analysis",
+            "synthesis",
+            "reasoning",
+            "planning",
+            "design",
+            "debugging",
+            "review",
+            "chain_of_thought",
+            "multi_step",
+            "comparative_analysis",
+        ]
+
+        minimal_tasks = [
+            "lookup",
+            "extraction",
+            "validation",
+            "formatting",
+            "classification",
+            "tagging",
+            "simple_qa",
+        ]
+
+        code_tasks = ["code_generation", "coding", "implementation", "programming"]
+
+        # Adjust based on task type
+        if any(t in high_thinking_tasks for t in task_types):
+            base_tokens = int(base_tokens * 1.75)
+            base_tokens = max(base_tokens, 2000)
+        elif any(t in code_tasks for t in task_types):
+            base_tokens = max(base_tokens, 1500)
+        elif any(t in minimal_tasks for t in task_types):
+            base_tokens = min(500, base_tokens)
+
+        # Additional adjustment for explicit reasoning requirements
+        requires_reasoning = capabilities.get("requires_reasoning", False)
+        if requires_reasoning:
+            base_tokens = max(base_tokens, 4000)
+
+        # Cap at reasonable maximum
+        base_tokens = min(base_tokens, 8000)
+
+        # Determine optimal format
+        if any(t in ["data_extraction", "structured_output"] for t in task_types):
+            response_format = "structured"
+        elif base_tokens > 3000:
+            response_format = "detailed"
+        else:
+            response_format = "concise"
+
+        # Determine thinking_level (Gemini 3 Flash)
+        if any(t in minimal_tasks for t in task_types):
+            thinking_level = "minimal"
+        elif any(t in code_tasks for t in task_types):
+            thinking_level = "medium"
+        elif any(t in high_thinking_tasks for t in task_types):
+            thinking_level = "high"
+        else:
+            thinking_level = "low"
+
+        if requires_reasoning:
+            thinking_level = "high"
+
+        # Priority based on complexity
+        priority = "quality" if task_complexity in ["complex", "expert"] else "balanced"
+
+        return {
+            "max_tokens": base_tokens,
+            "format": response_format,
+            "priority": priority,
+            "thinking_level": thinking_level,
+            "thinking_budget": base_tokens // 3 if requires_reasoning else 0,
+        }
 
     def _validate_agent_plan(self, plan: Dict[str, Any]) -> bool:
         """Validate that the agent plan has the required structure."""

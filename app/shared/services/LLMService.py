@@ -16,18 +16,24 @@ except ImportError:
     HumanMessage = None
     LANGCHAIN_AVAILABLE = False
 
+# Google GenAI imports for Google AI Studio (preferred over Vertex AI)
 try:
     import google.generativeai as genai
     from langchain_community.vectorstores import SupabaseVectorStore
-    from langchain_google_genai import GoogleGenerativeAIEmbeddings
+    from langchain_google_genai import (
+        ChatGoogleGenerativeAI,
+        GoogleGenerativeAIEmbeddings,
+    )
     from supabase import create_client
 
-    SUPABASE_AVAILABLE = True
+    GOOGLE_GENAI_AVAILABLE = True
 except ImportError:
     genai = None
+    ChatGoogleGenerativeAI = None
     GoogleGenerativeAIEmbeddings = None
     SupabaseVectorStore = None
     create_client = None
+    GOOGLE_GENAI_AVAILABLE = False
     SUPABASE_AVAILABLE = False
 
 from app.shared.config.langfuse_config import langfuse_config
@@ -39,7 +45,7 @@ from app.shared.utils.toolhub import get_all_tools
 
 # Default model from environment (provider-agnostic)
 # Examples: gemini-2.5-flash, gpt-4o, claude-3-sonnet, ollama/llama3
-DEFAULT_LLM_MODEL = os.getenv("LLM_MODEL", "gemini-2.5-flash")
+DEFAULT_LLM_MODEL = os.getenv("LLM_MODEL", "gemini-3-flash-preview")
 
 # Setup logging
 logging.basicConfig(
@@ -68,7 +74,12 @@ class ToolExecutionError(LLMServiceError):
 
 @dataclass
 class PersonaConfig:
-    """Configuration for a specific persona."""
+    """Configuration for a specific persona.
+
+    Attributes:
+        thinking_level: For Gemini 3 Flash models, controls reasoning depth.
+                       Options: 'minimal', 'low', 'medium', 'high' (default: 'medium')
+    """
 
     name: str
     base_prompt: str
@@ -78,6 +89,7 @@ class PersonaConfig:
     max_retries: int = 3
     allowed_tools: Optional[List[str]] = None  # None means all tools
     error_message_template: Optional[str] = None
+    thinking_level: str = "medium"  # Gemini 3 Flash: minimal|low|medium|high
 
     def __post_init__(self):
         """Set default templates if not provided."""
@@ -287,6 +299,14 @@ class LLMService:
                 name="hermes", base_prompt=""  # Will be loaded from file
             )
 
+        # Add lightweight assistant config for fast responses (no RAG tools)
+        if "assistant" not in configs:
+            configs["assistant"] = PersonaConfig(
+                name="assistant",
+                base_prompt="",  # Will be loaded from file
+                allowed_tools=["calculator", "time_info"],  # Minimal tools for speed
+            )
+
         return configs
 
     def _create_persona_configs_from_prompts(self):
@@ -315,11 +335,13 @@ class LLMService:
     def _create_model_for_persona(self, persona_config: PersonaConfig):
         """Create or retrieve a cached model instance for a specific persona.
 
-        Uses LangChain's init_chat_model() for provider-agnostic model initialization.
+        For Gemini models, uses ChatGoogleGenerativeAI directly with Google AI Studio.
+        For other providers, falls back to init_chat_model() for provider-agnostic initialization.
+
         Models are cached to avoid re-initialization overhead on every request.
 
         The provider is automatically detected from the model name prefix:
-        - gemini-* → Google GenAI
+        - gemini-* → Google AI Studio (via ChatGoogleGenerativeAI)
         - gpt-* → OpenAI
         - claude-* → Anthropic
         - ollama/* → Ollama (local)
@@ -338,11 +360,38 @@ class LLMService:
 
         # Create new model instance
         logging.info(f"Creating new model instance for persona '{persona_config.name}'")
-        model = init_chat_model(
-            persona_config.model_name,
-            temperature=persona_config.temperature,
-            max_retries=persona_config.max_retries,
-        )
+
+        model_name = persona_config.model_name
+
+        # Use ChatGoogleGenerativeAI directly for Gemini models (Google AI Studio)
+        if model_name.startswith("gemini") and GOOGLE_GENAI_AVAILABLE:
+            google_api_key = os.environ.get("GOOGLE_API_KEY")
+            if google_api_key:
+                logging.info(
+                    f"Using ChatGoogleGenerativeAI for model '{model_name}' (Google AI Studio)"
+                )
+                model = ChatGoogleGenerativeAI(
+                    model=model_name,
+                    temperature=persona_config.temperature,
+                    max_retries=persona_config.max_retries,
+                    google_api_key=google_api_key,
+                )
+            else:
+                logging.warning(
+                    "GOOGLE_API_KEY not set, falling back to init_chat_model"
+                )
+                model = init_chat_model(
+                    model_name,
+                    temperature=persona_config.temperature,
+                    max_retries=persona_config.max_retries,
+                )
+        else:
+            # Fallback to init_chat_model for other providers
+            model = init_chat_model(
+                model_name,
+                temperature=persona_config.temperature,
+                max_retries=persona_config.max_retries,
+            )
 
         # Filter tools based on persona configuration
         tools = self._filter_tools_for_persona(persona_config)
@@ -502,8 +551,43 @@ class LLMService:
         """
         tool_results_text = "\n".join(tool_results)
 
-        # Simple, generic template for tool response incorporation
-        follow_up_prompt = f"""Based on the tool results below, provide a response to the original query.
+        # Persona-specific templates for tool response incorporation
+        if persona == "hermes":
+            # Hermes should NEVER reference documents or sources
+            follow_up_prompt = f"""You retrieved the following information. Use it to answer naturally.
+
+RETRIEVED INFORMATION:
+{tool_results_text}
+
+USER QUESTION: {original_prompt}
+
+CRITICAL INSTRUCTIONS:
+- Speak as if you PERSONALLY KNOW this information — like a knowledgeable colleague or biographer
+- NEVER say "based on", "according to", "the documents show", "from the records", or similar
+- NEVER reference transcripts, CVs, resumes, PDFs, sources, or any documents
+- Use natural, articulate language — professional but not stiff
+- Avoid overly casual slang ("oh yeah", "kind of his thing")
+- Start your response with substance, not preamble
+- If using bullet points, make them feel conversational, not like a formal report"""
+        elif persona == "legion":
+            # Legion: Universal Intelligence / Polymath
+            follow_up_prompt = f"""You retrieved the following information. Use it to answer as a Universal Expert.
+
+RETRIEVED INFORMATION:
+{tool_results_text}
+
+USER QUESTION: {original_prompt}
+
+CRITICAL INSTRUCTIONS:
+- Speak as a **Universal Expert** (knowledgeable, clear, adaptable).
+- **Adapt your tone** to the topic (Technical for code, Narrative for history, etc.).
+- Do NOT use robotic preambles like "Objective:", "Assumption:", "Analysis:", or "Strategy:".
+- Do NOT output "Response Constraints" or metadata.
+- Focus on the **Solution/Answer** immediately.
+- Explain technical concepts simply if the user's question implies they are learning."""
+        else:
+            # Default template for other personas
+            follow_up_prompt = f"""Based on the tool results below, provide a response to the original query.
 
 Tool Results:
 {tool_results_text}

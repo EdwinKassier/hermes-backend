@@ -113,7 +113,9 @@ Analyze what the user wants and decide how to route this message. Consider:
 
 **Routing Actions Available:**
 - **SIMPLE_RESPONSE**: Can be answered directly without agents
-  (greetings, thanks, factual questions, meta questions about the system)
+  (greetings, thanks, factual questions, meta questions about the system,
+   **simple code snippets** like "hello world", basic functions, one-liner examples,
+   definitions, explanations, yes/no questions, simple calculations)
 
 - **GATHER_INFO**: Need more information from user before proceeding
   **USE SPARINGLY** - Only when:
@@ -129,7 +131,13 @@ Analyze what the user wants and decide how to route this message. Consider:
   • Missing specific details that can be reasonably assumed
 
 - **ORCHESTRATE**: Complex task requiring agents/research/analysis
-  (research requests, coding tasks, data analysis, multi-step work)
+  (multi-step research, complex analysis with multiple perspectives, tasks requiring
+   external data retrieval, multi-file code projects, comprehensive reports)
+
+  **DO NOT use for**:
+  • Simple code snippets (hello world, single functions, basic examples)
+  • Factual questions with well-known answers
+  • Basic explanations or definitions
 
 - **ERROR**: Cannot process (unclear, nonsensical, or too vague)
 
@@ -331,11 +339,42 @@ Be thoughtful and context-aware. The same words can mean different things in dif
         # Get or create the structured model (cached for performance)
         if self._structured_model is None:
             model_name = os.getenv("LLM_MODEL", "gemini-2.5-flash")
-            base_model = init_chat_model(
-                model_name,
-                temperature=0.3,
-                max_retries=2,
-            )
+
+            # Use ChatGoogleGenerativeAI for Gemini models (Google AI Studio)
+            if model_name.startswith("gemini"):
+                try:
+                    from langchain_google_genai import ChatGoogleGenerativeAI
+
+                    google_api_key = os.getenv("GOOGLE_API_KEY")
+                    if google_api_key:
+                        base_model = ChatGoogleGenerativeAI(
+                            model=model_name,
+                            temperature=0.3,
+                            max_retries=2,
+                            google_api_key=google_api_key,
+                        )
+                        logger.info(
+                            f"Using ChatGoogleGenerativeAI for structured output ({model_name})"
+                        )
+                    else:
+                        base_model = init_chat_model(
+                            model_name,
+                            temperature=0.3,
+                            max_retries=2,
+                        )
+                except ImportError:
+                    base_model = init_chat_model(
+                        model_name,
+                        temperature=0.3,
+                        max_retries=2,
+                    )
+            else:
+                base_model = init_chat_model(
+                    model_name,
+                    temperature=0.3,
+                    max_retries=2,
+                )
+
             self._structured_model = base_model.with_structured_output(RoutingDecision)
             logger.info(
                 f"Created structured output model for RoutingDecision ({model_name})"

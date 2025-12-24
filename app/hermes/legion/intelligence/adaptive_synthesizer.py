@@ -208,8 +208,8 @@ Agent Results:
 {quality_hint}
 
 **Synthesis Guidelines:**
-1. Integrate all relevant insights into a cohesive narrative
-2. Maintain logical structure based on the query
+1. **Executive Summary First**: Start with a 2-3 sentence summary of the key findings
+2. Integrate all relevant insights into a cohesive narrative by themes/topics
 3. Remove redundancy while preserving unique insights
 4. If any results are incomplete/partial, acknowledge limitations
 5. Write naturally for persona: {persona}
@@ -220,8 +220,15 @@ Agent Results:
 - Lists: Use - for bullets with blank lines before/after
 - Inline code: Use `backticks` for function/file names
 - Spacing: Double newlines between major sections
+- Tables: Use | Col1 | Col2 | syntax for comparisons
 
-Provide a complete, well-formatted response."""
+**ANTI-PATTERNS TO AVOID:**
+- Do NOT list agent names or mention "Agent 1 said...", "Worker contributed..."
+- Do NOT include meta-commentary about the synthesis process
+- Do NOT use placeholder text like "[insert details here]"
+- Do NOT repeat the same information in different sections
+
+Provide a complete, well-formatted response that directly addresses the user's query."""
 
             response = await self.llm_service.generate_async(prompt, persona=persona)
             logger.info("Synthesized with inline quality assessment (fast-path)")

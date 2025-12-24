@@ -766,6 +766,148 @@ async def run_quality_benchmarks():
         print("-" * 80)
 
 
+async def run_quick_latency_benchmarks():
+    """Run quick latency benchmarks to identify slow simple queries."""
+    from app.hermes.legion.graph_service import LegionGraphService
+    from app.hermes.models import ResponseMode, UserIdentity
+    from app.shared.utils.service_loader import get_async_llm_service
+    from benchmarks.scenarios import get_quick_scenarios
+
+    print("\n" + "=" * 80)
+    print(" QUICK LATENCY BENCHMARKS - Simple Query Performance")
+    print(" Testing trivial, simple, and code_simple scenarios")
+    print("=" * 80)
+
+    scenarios = get_quick_scenarios()
+    direct_llm = get_async_llm_service()
+    legion = LegionGraphService()
+
+    user = UserIdentity(
+        user_id="latency_test", ip_address="127.0.0.1", user_agent="LatencyBench/1.0"
+    )
+
+    results = []
+
+    print(
+        f"\n{'Scenario':<25} | {'Target':<8} | {'Direct':<10} | {'Legion':<10} | {'Status'}"
+    )
+    print("-" * 80)
+
+    for scenario in scenarios:
+        target = scenario.target_latency_ms
+
+        # Test Direct LLM (use 'assistant' persona to avoid RAG overhead)
+        try:
+            start = time.time()
+            await direct_llm.generate_async(scenario.query, persona="assistant")
+            direct_latency = (time.time() - start) * 1000
+        except Exception as e:
+            direct_latency = -1
+
+        # Test Legion
+        try:
+            start = time.time()
+            await legion.process_request(
+                text=scenario.query,
+                user_identity=user,
+                response_mode=ResponseMode.TEXT,
+                persona="legion",
+            )
+            legion_latency = (time.time() - start) * 1000
+        except Exception as e:
+            legion_latency = -1
+
+        # Status check
+        direct_ok = (
+            "✓"
+            if 0 < direct_latency <= target
+            else "✗" if direct_latency > 0 else "ERR"
+        )
+        legion_ok = (
+            "✓"
+            if 0 < legion_latency <= target * 3
+            else "✗" if legion_latency > 0 else "ERR"
+        )  # Legion gets 3x allowance
+
+        direct_str = f"{direct_latency:.0f}ms" if direct_latency > 0 else "Error"
+        legion_str = f"{legion_latency:.0f}ms" if legion_latency > 0 else "Error"
+
+        status = f"Direct:{direct_ok} Legion:{legion_ok}"
+
+        print(
+            f"{scenario.name:<25} | {target:<6}ms | {direct_str:<10} | {legion_str:<10} | {status}"
+        )
+
+        results.append(
+            {
+                "name": scenario.name,
+                "complexity": scenario.complexity,
+                "target": target,
+                "direct": direct_latency,
+                "legion": legion_latency,
+            }
+        )
+
+    # Summary
+    print("\n" + "=" * 80)
+    print(" LATENCY SUMMARY BY COMPLEXITY")
+    print("=" * 80)
+
+    for complexity in ["trivial", "simple", "code_simple"]:
+        subset = [r for r in results if r["complexity"] == complexity]
+        if subset:
+            avg_direct = (
+                sum(r["direct"] for r in subset if r["direct"] > 0)
+                / len([r for r in subset if r["direct"] > 0])
+                if any(r["direct"] > 0 for r in subset)
+                else 0
+            )
+            avg_legion = (
+                sum(r["legion"] for r in subset if r["legion"] > 0)
+                / len([r for r in subset if r["legion"] > 0])
+                if any(r["legion"] > 0 for r in subset)
+                else 0
+            )
+            target = subset[0]["target"]
+
+            print(f"\n  {complexity.upper():<12} (target: {target}ms)")
+            print(
+                f"    Direct LLM avg: {avg_direct:.0f}ms {'✓' if avg_direct <= target else '✗ SLOW'}"
+            )
+            print(
+                f"    Legion avg:     {avg_legion:.0f}ms {'✓' if avg_legion <= target * 3 else '✗ SLOW'}"
+            )
+
+    # Identify bottlenecks
+    slow_direct = [r for r in results if r["direct"] > r["target"] and r["direct"] > 0]
+    slow_legion = [
+        r for r in results if r["legion"] > r["target"] * 3 and r["legion"] > 0
+    ]
+
+    if slow_direct or slow_legion:
+        print("\n" + "=" * 80)
+        print(" ⚠️  LATENCY ISSUES DETECTED")
+        print("=" * 80)
+
+        if slow_direct:
+            print("\n  Direct LLM (exceeds target):")
+            for r in slow_direct:
+                overage = ((r["direct"] - r["target"]) / r["target"]) * 100
+                print(
+                    f"    - {r['name']}: {r['direct']:.0f}ms (target: {r['target']}ms, +{overage:.0f}%)"
+                )
+
+        if slow_legion:
+            print("\n  Legion (exceeds 3x target):")
+            for r in slow_legion:
+                overage = ((r["legion"] - r["target"] * 3) / (r["target"] * 3)) * 100
+                print(
+                    f"    - {r['name']}: {r['legion']:.0f}ms (target: {r['target'] * 3}ms, +{overage:.0f}%)"
+                )
+    else:
+        print("\n  ✅ All scenarios within acceptable latency bounds!")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="End-to-End Benchmarks for Hermes & Legion"
@@ -784,10 +926,17 @@ if __name__ == "__main__":
         action="store_true",
         help="Run quality vs latency evaluation on test scenarios",
     )
+    parser.add_argument(
+        "--quick",
+        action="store_true",
+        help="Run quick latency tests on simple scenarios (trivial, simple, code_simple)",
+    )
 
     args = parser.parse_args()
 
-    if args.quality:
+    if args.quick:
+        asyncio.run(run_quick_latency_benchmarks())
+    elif args.quality:
         asyncio.run(run_quality_benchmarks())
     else:
         asyncio.run(

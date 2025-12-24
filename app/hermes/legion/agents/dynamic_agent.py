@@ -300,6 +300,23 @@ Use these tools when they would enhance your performance."""
             # Format the prompt
             execution_prompt = prompt_template.format(**template_vars)
 
+            # Build response constraint prefix from metadata (latency optimization)
+            constraints = state.metadata.get("response_constraints", {})
+            if constraints:
+                max_tokens = constraints.get("max_tokens", 1500)
+                format_type = constraints.get("format", "concise")
+                thinking_level = constraints.get("thinking_level", "medium")
+
+                constraint_prefix = f"""**RESPONSE CONSTRAINTS:**
+- Target length: ~{max_tokens} tokens ({format_type} format)
+- Thinking depth: {thinking_level}
+- Use markdown formatting (headers, lists, code blocks)
+- Be direct and substantive—avoid filler phrases
+- Stop when the core answer is complete
+
+"""
+                execution_prompt = constraint_prefix + execution_prompt
+
             # Use Legion persona context if available, otherwise fall back to agent persona
             from ..utils.persona_context import get_current_legion_persona
 

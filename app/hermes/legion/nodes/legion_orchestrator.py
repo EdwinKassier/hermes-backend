@@ -56,6 +56,12 @@ class LegionWorkerState(TypedDict):
     # Retry configuration
     max_retries: int  # Maximum retry attempts (default: 2)
     retry_delay_seconds: float  # Base delay between retries (default: 1.0)
+    # Response constraints for latency optimization
+    max_response_tokens: int  # Maximum tokens for worker response (default: 1500)
+    response_format: str  # Expected format: "concise" | "detailed" | "structured"
+    thinking_level: (
+        str  # Gemini 3 Flash thinking: "minimal" | "low" | "medium" | "high"
+    )
 
 
 # --- Legion Orchestrator Node ---
