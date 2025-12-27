@@ -20,8 +20,9 @@ from .constants import (
     SUCCESS_CHAT_PROCESSED,
     SUCCESS_CONTEXT_CLEARED,
     SUCCESS_REQUEST_PROCESSED,
+    SUCCESS_VECTOR_SYNC,
 )
-from .exceptions import HermesError, InvalidRequestError
+from .exceptions import HermesError, InvalidRequestError, VectorSyncError
 from .models import ResponseMode, UserIdentity
 from .schemas import (
     AuthResponseSchema,
@@ -32,6 +33,8 @@ from .schemas import (
     HealthCheckResponseSchema,
     ProcessRequestResponseSchema,
     ProcessRequestSchema,
+    VectorSyncRequestSchema,
+    VectorSyncResponseSchema,
 )
 from .services import get_hermes_service
 
@@ -260,3 +263,70 @@ def clear_context():
         jsonify({"message": SUCCESS_CONTEXT_CLEARED, "user_id": user_identity.user_id}),
         HTTP_OK,
     )
+
+
+@hermes.route("/sync-vectors", methods=["POST"])
+def sync_vectors():
+    """
+    Sync vector store with latest documents from GCS bucket.
+
+    This endpoint triggers a synchronization operation that:
+    1. Downloads documents from the configured GCS bucket
+    2. Processes and chunks the documents (with Gemini OCR for PDFs)
+    3. Generates embeddings using Gemini API
+    4. Upserts embeddings to Supabase vector store
+
+    Request Body:
+        {
+            "bucket_name": "optional-bucket-name",
+            "folder_path": "optional/path",
+            "force_refresh": false
+        }
+
+    Returns:
+        JSON response with sync results including:
+        - status: Operation status (completed, completed_with_errors)
+        - documents_processed: Number of documents processed
+        - chunks_generated: Number of chunks created
+        - embeddings_created: Number of embeddings generated
+        - duration_seconds: Total operation time
+        - errors: List of any errors encountered
+    """
+    logger.info("Vector sync route hit")
+
+    # Import service here to avoid circular imports
+    from .vector_sync_service import get_vector_sync_service
+
+    # Parse request body (all fields are optional)
+    data = request.get_json() or {}
+    sync_request = VectorSyncRequestSchema(**data)
+
+    try:
+        # Get service and perform sync
+        service = get_vector_sync_service()
+        result = service.sync_vectors(
+            bucket_name=sync_request.bucket_name,
+            folder_path=sync_request.folder_path or "",
+            force_refresh=sync_request.force_refresh,
+        )
+
+        # Build response
+        response = VectorSyncResponseSchema(
+            status=result.status,
+            documents_processed=result.documents_processed,
+            chunks_generated=result.chunks_generated,
+            embeddings_created=result.embeddings_created,
+            duration_seconds=result.duration_seconds,
+            errors=result.errors,
+            timestamp=result.timestamp,
+        )
+
+        logger.info(SUCCESS_VECTOR_SYNC)
+        return jsonify(response.model_dump()), HTTP_OK
+
+    except VectorSyncError as e:
+        logger.error(f"Vector sync error: {e.message}")
+        response = ErrorResponseSchema(
+            error=e.code, message=e.message, details=e.details
+        )
+        return jsonify(response.model_dump()), HTTP_INTERNAL_ERROR

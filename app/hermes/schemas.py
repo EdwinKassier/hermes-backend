@@ -269,3 +269,65 @@ class FileListResponseSchema(BaseModel):
 
 # Note: ProcessRequestSchema above handles both query params and JSON body
 # No need for a separate ProcessRequestQueryParams class
+
+
+# Vector Sync Schemas
+class VectorSyncRequestSchema(BaseModel):
+    """Schema for vector sync request."""
+
+    bucket_name: Optional[str] = Field(
+        default=None,
+        description="GCS bucket name (defaults to configured bucket)",
+    )
+    folder_path: Optional[str] = Field(
+        default="",
+        description="Folder path within the bucket to sync",
+    )
+    force_refresh: bool = Field(
+        default=False,
+        description="Force re-sync even if documents haven't changed",
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "bucket_name": "my-training-data-bucket",
+                "folder_path": "documents/",
+                "force_refresh": False,
+            }
+        }
+    }
+
+
+class VectorSyncResponseSchema(BaseModel):
+    """Schema for vector sync response."""
+
+    status: str = Field(..., description="Sync operation status")
+    documents_processed: int = Field(
+        default=0, description="Number of documents processed"
+    )
+    chunks_generated: int = Field(default=0, description="Number of chunks created")
+    embeddings_created: int = Field(
+        default=0, description="Number of embeddings generated"
+    )
+    duration_seconds: float = Field(
+        default=0.0, description="Operation duration in seconds"
+    )
+    errors: list[str] = Field(
+        default_factory=list, description="List of errors encountered"
+    )
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "status": "completed",
+                "documents_processed": 10,
+                "chunks_generated": 50,
+                "embeddings_created": 50,
+                "duration_seconds": 45.2,
+                "errors": [],
+                "timestamp": "2024-01-01T00:00:00Z",
+            }
+        }
+    }

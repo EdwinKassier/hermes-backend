@@ -86,3 +86,14 @@ class ResourceNotFoundError(HermesError):
             details=details
             or {"resource_type": resource_type, "resource_id": resource_id},
         )
+
+
+class VectorSyncError(HermesError):
+    """Raised when vector synchronization operations fail."""
+
+    def __init__(self, message: str, details: dict = None):
+        super().__init__(
+            message=message,
+            code="VECTOR_SYNC_ERROR",
+            details=details,
+        )

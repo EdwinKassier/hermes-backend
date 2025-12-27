@@ -45,3 +45,10 @@ SUCCESS_REQUEST_PROCESSED = "Request processed successfully"
 SUCCESS_CHAT_PROCESSED = "Chat processed successfully"
 SUCCESS_CONTEXT_CLEARED = "Conversation context cleared"
 SUCCESS_AUTH = "Successful Auth"
+SUCCESS_VECTOR_SYNC = "Vector sync completed successfully"
+
+# Vector Sync Configuration
+DEFAULT_GCS_BUCKET = "ashes-project-hermes-training"
+MAX_SYNC_DOCUMENTS = 1000
+EMBEDDING_BATCH_SIZE = 50
+ERROR_VECTOR_SYNC_FAILED = "Vector sync operation failed"
