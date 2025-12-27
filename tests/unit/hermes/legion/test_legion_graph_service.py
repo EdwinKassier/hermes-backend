@@ -178,10 +178,18 @@ class TestLegionGraphService:
         # Verify rationale in metadata - now in 'rationale' block
         assert "rationale" in result.metadata
         rationale = result.metadata["rationale"]
-        # Dynamic generation produces varied but contextually relevant summaries
-        # Check for key concepts rather than exact static phrase
+        # New format uses conversational first-person language
+        # Check for key conversational phrases
         summary = rationale["summary"].lower()
-        assert "multi-agent" in summary or "parallel" in summary
+        assert any(
+            phrase in summary
+            for phrase in [
+                "i handled",
+                "i coordinated",
+                "i processed",
+                "specialized assistant",
+            ]
+        )
 
         # Verify execution block
         assert "execution" in result.metadata

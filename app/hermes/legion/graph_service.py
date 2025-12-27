@@ -200,13 +200,17 @@ class LegionGraphService:
 
     def _get_agent_role(self, agent_type: str) -> str:
         """Get human-readable role description for agent type."""
-        # Dynamic agent system uses custom types - provide generic descriptions
-        legacy_roles = {
-            "orchestrator": "Request routing, decision-making, and direct response generation",
+        # User-friendly descriptions that explain what the agent does
+        friendly_roles = {
+            "orchestrator": "coordinating the response",
+            "research": "gathering information",
+            "analysis": "analyzing data",
+            "code": "writing code",
+            "writing": "drafting content",
+            "math": "performing calculations",
+            "data": "processing data",
         }
-        return legacy_roles.get(
-            agent_type, f"{agent_type.replace('_', ' ').title()} operations"
-        )
+        return friendly_roles.get(agent_type, agent_type.replace("_", " "))
 
     def _get_toolsets_explanation(self, tools_used: list, agents_used: list) -> dict:
         """Explain which toolsets were allocated and why."""
@@ -295,6 +299,96 @@ class LegionGraphService:
 
         return judge_summary
 
+    def _transform_execution_trace(
+        self, execution_path: list, start_time: float
+    ) -> dict:
+        """
+        Transform raw execution trace into a user-friendly journey summary.
+
+        Converts internal node names to readable descriptions and filters
+        to only show the current session's execution steps.
+        """
+        from datetime import datetime
+
+        # Node name to friendly description mapping
+        node_descriptions = {
+            "orchestrator": "Analyzed your request",
+            "agent_executor": "Executed specialized task",
+            "legion_orchestrator": "Coordinated multiple assistants",
+            "legion_dispatch": "Assigned tasks to assistants",
+            "legion_level_complete": "Collected assistant results",
+            "legion_synthesis": "Combined results into response",
+            "information_gathering": "Gathered relevant information",
+            "judge": "Verified response quality",
+        }
+
+        # Convert start_time to datetime for comparison
+        start_dt = datetime.fromtimestamp(start_time)
+
+        # Filter to current session and transform
+        session_steps = []
+        prev_node = None
+
+        for entry in execution_path:
+            # Parse timestamp
+            ts_str = entry.get("timestamp", "")
+            try:
+                entry_dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                # Only include entries from current session
+                if entry_dt.replace(tzinfo=None) < start_dt:
+                    continue
+            except (ValueError, TypeError):
+                continue
+
+            node = entry.get("node", "unknown")
+            action = entry.get("action", "")
+
+            # Skip duplicate consecutive nodes (keep flow clean)
+            if node == prev_node and not action:
+                continue
+            prev_node = node
+
+            # Get friendly description
+            if action:
+                # Special actions like "clarification_passthrough"
+                description = action.replace("_", " ").title()
+            else:
+                description = node_descriptions.get(
+                    node, node.replace("_", " ").title()
+                )
+
+            session_steps.append(
+                {
+                    "step": description,
+                    "timestamp": ts_str,
+                }
+            )
+
+        # Create summary
+        if not session_steps:
+            return {
+                "steps": [],
+                "total_steps": 0,
+                "summary": "Request processed directly",
+            }
+
+        # Build concise flow summary
+        unique_steps = []
+        for step in session_steps:
+            if step["step"] not in unique_steps:
+                unique_steps.append(step["step"])
+
+        if len(unique_steps) <= 3:
+            flow_summary = " → ".join(unique_steps)
+        else:
+            flow_summary = f"{unique_steps[0]} → ... → {unique_steps[-1]}"
+
+        return {
+            "steps": session_steps,
+            "total_steps": len(session_steps),
+            "summary": flow_summary,
+        }
+
     async def _build_structured_metadata(
         self,
         result: dict,
@@ -364,10 +458,11 @@ class LegionGraphService:
             "timed_out": False,
         }
 
-        # Build execution block
+        # Build execution block with user-friendly journey
+        journey = self._transform_execution_trace(execution_path, start_time)
         execution = {
             "mode": mode,
-            "trace": execution_path,
+            "journey": journey,
         }
 
         # Add strategy for parallel execution
@@ -510,76 +605,84 @@ class LegionGraphService:
         execution_mode: str,
     ) -> str:
         """
-        Generate detailed orchestration summary for dynamic agents.
+        Generate a user-friendly orchestration summary.
 
-        Provides comprehensive information about the execution including:
-        - Number and types of dynamic agents used
-        - Execution strategy and mode
-        - Task breakdown and agent specialization
-        - Performance and coordination details
+        Creates clear, conversational explanations of what happened during
+        request processing, focusing on the "what" and "why" in plain language.
         """
         try:
-            # Build agent breakdown with actual roles from execution
-            agent_breakdown = []
-            agent_roles = set()
+            worker_count = len(agents_used) if agents_used else 1
 
-            # Extract roles from level_results
+            # Extract friendly role names from level_results or agents
+            roles_used = []
             if level_results:
                 for level_data in level_results.values():
                     level_workers = level_data.get("workers", {})
-                    for worker_id, worker_data in level_workers.items():
-                        role = worker_data.get("role", "unknown")
-                        agent_roles.add(role)
-                        agent_breakdown.append(f"{worker_id} ({role})")
+                    for worker_data in level_workers.items():
+                        if isinstance(worker_data, tuple) and len(worker_data) > 1:
+                            role = worker_data[1].get("role", "")
+                            if role and role not in roles_used:
+                                roles_used.append(role)
 
-            # Fallback to agent IDs if no level results
-            if not agent_breakdown:
+            # If no roles from level_results, derive from agent IDs
+            if not roles_used:
                 for agent_id in agents_used:
                     agent_type = agent_id.split("_")[0] if "_" in agent_id else agent_id
-                    agent_role = self._get_agent_role(agent_type)
-                    agent_breakdown.append(f"{agent_id} ({agent_role})")
-                    agent_roles.add(agent_role)
+                    role = self._get_agent_role(agent_type)
+                    if role not in roles_used:
+                        roles_used.append(role)
 
-            agents_summary = (
-                ", ".join(agent_breakdown) if agent_breakdown else "dynamic agents"
+            # Determine task complexity from analysis
+            complexity = (
+                analysis.get("complexity_estimate", "").lower() if analysis else ""
+            )
+            is_complex = complexity in ["high", "complex", "multi-step"]
+            is_simple = (
+                complexity in ["low", "simple", "straightforward"] or not complexity
             )
 
-            # Generate comprehensive summary
-            worker_count = len(agent_breakdown) if agent_breakdown else len(agents_used)
-            summary_parts = [
-                f"Executed {worker_count} specialized dynamic agents in {execution_mode} orchestration mode.",
-                f"Agent composition: {agents_summary}",
-                f"Task: {original_query[:150]}{'...' if len(original_query) > 150 else ''}",
-            ]
-
-            # Add execution details if available
-            if analysis:
-                complexity = analysis.get("complexity_estimate", "unknown")
-                strategy = decisions.get("strategy", execution_mode)
-                summary_parts.append(
-                    f"Complexity assessment: {complexity} | Strategy: {strategy}"
-                )
-
-            # Add coordination information
-            if len(agents_used) > 1:
-                summary_parts.append(
-                    f"Multi-agent coordination achieved through dynamic task decomposition "
-                    f"and parallel execution with specialized agent roles."
-                )
+            # Build conversational summary based on execution pattern
+            if worker_count == 1:
+                # Single-agent execution
+                role_desc = roles_used[0] if roles_used else "processing your request"
+                if is_simple:
+                    summary = (
+                        f"I handled your request directly using a specialized assistant "
+                        f"focused on {role_desc}. Since this was a straightforward task, "
+                        f"I processed it in a single step without needing to break it down further."
+                    )
+                else:
+                    summary = (
+                        f"I processed your request using a specialized assistant "
+                        f"focused on {role_desc}. This approach was optimal for "
+                        f"the type of task you requested."
+                    )
             else:
-                summary_parts.append(
-                    f"Single-agent execution optimized for task requirements "
-                    f"through dynamic capability matching."
+                # Multi-agent execution
+                if len(roles_used) >= 2:
+                    role_list = ", ".join(roles_used[:-1]) + f" and {roles_used[-1]}"
+                elif roles_used:
+                    role_list = roles_used[0]
+                else:
+                    role_list = "various specialized tasks"
+
+                summary = (
+                    f"To answer this comprehensively, I coordinated {worker_count} "
+                    f"specialized assistants working in parallel—each focused on "
+                    f"{role_list}. This approach allowed me to gather and synthesize "
+                    f"information from multiple angles simultaneously."
                 )
 
-            return " ".join(summary_parts)
+            return summary
 
-        except Exception as e:
-            # Fallback summary if generation fails
-            return (
-                f"Executed {len(agents_used)} dynamic agents in {execution_mode} mode "
-                f"to process: {original_query[:100]}{'...' if len(original_query) > 100 else ''}"
-            )
+        except Exception:
+            # Simple fallback if generation fails
+            if len(agents_used) > 1:
+                return (
+                    f"I coordinated {len(agents_used)} specialized assistants "
+                    f"to process your request."
+                )
+            return "I processed your request using a specialized assistant."
 
     async def _generate_dynamic_toolset_explanation(
         self,
@@ -588,72 +691,70 @@ class LegionGraphService:
         original_query: str,
     ) -> str:
         """
-        Generate detailed toolset explanation for dynamic agents.
+        Generate a user-friendly explanation of tool usage.
 
-        Explains tool allocation, agent specialization, and execution efficiency.
+        Explains which tools were used and why in plain language,
+        making it clear what capabilities were leveraged.
         """
         try:
-            # Group tools by agent type for dynamic agents
-            tool_agent_mapping = {}
+            # Map tool names to friendly descriptions
+            friendly_tool_names = {
+                "web_search": "web search",
+                "search": "search",
+                "calculator": "calculator",
+                "code_interpreter": "code execution",
+                "file_reader": "file reading",
+                "database": "database lookup",
+                "rag": "knowledge retrieval",
+                "retrieval": "document search",
+            }
 
-            for agent_id in agents_used:
-                agent_type = agent_id.split("_")[0] if "_" in agent_id else agent_id
-                if agent_type not in tool_agent_mapping:
-                    tool_agent_mapping[agent_type] = []
-                # For dynamic agents, we distribute tools across agent types
-                tools_per_agent = len(tools_used) // len(agents_used) or 1
-                start_idx = agents_used.index(agent_id) * tools_per_agent
-                end_idx = start_idx + tools_per_agent
-                agent_tools = tools_used[start_idx:end_idx] if tools_used else []
-                tool_agent_mapping[agent_type].extend(agent_tools)
+            tool_count = len(tools_used) if tools_used else 0
 
-            # Calculate actual worker count from agents_used or use provided count
-            worker_count = len(agents_used) if agents_used else 0
-
-            # Build comprehensive explanation
-            explanation_parts = [
-                f"Deployed {len(tools_used)} specialized tools across {worker_count} dynamic agents.",
-            ]
-
-            # Add agent-tool mapping details
-            if tool_agent_mapping:
-                mapping_details = []
-                for agent_type, agent_tools in tool_agent_mapping.items():
-                    if agent_tools:
-                        agent_role = self._get_agent_role(agent_type)
-                        tool_list = ", ".join(agent_tools[:3])  # Limit to first 3 tools
-                        if len(agent_tools) > 3:
-                            tool_list += f" +{len(agent_tools) - 3} more"
-                        mapping_details.append(f"{agent_role}: {tool_list}")
-
-                if mapping_details:
-                    explanation_parts.append(
-                        f"Tool allocation: {'; '.join(mapping_details)}"
-                    )
-
-            # Add efficiency and specialization notes
-            if len(tools_used) > 0:
-                efficiency_note = (
-                    f"Tool utilization optimized for task requirements with "
-                    f"{len(set(tools_used))} unique tool types deployed."
+            if tool_count == 0:
+                # No tools used - explain this naturally
+                return (
+                    "For this request, I didn't need any external tools—I generated "
+                    "the response using my built-in knowledge and capabilities."
                 )
-                explanation_parts.append(efficiency_note)
 
-            if len(agents_used) > 1:
-                specialization_note = (
-                    f"Multi-agent specialization enabled complementary tool usage "
-                    f"across {len(agents_used)} distinct execution contexts."
+            # Get friendly names for tools used
+            friendly_names = []
+            for tool in tools_used:
+                tool_lower = tool.lower()
+                # Check for partial matches in friendly names
+                matched = False
+                for key, friendly_name in friendly_tool_names.items():
+                    if key in tool_lower:
+                        if friendly_name not in friendly_names:
+                            friendly_names.append(friendly_name)
+                        matched = True
+                        break
+                if not matched:
+                    # Use cleaned up tool name as fallback
+                    clean_name = tool.replace("_", " ").lower()
+                    if clean_name not in friendly_names:
+                        friendly_names.append(clean_name)
+
+            # Build natural explanation
+            if len(friendly_names) == 1:
+                return f"I used {friendly_names[0]} to help answer your request."
+            elif len(friendly_names) == 2:
+                return (
+                    f"I used {friendly_names[0]} and {friendly_names[1]} "
+                    f"to help answer your request."
                 )
-                explanation_parts.append(specialization_note)
+            else:
+                tool_list = (
+                    ", ".join(friendly_names[:-1]) + f", and {friendly_names[-1]}"
+                )
+                return f"I used several tools to help answer this: {tool_list}."
 
-            return " ".join(explanation_parts)
-
-        except Exception as e:
-            # Fallback explanation if generation fails
-            return (
-                f"Utilized {len(tools_used)} tools across {len(agents_used)} dynamic agents "
-                f"to efficiently complete the task requirements."
-            )
+        except Exception:
+            # Simple fallback
+            if tools_used:
+                return f"I used {len(tools_used)} tool(s) to help process your request."
+            return "I processed your request using my built-in capabilities."
 
     async def process_request(
         self,
